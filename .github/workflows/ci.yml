@@ -1,0 +1,51 @@
+name: CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npx eslint "src/**/*.ts"
+        if: matrix.app == 'backend'
+      - run: npm run lint
+        if: matrix.app == 'frontend'
+      - run: npm run build
+  integration:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start full stack
+        run: |
+          cp .env.example .env
+          docker compose --profile full up -d --build --wait --wait-timeout 180
+      - name: Verify services
+        run: |
+          curl --fail --retry 10 --retry-connrefused --retry-delay 3 http://localhost:3001/health
+          curl --fail --retry 10 --retry-connrefused --retry-delay 3 http://localhost:3000
+          docker compose exec -T postgres psql -U warehouse -d warehouse -c "SELECT '[1,2,3]'::vector;"
+          docker compose exec -T redis redis-cli ping
+      - name: Logs
+        if: failure()
+        run: docker compose --profile full logs --no-color
+      - name: Clean up runner
+        if: always()
+        run: docker compose --profile full down -v
