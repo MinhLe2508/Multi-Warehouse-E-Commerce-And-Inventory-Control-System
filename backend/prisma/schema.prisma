@@ -1,13 +1,624 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Schema.prisma 
+// File này thuộc nhóm "Schema CSDL dùng chung", mọi thành viên khác chỉ được thêm Model mới vào cuối file khi cần.
+// Không tự ý sửa các Model đã có.
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// "DATABASE_URL" không còn khai báo trực tiếp trong Block "datasource" của file schema.prisma này nữa 
+// Thay vào đó, chuỗi kết nối được đọc từ file "backend/prisma.config.ts" thfilo qua hàm defineConfig()
 
+// Biến DATABASE_URL vẫn được khai báo trong file ".env" ở thư mục gốc backend
+// Chỉ khác là schema.prisma không tự đọc biến này nữa, mà "prisma.config.ts" mới là nơi đọc và truyền vào.
+
+
+// GENERATOR — Cấu hinh Prisma Client (lớp code TypeScript Prisma tự sinh ra để NestJS gọi vào truy vấn CSDL, thay vì viết SQL
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
+// DATASOURCE — Không còn field "url" ở đây
+// Field "extensions" vẫn khai báo bình thuờng để Prisma biết CSDL đích cần những extension nào khi chạy "prisma migrate dev" / "prisma db push".
 datasource db {
   provider = "postgresql"
+  // extensions = [pgcrypto,  vector,  pg_trgm, ]
+}
+
+
+// ENUM TYPES — 10 kiểu liệt kê, ánh xạ 1-1 với 10 CREATE TYPE trong DDL thuần SQL
+// Prisma sẽ tự sinh ra PostgreSQL ENUM type khi migrate.
+
+// Vai trò người dùng trong hệ thống — Quyết định phân quyền (RBAC) mà RolesGuard sẽ kiểm tra trên từng endpoint
+enum UserRole {
+  CUSTOMER        // Khách hàng mua sắm thông thường
+  WAREHOUSE_STAFF // Nhân viên kho - Quản lý tồn kho, xác nahnaj đơn tại kho mình phụ trách
+  ADMIN           // Quản trị hệ thống - Toàn quyền, xem Dashboard, quản lý người dùng
+}
+
+// Trạng thái đơn hàng 
+enum OrderStatus {
+  PENDING_PAYMENT // Vừa tạo, đang giữ cho tồn kho (StockReservation), cho thanh toan
+  CONFIRMED       // Thanh toán thành công, tồn kho đã được trừ
+  SHIPPING        // Đang giao hàng
+  DELIVERED       // Đã giao hàng thành công
+  CANCELLED       // Đơn hàng bị hủy (có thể do khách hủy, hết hạn giữ tồn kho, hoặc nhân viên kho hủy)
+}
+
+
+// Trạng thái của 1 bản ghi giữ cho tồn kho (StockReservation) — Trung tâm kỹ thuật của cơ chế chống Oversell
+enum ReservationStatus {
+  HOLDING      // Đang giữ chố, chưa hết hạn, chưa được commit hay hủy
+  COMMITTED    // Đã chuyển thành trừ khi thực sự (Khi thanh toán thành công)
+  RELEASED     // Được giải phóng sớm (Ví dụ: khách tự hủy đơn trước khi hết hạn)
+  EXPIRED      // Quá thời gian giữ chỗ mà chưa thanh toán -> cron job tự hủy
+}
+
+// Trạng thái thanh toán của 1 đơn hàng (Order) — Dùng trong bảng Payment
+enum PaymentStatus {
+  PENDING      // Vừa tạo giao dịch, đang chờ kết quả từ cổng thanh toán Mock
+  SUCCESS      // Thanh toán thành công
+  FAILED       // Thanh toán thất bại (ví dụ: thẻ Mock hết hạn, ví Mock không đủ tiền)
+}
+
+// Phương thức thanh toán hỗ trợ 
+enum PaymentMethod {
+  MOCK_CARD          // Giả lập thanh toán thẻ
+  MOCK_EWALLET       // Giả lập thanh toán ví điện tử
+  COD                // Thanh toán khi nhận hàng
+}
+
+// Mức độ nghiêm trọng của cảnh báo tồn kho thấp
+enum AlertLevel {
+  WARNING     // Tồn kho dưới ngưỡng (threshold) nhưng vẫn còn hàng
+  CRITICAL    // Tồn kho về 0 hoặc rất gần 0 — Cần nhập hàng gấp
+}
+
+// Trạng thái xử lý của 1 cảnh báo tồn kho
+enum AlertStatus {
+  OPEN        // Cảnh báo đang mở, chưa có ai xử lý (Nhập hàng lại)
+  RESOLVED    // Đã được nhân viên kho xử lý
+}
+
+// Lý do thay đổi số lượng tồn kho - Dùng trong bảng audit log (InventoryAuditLog)
+// Để truy vết lịch sử tại sao stock/reserved_stock biến động, phục vụ debug và kiểm toán
+enum InventoryChangeReason {
+  RESERVE            // Tăng reserved_stock do tạo StockReservation mới
+  COMMIT             // Giảm stock thực sự khi đơn hàng được xác nhận thanh toán
+  RELEASE           // Giảm reserved_stock do khách hủy đơn trước khi hết hạn giữ chỗ
+  EXPIRE            // Giảm reserved_stock do cron job đơn reservation quá hạn
+  RESTOCK           // Tăng stock do nhập hàng mới (Nhân viên kho thao tác)
+  MANUAL_ADJUST     // Điều chỉnh thủ công bởi Admin (Ví dụ: Sửa lỗi kiểm kê)
+}
+
+// Vai trò của 1 tin nhắn trong phiên Chat với AI ChatBot (RAG)
+enum ChatRole {
+  USER          // Tin nhắn từ người dùng, khách hàng
+  ASSISTANT     // Tin nhắn phản bồi từ AI (Anthropic Claude sinh ra)
+  SYSTEM        // Tin nhắn hệ thống (Ví du: system prompt, thông báo chuyển tiếp nhân viên)
+}
+
+
+// Trạng thái của giỏ hàng - Chỉ dùng nếu quyết định lưu giỏ hàng ở phía Server 
+// Giỏ hàng hoàn tòan ở localStorage phía client thay vì dùng bảng này
+enum CartStatus {
+  ACTIVE        // Giỏ hàng đang được sử dụng, chưa Checkout 
+  CONVERTED    // Đã Checkout thành công, chuyển thành 1 Order 
+  ABANDONED    // Bị bỏ quên quá lâu không Checkout (Dọn dẹp định kỳ, không bắt buộc)
+}
+
+
+// =============================================================================
+// NHÓM A — IDENTITY and ACCESS (Xác thực và Phân quyền)
+// =============================================================================
+
+// Bảng người dùng - Trung tâm của hệ thống xác thực
+// Mọi bảng khác tham chiếu đến User đều qua "userId" (hoặc "actorId").
+model User {
+  // UUID làm khóa chính (không dùng số tự tăng) để tránh lộ thông tin và dễ hơn khi sau này cần gộp dữ liệu từ nhiều nguồn mà không bị trùng ID
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  email String @unique @db.VarChar(255)                      // Đăng nhập bằng Email, UNIQUE ở tầng CSDL
+  passwordHash String @map("password_hash") @db.VarChar(255) // Chỉ lưu Hash (bcrypt), không bao giờ lưu plain text
+  fullName String @map("full_name") @db.VarChar(150)
+  phone String? @db.VarChar(20)                              // Cho phép null — Không bắt buộc khi đăng ký
+  role UserRole @default(CUSTOMER)                           // Hầu hết người dùng đăng ký là CUSTOMER
+  isActive Boolean @default(true) @map("is_active")          // Admin có thể "khóa" tài khỏan mà không cần xóa dữ liệu
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz   // Prisma tự động cập nhật mỗi lần save()
+
+  // Quan hệ ngược giúp truy vấn nhanh các bản ghi liên quan của User mà không cần join thủ công
+  refreshTokens RefreshToken[]
+  carts Cart[]
+  orders Order[]
+  auditLogs InventoryAuditLog[]       // Các lần User này thao tác làm đổi tồn kho (thường là WAREHOUSE_STAFF/ADMIN)
+  statusChanges OrderStatusHistory[]  // Các lần User này thay đổi trạng thái đơn hàng
+  resolvedAlerts StockAlert[]         // Các cảnh báo tồn kho User này (WAREHOUSE_STAFF) đã xử lý 
+  chatSessions ChatSession[]         // Các phiên chat với AI Chatbot của User này
+
+  // Index trên "role" giúp truy vấn nhanh "lấy hết ADMIN" hoặc "lấy hết WAREHOUSE_STAFF"
+  // Ví dụ: Màn hình quản lý phân quyền của Admin
+  @@index([role])
+  @@map("users") // Tên bảng thực tế trong Postgres
+}
+
+
+// Lưu các refresh token đã phát hành — Phục vụ cơ chế "làm mới" access token (JWT ngắn hạn) mà không cần người dùng đăng nhập lại liên tục
+// Cho phép thu hồi (revoke) token cũ khi đăng xuất hoặc phát hiện bất thường
+model RefreshToken {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  // Chỉ lưu HASH của refresh token (không lưu token gốc) — Nếu CSDL bị lộ, kẻ tấn công vẫn không thể dùng trực tiếp giá trị trong CSDL dể giả mạo.
+  tokenHash String @unique @map("token_hash") @db.VarChar(255)
+
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz    // Null = Còn hiệu lực; Có giá trị = Đã bị thu hồi (Logout)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade) // Xóa User thì xóa luôn token liên quan
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+
+// =============================================================================
+// NHÓM B — CATALOG (Danh mục và Sản phẩm)
+// =============================================================================
+
+// Danh mục sản phẩm 
+model Category {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @db.VarChar(150)
+  slug String @unique @db.VarChar(160)             // Dùng cho URL thân thiện: /categories/dien-thoai
+  parentId String? @map("parent_id") @db.Uuid      // Null = Danh mục gốc (cấp cao nhất)
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Self-relation 2 chiều: 1 Category có 1 Parent (hoặc Null) và nhiều Children
+  parent Category? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+// Bảng sản phẩm không chứa tồn kho
+model Product {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku String @unique @db.VarChar(64)         // Mã sản phẩm, duy nhất toàn hệ thống
+  name String @db.VarChar(255)
+  slug String @unique @db.VarChar(280)
+  description String? @db.Text
+
+  basePrice Decimal @map("base_price") @db.Decimal(14, 2) // Dùng Decimal tránh sai số làm tròn khi tính tiền
+  discountPercent Decimal @default(0) @map("discount_percent") @db.Decimal(5, 2) // % Giảm giá, 0-100
+
+  categoryId String? @map("category_id") @db.Uuid
+  imageUrl String? @map("image_url") @db.VarChar(500)
+  isActive Boolean @default(true) @map("is_active") // Ẩn sản phẩm khỏi catalog mà không mất dữ liệu lịch sử đơn hàng
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  inventory Inventory[] // 1 Product có thể có nhiều dòng Inventory (Mỗi kho 1 dòng)
+  cartItems CartItem[]
+  orderItems OrderItem[]
+
+  @@index([categoryId])
+  @@index([basePrice]) // Phục vụ sắp xếp hoặc lọc theo giá
+  @@map("products")
+}
+
+
+
+// =============================================================================
+// NHÓM C — WAREHOUSE & INVENTORY (Kho hàng và Tồn kho) — CƠ CHẾ CHỐNG OVERSELL
+// =============================================================================
+
+// Bảng kho hàng vật lý
+model Warehouse {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code String @unique @db.VarChar(32)  // Mã kho hàng, ví du: "HN01"
+  name String @db.VarChar(150)
+  region String @db.VarChar(100)      // Khu vực địa lý — Dùng để ưu tiên chọn kho gần khách khi đặt hàng
+  address String? @db.VarChar(500)
+  capacity Int?                       // Sức chứa tối đa (số lượng sản phẩm vật lý) — Null = Không giới hạn
+
+  // Ngưỡng cảnh báo low-stock mặc định cho toàn bộ sản phẩm trong kho này
+  // Nếu 1 dòng Inventory cụ thể không tự định nghĩa "threshold" riêng
+  defaultLowStockThreshold Int @default(10) @map("default_low_stock_threshold")
+
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  inventory Inventory[]
+  orderItems OrderItem[] // Lưu lại kho hàng đã xuất hàng cho từng đơn hàng (Truy vết)
+
+  @@index([region])
+  @@map("warehouses")
+}
+
+// BẢNG TRUNG TÂM KIỂM SOÁT TOÀN BỘ HỆ THỐNG
+// Hiện thực quan hệ N-N giữa Product <-> Warehouse: Mỗi dòng là số lượng tồn kho của 1 sản phẩm của 1 kho cụ thể
+model Inventory {
+  id BigInt @id @default(autoincrement())
+
+  productId String @map("product_id") @db.Uuid
+  warehouseId String @map("warehouse_id") @db.Uuid
+
+  stock Int @default(0)  // Tổng số lượng hàng vật lý đang có trong kho (Kể cả bị giữ chỗ) 
+  reservedStock Int @default(0) @map("reserved_stock") // Số lượng đang bị giữ chỗ bởi các đơn hàng chưa thanh toán xong
+
+  /// availableStock = stock - reservedStock, Số lượng thật sự có thể bán thêm
+  availableStock Int @map("available_stock")
+
+  threshold Int?          // Ngưỡng cảnh báo low-stock RIENG cho dòng này; Null = Dùng defaultLowStockThreshold của Warehouse
+  version Int @default(0) // Dự phòng cho optimistic locking (Lớp bảo vệ bổ sung, xem trigger trong ddl.sql)
+
+  lastRestockedAt DateTime? @map("last_restocked_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // onDelete: Restrict, không cho xóa 1 Warehouse nếu vẫn còn dòng Inventory
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  reservations StockReservation[]
+  auditLogs InventoryAuditLog[]
+  alerts StockAlert[]
+  orderItems OrderItem[]
+
+  // Ràng buộc 1 cặp (sản phẩm, kho) chỉ được có duy nhất 1 dòng Inventory, không được trùng lặp
+  @@unique([productId, warehouseId], name: "uq_inventory_product_warehouse")
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([warehouseId, availableStock])
+  @@map("inventory")
+}
+
+// Nhật ký kiểm toán biến động toàn kho
+// Ghi lại từng lần stock/reservedStock thay đổi, kèm lý do (InventoryChangeReason)
+model InventoryAuditLog {
+  id BigInt @id @default(autoincrement())
+  inventoryId BigInt @map("inventory_id")
+
+  reason InventoryChangeReason
+
+  // Lưu cả giá trị trước và sau để có thể đối chiếu, không chỉ lưu "delta"
+  stockBefore Int @map("stock_before")
+  stockAfter Int @map("stock_after")
+  reservedBefore Int @map("reserved_before")
+  reservedAfter Int @map("reserved_after")
+  quantityDelta Int @map("quantity_delta")   // Số lượng thay đổi (có thể âm hoặc dương)
+
+  // referenceType/referenceId: Tham chiếu "đa hình thái" (polymorphic) tới bản ghi gây ra thay đổi này
+  // Không dùng foreign key cùng vì có thể tham chiếu tới nhiều lọai bảng khác nhau
+  referenceType String? @map("reference_type") @db.VarChar(40)
+  referenceId String? @map("reference_id") @db.VarChar(64)
+
+  actorId String? @map("actor_id") @db.Uuid // Người thực hiện (Null = Hệ thống tự động, ví dụ cron job)
+  note String? @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([inventoryId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("inventory_audit_log")
+}
+
+
+
+// =============================================================================
+// NHÓM D — CART (Giỏ hàng)
+// Chỉ cần dùng bảng này nếu quyết định lưu giỏ hàng ở phía SERVER
+// Nếu chọn lưu giỏ hàng hoàn toàn ở phía client (localStorage/Zustand persist), có thể bỏ qua 2 Model này
+// =============================================================================
+
+model Cart {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  status CartStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@index([userId])
+  @@map("carts")
+}
+
+model CartItem {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cartId String @map("cart_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  quantity Int @default(1)
+
+  addedAt DateTime @default(now()) @map("added_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // 1 giỏ hàng không thể có 2 dòng trùng cùng 1 sản phẩm mà phải cộng dồn số lượng vào dòng có sẵn, không tạo dòng mới
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+
+// =============================================================================
+// NHÓM E — ORDER & RESERVATION (Đơn hàng và Giữ cho tồn kho)
+// =============================================================================
+
+// Bảng đơn hàng — "snapshot" tại thời điểm đặt hàng
+model Order {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderCode String @unique @map("order_code") @db.VarChar(32) // Mã đơn hàng, để khách đọc và tra cứu
+  userId String @map("user_id") @db.Uuid
+
+  status OrderStatus @default(PENDING_PAYMENT)
+
+  // 4 cột tiền, dùng Decimal(14,2) — Đủ lớn cho đơn hàng giá trị cao, 2 số lẻ phù hợp đơn vị tiền VND/USD.
+  subtotal Decimal @default(0) @db.Decimal(14, 2) // Tổng tiền hàng trước giảm giá và phí vận chuyển
+  discountTotal Decimal @default(0) @map("discount_total") @db.Decimal(14, 2)
+  shippingFee Decimal @default(0) @map("shipping_fee") @db.Decimal(14, 2)
+  grandTotal Decimal @default(0) @map("grand_total") @db.Decimal(14, 2)
+
+  currency String @default("VND") @db.Char(3)
+
+  // Thông tin giao hàng được sao chép (Snapshot) tại thời điểm đặt hàng, không tham chiếu tới bảng Address riêng
+  shippingRecipient String @map("shipping_recipient") @db.VarChar(150)
+  shippingPhone String @map("shipping_phone") @db.VarChar(20)
+  shippingAddress String @map("shipping_address") @db.VarChar(500)
+  shippingRegion String? @map("shipping_region") @db.VarChar(100)
+
+  // Thời điểm các StockReservation của đơn này sẽ hết hạn nếu chưa thanh tóan xong
+  reservationExpiresAt DateTime? @map("reservation_expires_at") @db.Timestamptz
+
+  cancelledReason String? @map("cancelled_reason") @db.VarChar(255)
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // onDelete: Restrict, không cho xóa User nếu còn Order liên quan (lịch sử đơn hàng phải được giữ lại vì lý do kế toán/kiểm toán)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  items OrderItem[]
+  reservations StockReservation[]
+  payments Payment[]
+  statusHistory OrderStatusHistory[]
+
+  @@index([userId, createdAt]) // Lấy danh sách đơn của 1 khách, mới nhất trước
+  @@index([status, createdAt]) // Báo cáo doanh thu, số đơn theo khoảng thời gian và trạng thái
+  @@map("orders")
+}
+
+// Chi tiết từng dòng sản phẩm trong 1 đơn hàng — SNAPSHOT giá tại thời điểm mua
+model OrderItem {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+
+  productId String @map("product_id") @db.Uuid
+  warehouseId String @map("warehouse_id") @db.Uuid // Kho cụ thể sẽ xuất hàng cho dòng này
+  inventoryId BigInt @map("inventory_id")          // Dòng Inventory cụ thể đã bị giữ chỗ, trừ kho cho dòng này
+
+  // Các trường SNAPSHOT (Sao chép tại thời điểm đặt hàng)
+  productName String @map("product_name") @db.VarChar(255)
+  sku String @db.VarChar(64)
+  unitPrice Decimal @map("unit_price") @db.Decimal(14, 2)
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(14, 2)
+
+  quantity Int
+  lineTotal Decimal @map("line_total") @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // onDelete: Restrict cho cả 3 quan hệ dưới đáy, bảo vệ tính toàn vẹn lịch sử đơn hàng
+  // Không cho xóa Product/Warehouse/Inventory nếu còn OrderItem tham chiếu
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+
+  reservations StockReservation[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+// Bảng chống Oversell - Mỗi dòng là 1 lần giữ chỗ tồn kho tạm thời cho 1 đơn hàng đang cho thanh toán
+model StockReservation {
+  id BigInt @id @default(autoincrement())
+
+  orderId String @map("order_id") @db.Uuid
+  orderItemId String? @map("order_item_id") @db.Uuid // Có thể Null trong 1 số trường hợp giữ chỗ tạm trước khi tạo OrderItem
+  inventoryId BigInt @map("inventory_id")
+
+  quantity Int
+  status ReservationStatus @default(HOLDING)
+
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  committedAt DateTime? @map("committed_at") @db.Timestamptz
+  releasedAt DateTime? @map("released_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  // onDelete: Restrict, không cho xóa Inventory nếu còn StockReservation đang HOLDING trỏ tới 
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+
+  @@index([expiresAt]) 
+  @@index([orderId])
+  @@index([inventoryId, status])
+  @@map("stock_reservations")
+}
+
+// Lịch sử thay đổi trạng thái đơn hàng — Mỗi lần Order.status đổi sẽ được ghi 1 dòng vào đây, phục vụ truy vết
+model OrderStatusHistory {
+  id BigInt @id @default(autoincrement())
+  orderId String @map("order_id") @db.Uuid
+
+  fromStatus OrderStatus? @map("from_status") // Null cho dòng đầu tiên
+  toStatus OrderStatus @map("to_status")
+
+  actorId String? @map("actor_id") @db.Uuid // Null = Hệ thống tự động đổi
+  reason String? @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+
+// =============================================================================
+// NHÓM F — PAYMENT (Thanh toán)
+// =============================================================================
+
+/// Giao dịch thanh toán
+model Payment {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+
+  // Khóa IDEMPOTENCY
+  transactionRef String @unique @map("transaction_ref") @db.VarChar(64)
+
+  amount Decimal @db.Decimal(14, 2)
+  currency String @default("VND") @db.Char(3)
+  method PaymentMethod
+  status PaymentStatus @default(PENDING)
+
+  failureReason String? @map("failure_reason") @db.VarChar(255)
+  // Lưu toàn bộ Payload trả về từ cổng thanh toán (mock) để phục vụ debug sau này
+  gatewayResponse Json? @map("gateway_response")
+  callbackCount Int @default(0) @map("callback_count") // Đếm số lần callback nhận được cho giao dịch này
+
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // onDelete: Restrict, lịch sử thanh toán không được xóa cùng Order
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([status])
+  @@map("payments")
+}
+
+
+// =============================================================================
+// NHÓM G — NOTIFICATION (Thông báo tồn kho thấp)
+// =============================================================================
+
+// Cảnh báo khi tồn kho xuống dưới ngưỡng — Được 1 scheduled job quét và tạo ra, sau đó PUBLISH qua Redis Pub/Sub để WebSocket Gateway day
+model StockAlert {
+  id BigInt @id @default(autoincrement())
+  inventoryId BigInt @map("inventory_id")
+
+  alertLevel AlertLevel @default(WARNING) @map("alert_level")
+  status AlertStatus @default(OPEN)
+
+  // Snapshot số liệu tại thời điểm cảnh báo được tạo
+  stockAtTrigger Int @map("stock_at_trigger")
+  availableAtTrigger Int @map("available_at_trigger")
+  thresholdAtTrigger Int @map("threshold_at_trigger")
+
+  triggeredAt DateTime @default(now()) @map("triggered_at") @db.Timestamptz
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedBy String? @map("resolved_by") @db.Uuid 
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  resolver User? @relation(fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([triggeredAt])
+  @@map("stock_alerts")
+}
+
+
+// =============================================================================
+// NHÓM H — AI CHATBOT (RAG - Retrieval Augmented Generation)
+// =============================================================================
+
+// Kho tri thức (Knowledge Base) cho AI Chatbot
+model KbDocument {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title String @db.VarChar(255)
+  docType String @map("doc_type") @db.VarChar(50) // Phân loại tài liệu
+  chunkIndex Int @default(0) @map("chunk_index") // Vị trí chunk trong tài liệu (0 = chunk đầu tiên, 1 = chunk thứ 2, ...)
+  content String @db.Text
+
+  // VECTOR EMBEDDING cho RAG 
+  embedding Unsupported("vector(1024)")?
+
+  tokenCount Int? @map("token_count") // Số lượng token của chunk này
+  sourceUrl String? @map("source_url") @db.VarChar(500) // Liên kết tới tài liệu gốc (nếu có), hiển thị cho người dùng xem chi tiết
+  isActive Boolean @default(true) @map("is_active") // Cho phép "ẩn" 1 chunk lỗi thời mà không cần xóa, giữ lịch sử
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([docType])
+  @@map("kb_documents")
+}
+
+// 1 Phiên hội thoại giữa 1 người dùng với AI Chatbot.
+model ChatSession {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String? @map("user_id") @db.Uuid // Null = Khách vãng lai chưa đăng nhập vẫn được chat
+  sessionToken String @unique @map("session_token") @db.VarChar(100) // Token riêng để nhận diện phiên chat 
+
+  escalatedToHuman Boolean @default(false) @map("escalated_to_human") // true = AI đã "chuyển tiếp" cho nhân viên hỗ trợ
+  messageCount Int @default(0) @map("message_count") // Đếm nhanh số tin nhắn, tránh phải COUNT(*) mỗi lần hiển thị danh sách phiên chat
+
+  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz
+  endedAt DateTime? @map("ended_at") @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  messages ChatMessage[]
+
+  @@index([userId, startedAt])
+  @@map("chat_sessions")
+}
+
+// Từng tin nhắn riêng lẻ trong 1 phiên chat — Cả tin nhắn của USER và của ASSISTANT đều lưu trong cùng 1 bảng này, phân biệt qua
+model ChatMessage {
+  id BigInt @id @default(autoincrement())
+  sessionId String @map("session_id") @db.Uuid
+
+  role ChatRole
+  content String @db.Text
+
+  // Lưu lại chính xác nhưng chunk (KbDocument) nào đã được truy xuất (retrieve)
+  // Để làm context cho AI trả lời tin nhắn này
+  retrievedContext Json? @map("retrieved_context")
+  // Lưu lại các "function call" mà Anthropic Claude đã gọi trong lúc xử lý tin nhắn này
+  toolCalls Json? @map("tool_calls")
+
+  isFallback Boolean @default(false) @map("is_fallback") // true = day là câu trả lời "dự phòng" chung
+  latencyMs Int? @map("latency_ms") // Thời gian (ms) AI xử lý để sinh ra tin nhắn này — Phục vụ đánh giá hiệu năng và tối ưu
+  tokenUsage Int? @map("token_usage") // Số token đã dùng cho lần gọi API này — Phục vụ theo dõi chi phí/giới hạn Free Tier
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
 }
