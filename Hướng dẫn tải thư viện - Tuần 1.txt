@@ -1,0 +1,361 @@
+============================================================
+1. PHẦN MỀM CẦN CÓ
+============================================================
+
+Git:
+    git --version
+
+Node.js:
+    Project hiện đã chạy với Node v24.20.0.
+    Kiểm tra:
+    node -v
+    npm -v
+
+Docker Desktop:
+    docker --version
+    docker compose version
+
+Nếu PowerShell chặn npm/npx:
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+
+============================================================
+2. DOCKER SERVICES
+============================================================
+
+docker-compose.yml hiện dùng:
+
+PostgreSQL + pgvector:
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    host: localhost
+    port: 5432
+    database: warehouse
+    user: warehouse
+
+Redis:
+    image: redis:7-alpine
+    host: localhost
+    port: 6379
+
+Khởi động từ PROJECT ROOT:
+    docker compose up -d postgres redis
+
+Kiểm tra:
+    docker compose ps
+
+Redis:
+    docker compose exec redis redis-cli ping
+
+Kỳ vọng:
+    PONG
+
+
+============================================================
+3. NESTJS CLI
+============================================================
+
+Đã cài:
+    npm install -g @nestjs/cli@11
+
+Kiểm tra:
+    nest --version
+
+
+============================================================
+4. BACKEND DEPENDENCIES
+============================================================
+
+Từ:
+    backend/
+
+chạy:
+    npm install
+
+Prisma hiện tại:
+    prisma@7.10.0
+    @prisma/client@7.10.0
+    @prisma/adapter-pg@7.10.0
+
+Kiểm tra:
+    npx prisma -v
+
+Các package quan trọng đã có:
+    @prisma/adapter-pg
+    @prisma/client
+    prisma
+    pg
+    ts-node
+    bcrypt
+    dotenv
+    ioredis
+    @google/genai
+    @anthropic-ai/sdk
+    NestJS
+    TypeScript
+    Jest
+    ESLint
+    Prettier
+
+============================================================
+5. ENVIRONMENT (.env)
+============================================================
+
+Prisma config hiện tại dùng:
+    dotenv.config({ path: '../.env' })
+
+Vì vậy, với cấu hình hiện tại, nên đặt .env ở PROJECT ROOT:
+
+    Multi-Warehouse-E-Commerce-And-Inventory-Control-System/.env
+
+DEV values hiện tại, tạo file .env với nội dung sau:
+
+		POSTGRES_USER=warehouse
+		POSTGRES_PASSWORD=1234567890
+		POSTGRES_DB=warehouse
+		POSTGRES_PORT=5432
+		REDIS_PORT=6379
+		PORT=3001
+		FRONTEND_PORT=3000
+
+		DATABASE_URL=postgresql://warehouse:1234567890@localhost:5432/warehouse
+		REDIS_URL=redis://localhost:6379
+
+		JWT_SECRET=mot_chuoi_ngau_nhien_it_nhat_32_ky_tu_abcxyz123456
+
+		ANTHROPIC_API_KEY=
+		FRONTEND_ORIGIN=http://localhost:3000
+
+
+
+
+============================================================
+6. PRISMA FILES phải có trong máy
+============================================================
+
+Schema:
+    backend/prisma/schema.prisma
+
+Config:
+    backend/prisma.config.ts
+
+Seed:
+    backend/prisma/seed.ts
+
+Migration 1:
+    backend/prisma/migrations/20261008010100_init/migration.sql
+
+Migration 2:
+    backend/prisma/migrations/20261008012516_manual_constraints_and_functions/migration.sql
+
+Lock:
+    backend/prisma/migrations/migration_lock.toml
+
+
+
+============================================================
+7. POSTGRESQL EXTENSIONS
+============================================================
+
+Cần:
+    pgcrypto
+    vector
+    pg_trgm
+
+Migration đã tạo:
+
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+Kiểm tra:
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "\dx"
+
+Phải thấy pgcrypto, vector, pg_trgm và plpgsql.
+
+
+
+============================================================
+8. SETUP MÁY THÀNH VIÊN MỚI
+============================================================
+
+Bước 1 - Tạo .env ở PROJECT ROOT.
+
+Bước 2 - Khởi động Docker:
+
+    docker compose up -d postgres redis
+
+Kiểm tra:
+    docker compose ps
+
+Bước 3- Backend:
+
+    cd backend
+    npm install
+
+Bước 4 - Generate Prisma Client:
+
+    npx prisma generate
+
+Bước 5 - Tạo/cập nhật database từ migrations:
+
+    npx prisma migrate dev
+
+LƯU Ý: NẾU NÓ YÊU CẦU ĐẶT TÊN MỚI HAY BÂT CỨ CÁI GÌ LIÊN QUAN ĐẾN TÊN THÌ BẤM CTRL + C ĐỂ THOÁT, KHÔNG ĐẶT TÊN.
+
+Bước 6 - Kiểm tra migration:
+
+    npx prisma migrate status
+
+Kỳ vọng:
+    Database schema is up to date.
+
+Bước 7- Seed:
+
+    npx prisma db seed
+
+Kỳ vọng:
+    Users: 104
+    Categories: 8
+    Warehouses: 3
+    Products: 200
+    Inventory: 600
+    KB Documents: 30
+
+
+============================================================
+11. KIỂM TRA DATABASE
+============================================================
+
+Từ PROJECT ROOT:
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "\dx"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "\dt"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "\d inventory"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "\df fn_reserve_stock"
+
+Kiểm tra counts:
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "SELECT count(*) FROM users;"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "SELECT count(*) FROM products;"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "SELECT count(*) FROM inventory;"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "SELECT count(*) FROM warehouses;"
+
+    docker compose exec postgres psql -U warehouse -d warehouse -c "SELECT count(*) FROM kb_documents;"
+
+Kỳ vọng:
+    users = 104
+    products = 200
+    inventory = 600
+    warehouses = 3
+    kb_documents = 30
+
+
+============================================================
+12. CHẠY BACKEND
+============================================================
+
+Từ backend:
+
+    npm run build
+
+Nếu thành công:
+
+    npm run start:dev
+
+Port:
+    3001
+
+Kiểm tra từ PowerShell:
+    Test-NetConnection localhost -Port 3001
+
+Kỳ vọng:
+    TcpTestSucceeded : True
+
+
+============================================================
+13. FRONTEND
+============================================================
+
+Từ:
+    frontend/
+
+chạy:
+
+    npm install
+    npm run dev
+
+Frontend dự kiến:
+    http://localhost:3000
+
+
+============================================================
+14. WORKFLOW HÀNG NGÀY
+============================================================
+
+Bắt đầu ngày:
+    git pull
+
+Nếu dependency thay đổi:
+    cd backend
+    npm install
+
+Nếu có migration mới:
+    npx prisma migrate dev
+    npx prisma generate
+
+Nếu cần seed lại DEV:
+    npx prisma db seed
+
+Khởi động Docker:
+    docker compose up -d postgres redis
+
+Chạy backend:
+    cd backend
+    npm run start:dev
+
+
+============================================================
+15. KHI TEAM TẠO MIGRATION MỚI
+============================================================
+
+Người tạo migration:
+
+    cd backend
+    npx prisma migrate dev --name <ten_migration>
+
+Sau đó commit:
+    backend/prisma/migrations/<migration-folder>/
+    schema.prisma nếu có thay đổi
+    package.json/package-lock.json nếu dependency thay đổi
+
+Thành viên khác:
+    git pull
+    cd backend
+    npx prisma migrate dev
+    npx prisma generate
+
+
+============================================================
+16. RESET DATABASE DEV
+============================================================
+
+CHỈ DÙNG CHO DATABASE DEV LOCAL.
+
+Từ PROJECT ROOT:
+
+    docker compose down -v
+    docker compose up -d postgres redis
+
+    cd backend
+    npx prisma migrate dev
+    npx prisma db seed
+
+Lệnh down -v XÓA DATABASE VOLUME.
+KHÔNG dùng trên production.

@@ -19,7 +19,6 @@ generator client {
 // Field "extensions" vẫn khai báo bình thuờng để Prisma biết CSDL đích cần những extension nào khi chạy "prisma migrate dev" / "prisma db push".
 datasource db {
   provider = "postgresql"
-  // extensions = [pgcrypto,  vector,  pg_trgm, ]
 }
 
 

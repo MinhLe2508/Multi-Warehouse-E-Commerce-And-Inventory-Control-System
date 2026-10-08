@@ -1,15 +1,18 @@
-// =============================================================================
 // Mục đích: Tạo dữ liễu mẫu dùng số lượng
-//
-// Cách chạy:
-//   npx prisma db seed
-// (Prisma tự đọc lệnh seed từ field "prisma.seed" trong package.json
-// =============================================================================
+
+import 'dotenv/config';
 
 import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL!,
+});
+
+const prisma = new PrismaClient({
+  adapter,
+});
 
 // Dùng bcrypt với số lượng "salt round" = 10 — Cân bằng giữa độ an toàn và tốc độ hash
 const BCRYPT_SALT_ROUNDS = 10;
