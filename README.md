@@ -17,15 +17,15 @@ docker compose version
 
 Trên Windows, cài [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/), bật WSL 2 theo trình cài đặt, mở Docker Desktop và đợi Engine sẵn sàng. Cài [Node.js 24](https://nodejs.org/en/download) nếu chạy npm. Mở lại terminal sau khi cài.
 
-**Workspace hiện tại có thêm một thư mục cùng tên bên trong:** hãy `cd` vào thư mục con chứa `.git`, `backend`, `frontend` trước khi thực hiện các lệnh dưới đây.
+Thực hiện các lệnh dưới đây tại thư mục chứa `.git`, `backend`, `frontend` và `docker-compose.yml`.
 
 ## 2. Tạo cấu hình cá nhân
 
 ```powershell
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-macOS/Linux dùng `cp .env.example .env`. Sửa `.env`: thay `POSTGRES_PASSWORD`, cập nhật cùng mật khẩu trong `DATABASE_URL`, thay `JWT_SECRET`. Để đơn giản, dùng mật khẩu local dạng chữ/số/hex; ký tự đặc biệt trong URL phải percent-encode. Có thể sinh secret bằng:
+Chỉ tạo `.env` ở lần thiết lập đầu. Khi chạy lại dự án, giữ file này; sao chép mẫu lần nữa sẽ ghi đè cổng, mật khẩu và secret đã chỉnh. macOS/Linux dùng `test -f .env || cp .env.example .env`. Sửa `.env`: thay `POSTGRES_PASSWORD`, cập nhật cùng mật khẩu trong `DATABASE_URL`, thay `JWT_SECRET`. Để đơn giản, dùng mật khẩu local dạng chữ/số/hex; ký tự đặc biệt trong URL phải percent-encode. Có thể sinh secret bằng:
 
 ```powershell
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
@@ -119,6 +119,33 @@ git status --short
 Sau khi push: mở **GitHub → Actions → CI**, xem cả hai job kiểm tra và job integration. Thiết lập branch protection yêu cầu CI thành công trước merge. Để phát hành: tạo Environment `release` trong Settings → Environments, thêm reviewer nếu nhóm cần; chỉ chạy **Publish images (manual)** trên commit main đã qua CI. Workflow dùng `GITHUB_TOKEN` có quyền packages:write, không cần ghi PAT vào repo. Đây là khung CD publish image, chưa tự triển khai máy chủ vì chưa có đích deploy. Không có thao tác push/publish nào được thực hiện chỉ bằng việc tạo các file này.
 
 ## 7. Xử lý lỗi thường gặp
+
+### Windows không cho mở cổng PostgreSQL 5432
+
+Nếu log báo `ports are not available` hoặc `bind: An attempt was made to access a socket in a way forbidden by its access permissions`, đổi `POSTGRES_PORT=15432` trong `.env`. Đổi phần `localhost:5432` thành `localhost:15432` trong `DATABASE_URL` (và `backend/.env` nếu chạy npm), giữ nguyên user/mật khẩu/database. Kết nối bên trong Docker vẫn là `postgres:5432`.
+
+```powershell
+docker compose up -d --wait --wait-timeout 120
+docker compose ps -a
+Invoke-RestMethod http://localhost:3001/health
+```
+
+Không sao chép lại `.env.example` sau khi sửa. Nếu cổng 15432 cũng không khả dụng, chọn cổng host khác và cập nhật hai giá trị tương ứng.
+
+### Health trả unavailable sau khi tạo lại .env
+
+`Unable to connect` nghĩa là chưa kết nối được đến Backend; HTTP 503 với `status: unavailable` nghĩa là Backend đã nhận request nhưng không kiểm tra được PostgreSQL/pgvector hoặc Redis. Xem trạng thái và log:
+
+```powershell
+docker compose ps -a
+docker compose logs --tail=80 postgres backend redis
+```
+
+Nếu log PostgreSQL báo `password authentication failed` sau khi ghi đè `.env`, khôi phục thông tin đăng nhập đã dùng lúc tạo volume. Đổi `.env` không tự đổi mật khẩu trong database hiện có. Không xóa volume để xử lý lỗi này nếu cần giữ dữ liệu.
+
+Lệnh sinh secret chỉ in chuỗi ra màn hình; cần tự điền vào `JWT_SECRET` trong `.env`.
+
+### Các trường hợp khác
 
 - Không nhận lệnh `docker`: cài/mở Docker Desktop, mở lại terminal; kiểm tra `docker info`.
 - Trùng cổng: dừng App đang chạy bằng Docker trước khi chạy npm, hoặc sửa cổng trong `.env` và URL tương ứng.
