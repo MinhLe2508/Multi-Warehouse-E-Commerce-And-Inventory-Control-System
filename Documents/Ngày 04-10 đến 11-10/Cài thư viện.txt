@@ -45,14 +45,8 @@ Kỳ vọng:
 
 
 ============================================================
-LƯU Ý: 
+4. LƯU Ý KHI CLONE / PULL CODE VỀ
 ============================================================
-
-Bước 4 và Bước 7 chỉ dùng khi THIẾT LẬP PROJECT BAN ĐẦU.
-Nếu trong quá trình làm mà thiếu bất cứ thư viện nào có thể sử dụng lệnh Bước 4 và Bước 7
-Bình thường khi clone/pull project KHÔNG chạy lại các lệnh cài ở Bước 4 và Bước 7 (Có thể bỏ qua Bước 4 và Bước 7).
-Nếu dùng Bước 4 và Bước 7 mà không đọc lưu ý này cũng không sao cả, lưu ý này chỉ để gõ lệnh ngắn hơn.
-Vì đã có file package.json lưu các thư viện, nên chỉ cần chạy các lệnh sau:
 
 Sau khi git clone / git pull:
     cd backend
@@ -61,40 +55,9 @@ Sau khi git clone / git pull:
     cd frontend
     npm install
 
-
-============================================================
-4. Cài thư viện, ghi rõ version đã kiểm chứng
-============================================================
-
-- Vào thư mục backend mở Powershell
-
-		# Prisma — chốt 7.10.0
-		npm install prisma@7.10.0 @prisma/client@7.10.0
-
-		# Auth
-		npm install @nestjs/jwt@11 @nestjs/passport@11
-		npm install passport passport-jwt bcrypt
-
-		# WebSocket — ghi rõ @11
-		npm install @nestjs/websockets@11 @nestjs/platform-socket.io@11
-
-		# Schedule — dùng đúng dòng 6.1.x 
-		npm install @nestjs/schedule@6.1.3
-
-		# AI Chatbot — Google Gemini (thay Anthropic SDK vì đây là phần embedding)
-		npm install @google/genai
-
-		# AI Chatbot — sinh câu trả lời vẫn dùng Anthropic Claude API
-		npm install @anthropic-ai/sdk
-
-		# Cache / Pub-Sub
-		npm install ioredis
-
-		# Validation
-		npm install class-validator class-transformer
-
-		# Type definitions
-		npm install -D @types/bcrypt @types/passport-jwt
+- Không cần cài thư viện riêng rẻ nữa, vào thư mục rồi chạy các lệnh trên sẽ tự động cài thư viện hợp lý
+- Giải thích lý do vì sao không cần cài thư viện riêng lẻ vì trong từng thư mục đã có file package.json đã lưu version của thư viện.
+- Chỉ cần gõ code trên là sử dụng được luôn.
 
 
 ============================================================
@@ -118,16 +81,10 @@ KHÔNG ĐƯỢC XÓA:
     prisma/schema.prisma
     prisma/seed.ts
     prisma/migrations/
-
-============================================================	
-7. Tải thư viện trong thư mục frontend (Di chuyển vào thư mục frontend và mở CMD)
-============================================================
-
-		npm install zustand axios recharts socket.io-client
 		
 
 ============================================================
-8. Dọn file mẫu không nằm trong cây thư mục đã chốt
+7. Dọn file mẫu không nằm trong cây thư mục đã chốt
 ============================================================
 
 		del app\page.tsx
@@ -140,7 +97,7 @@ KHÔNG ĐƯỢC XÓA:
 		
 		
 ============================================================
-9. BACKEND DEPENDENCIES
+8. BACKEND DEPENDENCIES
 ============================================================
 
 Từ thư mục backend mở Powershell chạy:
@@ -174,7 +131,7 @@ Các package quan trọng đã có:
 	
 	
 ============================================================
-10. ENVIRONMENT (.env)
+9. ENVIRONMENT (.env)
 ============================================================
 
 Prisma config hiện tại dùng:
@@ -204,7 +161,7 @@ DEV values hiện tại, tạo file .env với nội dung sau:
 		
 		
 ============================================================
-11. PRISMA FILES phải có trong máy
+10. PRISMA FILES phải có trong máy
 ============================================================
 - Kiểm tra các thư mục sau, đảm bảo phải có trong máy
 Schema:
@@ -227,7 +184,7 @@ Lock:
 	
 	
 ============================================================
-12. POSTGRESQL EXTENSIONS
+11. POSTGRESQL EXTENSIONS
 ============================================================
 
 Cần:
