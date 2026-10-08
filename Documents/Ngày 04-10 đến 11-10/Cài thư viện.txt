@@ -23,20 +23,6 @@ Nếu PowerShell chặn npm/npx:
 2. DOCKER SERVICES
 ============================================================
 
-docker-compose.yml hiện dùng:
-
-PostgreSQL + pgvector:
-    image: pgvector/pgvector:0.8.6-pg16-bookworm
-    host: localhost
-    port: 5432
-    database: warehouse
-    user: warehouse
-
-Redis:
-    image: redis:7-alpine
-    host: localhost
-    port: 6379
-
 Khởi động từ PROJECT ROOT:
     docker compose up -d postgres redis
 
@@ -54,24 +40,114 @@ Kỳ vọng:
 3. NESTJS CLI
 ============================================================
 
-Đã cài:
-    npm install -g @nestjs/cli@11
-
-Kiểm tra:
-    nest --version
+	npm install -g @nestjs/cli@11
+	nest --version
 
 
 ============================================================
-4. BACKEND DEPENDENCIES
+LƯU Ý: 
 ============================================================
 
-Từ:
-    backend/
+Bước 4 và Bước 7 chỉ dùng khi THIẾT LẬP PROJECT BAN ĐẦU.
+Nếu trong quá trình làm mà thiếu bất cứ thư viện nào có thể sử dụng lệnh Bước 4 và Bước 7
+Bình thường khi clone/pull project KHÔNG chạy lại các lệnh cài ở Bước 4 và Bước 7 (Có thể bỏ qua Bước 4 và Bước 7).
+Nếu dùng Bước 4 và Bước 7 mà không đọc lưu ý này cũng không sao cả, lưu ý này chỉ để gõ lệnh ngắn hơn.
+Vì đã có file package.json lưu các thư viện, nên chỉ cần chạy các lệnh sau:
 
-chạy:
+Sau khi git clone / git pull:
+    cd backend
     npm install
 
-Prisma hiện tại:
+    cd frontend
+    npm install
+
+
+============================================================
+4. Cài thư viện, ghi rõ version đã kiểm chứng
+============================================================
+
+- Vào thư mục backend mở Powershell
+
+		# Prisma — chốt 7.10.0
+		npm install prisma@7.10.0 @prisma/client@7.10.0
+
+		# Auth
+		npm install @nestjs/jwt@11 @nestjs/passport@11
+		npm install passport passport-jwt bcrypt
+
+		# WebSocket — ghi rõ @11
+		npm install @nestjs/websockets@11 @nestjs/platform-socket.io@11
+
+		# Schedule — dùng đúng dòng 6.1.x 
+		npm install @nestjs/schedule@6.1.3
+
+		# AI Chatbot — Google Gemini (thay Anthropic SDK vì đây là phần embedding)
+		npm install @google/genai
+
+		# AI Chatbot — sinh câu trả lời vẫn dùng Anthropic Claude API
+		npm install @anthropic-ai/sdk
+
+		# Cache / Pub-Sub
+		npm install ioredis
+
+		# Validation
+		npm install class-validator class-transformer
+
+		# Type definitions
+		npm install -D @types/bcrypt @types/passport-jwt
+
+
+============================================================
+5. Kiểm tra lại toàn bộ thư mục Backend
+============================================================
+		npm list --depth=0
+
+
+============================================================
+6. Rà soát, xóa mọi thứ không cần  (Vẫn đang trong thư mục backend)
+============================================================
+- Mở CMD trong thư mục backend và gõ lệnh sau:
+
+		if exist .agents rmdir /s /q .agents
+		if exist .cursor rmdir /s /q .cursor
+		if exist .devin rmdir /s /q .devin
+
+
+KHÔNG ĐƯỢC XÓA:
+    prisma.config.ts
+    prisma/schema.prisma
+    prisma/seed.ts
+    prisma/migrations/
+
+============================================================	
+7. Tải thư viện trong thư mục frontend (Di chuyển vào thư mục frontend và mở CMD)
+============================================================
+
+		npm install zustand axios recharts socket.io-client
+		
+
+============================================================
+8. Dọn file mẫu không nằm trong cây thư mục đã chốt
+============================================================
+
+		del app\page.tsx
+		del public\next.svg
+		del public\vercel.svg
+		del public\file.svg
+		del public\globe.svg
+		del public\window.svg
+		del README.md
+		
+		
+============================================================
+9. BACKEND DEPENDENCIES
+============================================================
+
+Từ thư mục backend mở Powershell chạy:
+
+		npm install
+
+Prisma hiện tại phải là:
     prisma@7.10.0
     @prisma/client@7.10.0
     @prisma/adapter-pg@7.10.0
@@ -95,9 +171,10 @@ Các package quan trọng đã có:
     Jest
     ESLint
     Prettier
-
+	
+	
 ============================================================
-5. ENVIRONMENT (.env)
+10. ENVIRONMENT (.env)
 ============================================================
 
 Prisma config hiện tại dùng:
@@ -124,14 +201,12 @@ DEV values hiện tại, tạo file .env với nội dung sau:
 
 		ANTHROPIC_API_KEY=
 		FRONTEND_ORIGIN=http://localhost:3000
-
-
-
-
+		
+		
 ============================================================
-6. PRISMA FILES phải có trong máy
+11. PRISMA FILES phải có trong máy
 ============================================================
-
+- Kiểm tra các thư mục sau, đảm bảo phải có trong máy
 Schema:
     backend/prisma/schema.prisma
 
@@ -149,11 +224,10 @@ Migration 2:
 
 Lock:
     backend/prisma/migrations/migration_lock.toml
-
-
-
+	
+	
 ============================================================
-7. POSTGRESQL EXTENSIONS
+12. POSTGRESQL EXTENSIONS
 ============================================================
 
 Cần:
@@ -167,7 +241,7 @@ Migration đã tạo:
     CREATE EXTENSION IF NOT EXISTS vector;
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
-Kiểm tra:
+Kiểm tra bằng cách:
 
     docker compose exec postgres psql -U warehouse -d warehouse -c "\dx"
 
@@ -176,7 +250,7 @@ Phải thấy pgcrypto, vector, pg_trgm và plpgsql.
 
 
 ============================================================
-8. SETUP MÁY THÀNH VIÊN MỚI
+12. SETUP MÁY THÀNH VIÊN MỚI
 ============================================================
 
 Bước 1 - Tạo .env ở PROJECT ROOT.
@@ -193,15 +267,13 @@ Bước 3- Backend:
     cd backend
     npm install
 
-Bước 4 - Generate Prisma Client:
+Bước 4 - Generate Prisma Client (Đang ở trong thư mục backend):
 
     npx prisma generate
 
-Bước 5 - Tạo/cập nhật database từ migrations:
+Bước 5 - Apply các migration đã có:
 
-    npx prisma migrate dev
-
-LƯU Ý: NẾU NÓ YÊU CẦU ĐẶT TÊN MỚI HAY BÂT CỨ CÁI GÌ LIÊN QUAN ĐẾN TÊN THÌ BẤM CTRL + C ĐỂ THOÁT, KHÔNG ĐẶT TÊN.
+    npx prisma migrate deploy
 
 Bước 6 - Kiểm tra migration:
 
@@ -221,12 +293,11 @@ Kỳ vọng:
     Products: 200
     Inventory: 600
     KB Documents: 30
-
-
+	
+	
 ============================================================
-11. KIỂM TRA DATABASE
+13. KIỂM TRA DATABASE
 ============================================================
-
 Từ PROJECT ROOT:
 
     docker compose exec postgres psql -U warehouse -d warehouse -c "\dx"
@@ -255,17 +326,17 @@ Kỳ vọng:
     inventory = 600
     warehouses = 3
     kb_documents = 30
-
-
+	
+	
 ============================================================
-12. CHẠY BACKEND
+14. CHẠY BACKEND
 ============================================================
 
-Từ backend:
+Từ backend chạy lệnh:
 
     npm run build
 
-Nếu thành công:
+Nếu thành công thì chạy tiếp lệnh:
 
     npm run start:dev
 
@@ -277,10 +348,10 @@ Kiểm tra từ PowerShell:
 
 Kỳ vọng:
     TcpTestSucceeded : True
-
-
+	
+	
 ============================================================
-13. FRONTEND
+15. FRONTEND
 ============================================================
 
 Từ:
@@ -293,21 +364,27 @@ chạy:
 
 Frontend dự kiến:
     http://localhost:3000
-
-
+	
+	
 ============================================================
-14. WORKFLOW HÀNG NGÀY
+16. WORKFLOW HÀNG NGÀY
 ============================================================
 
-Bắt đầu ngày:
+Bắt đầu ngày bằng cách:
     git pull
 
 Nếu dependency thay đổi:
     cd backend
     npm install
 
-Nếu có migration mới:
-    npx prisma migrate dev
+Nếu là P4 có migration mới hoặc sửa đổi Schema:
+    cd backend
+    npx prisma migrate dev --name <ten_migration>
+    npx prisma generate
+	
+Nếu là thành viên khác sau khi git pull:
+    cd backend
+    npx prisma migrate deploy
     npx prisma generate
 
 Nếu cần seed lại DEV:
@@ -319,43 +396,48 @@ Khởi động Docker:
 Chạy backend:
     cd backend
     npm run start:dev
-
-
+	
+	
 ============================================================
-15. KHI TEAM TẠO MIGRATION MỚI
+17. KHI KHANG (P4) TẠO MIGRATION MỚI
 ============================================================
 
-Người tạo migration:
-
+P4 (Migration Owner):
     cd backend
     npx prisma migrate dev --name <ten_migration>
 
-Sau đó commit:
-    backend/prisma/migrations/<migration-folder>/
-    schema.prisma nếu có thay đổi
-    package.json/package-lock.json nếu dependency thay đổi
+    Kiểm tra migration SQL.
+    Commit:
+        backend/prisma/migrations/<migration-folder>/
+        schema.prisma nếu có thay đổi
+        package.json/package-lock.json nếu dependency thay đổi
 
-Thành viên khác:
+    git push
+
+Thành viên khác trong Team cần làm việc sau:
     git pull
+
+    docker compose up -d postgres redis
+
     cd backend
-    npx prisma migrate dev
+    npx prisma migrate deploy
     npx prisma generate
-
-
+	
+	
 ============================================================
-16. RESET DATABASE DEV
+18. RESET DATABASE DEV NẾU CẦN, CÒN KHÔNG THÌ KHÔNG XÀI
 ============================================================
 
 CHỈ DÙNG CHO DATABASE DEV LOCAL.
 
 Từ PROJECT ROOT:
 
-    docker compose down -v
-    docker compose up -d postgres redis
+	docker compose down -v
+	docker compose up -d postgres redis
 
-    cd backend
-    npx prisma migrate dev
-    npx prisma db seed
+	cd backend
+	npx prisma migrate deploy
+	npx prisma db seed
 
 Lệnh down -v XÓA DATABASE VOLUME.
 KHÔNG dùng trên production.
