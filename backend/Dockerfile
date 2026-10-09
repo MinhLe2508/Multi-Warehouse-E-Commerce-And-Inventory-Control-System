@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 
@@ -25,7 +25,7 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/package.json ./package.json
 
