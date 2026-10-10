@@ -1,0 +1,109 @@
+====================================================================================
+1. Trường hợp chưa chạy Database lần nào cả.
+
+Bước 1: Tại thư mục gốc:
+		git pull
+	
+	
+Code được pull về phải chứa đầy đủ:
+		backend/prisma/
+		├── schema.prisma
+		├── seed.ts
+		└── migrations/
+			├── 20261008010100_init/
+			├── 20261008012516_manual_constraints_and_functions/
+			├── 20261010070413_auth_account_onboarding/
+			└── migration_lock.toml
+
+			
+Bước 2: Thiết lập .env: Copy file .env.example, sau đó đổi tên thành .env và thực hiện theo hướng dẫn trong file .env.example đã
+hướng dẫn ở trong file.
+
+
+Bước 3: Khởi động PostgreSQL và Redis:
+
+	+ Tại thư mục gốc:
+		docker compose up -d postgres redis
+		
+	+ Kiểm tra bằng cách:
+		docker compose ps
+
+Đợi PostgreSQL có trạng thái healthy.
+Nếu đây là lần đầu chạy trên máy tính, Docker sẽ khởi tạo một database PostgreSQL mới trong Volume của máy.
+
+
+Bước 4: Áp dụng đủ 3 Migration: Chuyển vào thư mục backend:
+		cd backend
+		npm ci
+		npx prisma migrate deploy
+		npx prisma generate
+		
+Đây là bước quan trọng nhất.
+npx prisma migrate deploy sẽ tự chạy ba migration theo thứ tự:
++ Khởi tạo bảng và các quan hệ.
++ Tạo custom constraints, functions, triggers, HNSW index.
++ Bổ sung cấu trúc Authentication và bảng xác thực email.
+Nếu database đã có đủ ba migration thì Prisma sẽ không chạy lại chúng.
+Như vậy, không ai phải tự viết lại SQL hoặc tự tạo từng bảng.
+
+
+Bước 5: Tạo dữ liệu mẫu (nếu cần):
+- Nếu muốn có cùng bộ dữ liệu demo — 1 Admin, 1 Staff, 100 Customer, 200 Product, 600 Inventory, 30 tài liệu RAG
+- Cần chạy thêm seed.
+
+- Tại thư mục backend:
+		set "ALLOW_DEMO_SEED=true"
+		npx prisma db seed
+		set "ALLOW_DEMO_SEED="
+				
+
+Bước 6: Build và khởi động các service
+- Quay về thư mục gốc
+		cd ..
+		docker compose up -d --build
+
+- Kiểm tra lại các COntainer:
+		docker compose ps
+
+- Kiểm tra log Backend:
+		docker compose logs --tail=100 backend
+		
+- Nếu các service hoạt động bình thường, môi trường development đã được khởi tạo.
+- Lệnh này sẽ xây dựng và khởi động các service được định nghĩa trong docker-compose.yml.
+
+
+
+==================================================================================================
+2. Nếu đã chạy 2 Migration từ trước.
+		
+- Không cần phải xóa Database.
+- Pull code mới nhất về, sau đó tại thư mục gốc:
+
+		docker compose up -d postgres redis
+		docker compose ps
+		
+- Cập nhật Prisma:
+		cd backend
+		npm ci
+		npx prisma migrate deploy
+		npx prisma generate
+		npx prisma migrate status
+
+- Build lại Backend Container, quay về thư mục gốc:
+		cd ..
+		docker compose up -d --build --no-deps backend
+
+- Kiểm tra:
+		docker compose ps
+		docker compose logs --tail=100 backend
+
+- Nếu Backend khởi động thành công và Prisma báo database đã cập nhật, quá trình hoàn tất.
+- Đối với thành viên đã có dữ liệu, không tự động chạy lại seed sau mỗi lần pull code.
+- Chỉ chạy khi thực sự cần bổ sung dữ liệu mẫu và đã kiểm tra phạm vi thay đổi của script.
+- Prisma sẽ kiểm tra lịch sử và chỉ áp dụng các migration chưa chạy.
+
+- Tuyệt đối KHÔNG chạy:
+
+		npx prisma migrate reset
+		docker compose down -v
+		npx prisma db push --force-reset

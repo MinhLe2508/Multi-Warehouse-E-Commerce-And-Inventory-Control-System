@@ -1,7 +1,0 @@
-Lệnh khi muốn Build lại Backend hoặc Build Backend lần đầu:
-
-        docker build --progress=plain -t multi-warehouse-e-commerce-and-inventory-control-system-backend:latest -f backend/Dockerfile backend
-
-Lệnh cập nhật Container Backend cho Docker:
-
-        docker compose up -d --no-build --force-recreate backend
