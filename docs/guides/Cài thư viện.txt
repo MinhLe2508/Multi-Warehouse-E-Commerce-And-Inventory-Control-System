@@ -160,51 +160,6 @@ DEV values hiện tại, tạo file .env với nội dung sau:
 		FRONTEND_ORIGIN=http://localhost:3000
 		
 		
-============================================================
-10. PRISMA FILES phải có trong máy
-============================================================
-- Kiểm tra các thư mục sau, đảm bảo phải có trong máy
-Schema:
-    backend/prisma/schema.prisma
-
-Config:
-    backend/prisma.config.ts
-
-Seed:
-    backend/prisma/seed.ts
-
-Migration 1:
-    backend/prisma/migrations/20261008010100_init/migration.sql
-
-Migration 2:
-    backend/prisma/migrations/20261008012516_manual_constraints_and_functions/migration.sql
-
-Lock:
-    backend/prisma/migrations/migration_lock.toml
-	
-	
-============================================================
-11. POSTGRESQL EXTENSIONS
-============================================================
-
-Cần:
-    pgcrypto
-    vector
-    pg_trgm
-
-Migration đã tạo:
-
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
-    CREATE EXTENSION IF NOT EXISTS vector;
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-Kiểm tra bằng cách:
-
-    docker compose exec postgres psql -U warehouse -d warehouse -c "\dx"
-
-Phải thấy pgcrypto, vector, pg_trgm và plpgsql.
-
-
 
 ============================================================
 12. SETUP MÁY THÀNH VIÊN MỚI
@@ -334,18 +289,12 @@ Nếu dependency thay đổi:
     cd backend
     npm install
 
-Nếu là P4 có migration mới hoặc sửa đổi Schema:
-    cd backend
-    npx prisma migrate dev --name <ten_migration>
-    npx prisma generate
 	
 Nếu là thành viên khác sau khi git pull:
     cd backend
     npx prisma migrate deploy
     npx prisma generate
 
-Nếu cần seed lại DEV:
-    npx prisma db seed
 
 Khởi động Docker:
     docker compose up -d postgres redis
@@ -371,14 +320,7 @@ P4 (Migration Owner):
 
     git push
 
-Thành viên khác trong Team cần làm việc sau:
-    git pull
-
-    docker compose up -d postgres redis
-
-    cd backend
-    npx prisma migrate deploy
-    npx prisma generate
+Thành viên khác trong Team cần đọc file Cách setup Database.txt trong thư mục guides phần trường 2 để biết chi tiết.
 	
 	
 ============================================================
