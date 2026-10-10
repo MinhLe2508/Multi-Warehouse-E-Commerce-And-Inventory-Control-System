@@ -1,0 +1,877 @@
+# DRAFT FOR TEAM REVIEW - Admin API Contract v0.1.0
+# Dua tren schema.prisma (commit 8581411), openapi.yaml 0.1.1 (Huy)
+# Chua trien khai controller. Moi endpoint, field, loi la DE XUAT de nhom review.
+
+openapi: 3.0.3
+info:
+  title: Multi-Warehouse Admin API (AdminOrdersController and AdminAnalyticsController)
+  version: 0.1.0
+  description: |
+    API danh rieng cho ADMIN va WAREHOUSE_STAFF. Prefix /admin.
+    CUSTOMER goi bat ky route nao tra 403 FORBIDDEN.
+    Ke thua quy uoc openapi.yaml 0.1.1: error envelope, Money string, BigIntId string, PageInfo, bearerAuth JWT.
+
+servers:
+  - url: http://localhost:3001
+    description: Dev local.
+
+tags:
+  - name: AdminOrders
+    description: Quan ly don hang. Controller AdminOrdersController prefix /admin/orders.
+  - name: AdminInventory
+    description: Xem va dieu chinh ton kho da kho. Prefix /admin/inventory.
+  - name: AdminAlerts
+    description: Quan ly canh bao low-stock StockAlert. Prefix /admin/alerts.
+  - name: AdminAnalytics
+    description: Thong ke bao cao ADMIN only. Controller AdminAnalyticsController prefix /admin/analytics.
+
+paths:
+
+  /admin/orders:
+    get:
+      tags: [AdminOrders]
+      operationId: adminListOrders
+      summary: Danh sach don hang toan he thong co loc phan trang
+      description: |
+        ADMIN xem tat ca don.
+        WAREHOUSE_STAFF chi thay don co OrderItem.warehouseId thuoc kho minh.
+        Sap xep mac dinh createdAt DESC, id DESC.
+        WAREHOUSE_STAFF truyen warehouseId khac kho minh tra 403.
+        Ket qua la OrderSummaryAdmin co them userId, userEmail.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: status, in: query, schema: {'$ref': '#/components/schemas/OrderStatus'}, description: Bo trong = tat ca trang thai.}
+        - {name: warehouseId, in: query, schema: {type: string, format: uuid}}
+        - {name: fromDate, in: query, schema: {type: string, format: date}}
+        - {name: toDate, in: query, schema: {type: string, format: date}}
+        - {name: search, in: query, schema: {type: string, maxLength: 100}, description: Tim theo orderCode tien to khong phan biet hoa thuong.}
+      responses:
+        '200':
+          description: Danh sach don hang phan trang.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/AdminOrderList'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/orders/{orderId}:
+    get:
+      tags: [AdminOrders]
+      operationId: adminGetOrder
+      summary: Chi tiet mot don hang bat ky
+      description: |
+        ADMIN xem bat ky don.
+        WAREHOUSE_STAFF chi xem don co OrderItem thuoc kho minh; tra 404 neu khong co quyen.
+        Response tra OrderDetailsAdmin gom userId, userEmail, payments, statusHistory.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Chi tiet don hang.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/OrderDetailsAdmin'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '404': {'$ref': '#/components/responses/NotFound'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/orders/{orderId}/status:
+    patch:
+      tags: [AdminOrders]
+      operationId: adminUpdateOrderStatus
+      summary: Cap nhat trang thai don hang
+      description: |
+        State machine hop le:
+        - CONFIRMED -> SHIPPING: ADMIN, WAREHOUSE_STAFF
+        - SHIPPING -> DELIVERED: ADMIN, WAREHOUSE_STAFF
+        - PENDING_PAYMENT -> CANCELLED: ADMIN
+        - CONFIRMED -> CANCELLED: ADMIN
+        - SHIPPING -> CANCELLED: ADMIN
+        Ngoai danh sach tra 409 INVALID_ORDER_STATE.
+        Khi CANCELLED ghi reason vao orders.cancelledReason.
+        He thong ghi OrderStatusHistory sau moi lan cap nhat.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {'$ref': '#/components/schemas/AdminUpdateOrderStatusRequest'}
+      responses:
+        '200':
+          description: Cap nhat thanh cong. Tra OrderDetailsAdmin da cap nhat.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/OrderDetailsAdmin'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '404': {'$ref': '#/components/responses/NotFound'}
+        '409':
+          description: Chuyen trang thai khong hop le.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/Error'}
+              examples:
+                INVALID_ORDER_STATE:
+                  value: {statusCode: 409, code: INVALID_ORDER_STATE, message: Khong the chuyen trang thai theo yeu cau.}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/inventory:
+    get:
+      tags: [AdminInventory]
+      operationId: adminListInventory
+      summary: Xem ton kho da kho co loc phan trang
+      description: |
+        ADMIN xem toan bo. WAREHOUSE_STAFF chi thay Inventory kho minh.
+        effectiveThreshold = inventory.threshold neu khac null, nguoc lai = warehouse.defaultLowStockThreshold.
+        Moi dong tra: inventoryId, productId, productName, sku, warehouseId, warehouseName, warehouseCode,
+        stock, reservedStock, availableStock, effectiveThreshold, alertLevel null neu khong OPEN, lastRestockedAt.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: warehouseId, in: query, schema: {type: string, format: uuid}}
+        - {name: productId, in: query, schema: {type: string, format: uuid}}
+        - {name: lowStockOnly, in: query, schema: {type: boolean, default: false}, description: true chi dong co availableStock le effectiveThreshold.}
+        - {name: search, in: query, schema: {type: string, maxLength: 100}}
+      responses:
+        '200':
+          description: Danh sach ton kho da kho phan trang.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/AdminInventoryList'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/inventory/{inventoryId}/restock:
+    post:
+      tags: [AdminInventory]
+      operationId: adminRestockInventory
+      summary: Nhap them hang vao mot dong ton kho
+      description: |
+        ADMIN hoac WAREHOUSE_STAFF chi kho minh phu trach.
+        Tang inventory.stock theo quantity.
+        Ghi InventoryAuditLog voi reason=RESTOCK, actorId=userId nguoi goi.
+        availableStock tu tinh lai = stock - reservedStock.
+        Sau restock neu availableStock > threshold: can nhac auto-resolve StockAlert OPEN xem Q03.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: inventoryId, in: path, required: true, schema: {'$ref': '#/components/schemas/BigIntId'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {'$ref': '#/components/schemas/RestockRequest'}
+      responses:
+        '200':
+          description: Nhap hang thanh cong. Tra InventoryRow da cap nhat.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/InventoryRow'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '404': {'$ref': '#/components/responses/NotFound'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/alerts:
+    get:
+      tags: [AdminAlerts]
+      operationId: adminListAlerts
+      summary: Danh sach canh bao ton kho thap
+      description: |
+        ADMIN xem tat ca. WAREHOUSE_STAFF chi thay canh bao kho minh.
+        Sap xep mac dinh: CRITICAL truoc WARNING, sau do triggeredAt DESC.
+        Mac dinh loc status=OPEN; truyen status=RESOLVED de xem da xu ly.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: status, in: query, schema: {'$ref': '#/components/schemas/AlertStatus'}, description: Mac dinh OPEN.}
+        - {name: alertLevel, in: query, schema: {'$ref': '#/components/schemas/AlertLevel'}}
+        - {name: warehouseId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Danh sach canh bao ton kho.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/AdminAlertList'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/alerts/{alertId}/resolve:
+    post:
+      tags: [AdminAlerts]
+      operationId: adminResolveAlert
+      summary: Danh dau canh bao ton kho da xu ly
+      description: |
+        ADMIN hoac WAREHOUSE_STAFF chi kho minh phu trach.
+        Chuyen StockAlert.status OPEN -> RESOLVED.
+        Ghi resolvedBy=userId, resolvedAt=now().
+        Goi tren canh bao da RESOLVED tra 409 ALERT_ALREADY_RESOLVED.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: alertId, in: path, required: true, schema: {'$ref': '#/components/schemas/BigIntId'}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {'$ref': '#/components/schemas/ResolveAlertRequest'}
+      responses:
+        '200':
+          description: Canh bao da duoc danh dau xu ly.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/AlertRow'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '404': {'$ref': '#/components/responses/NotFound'}
+        '409':
+          description: Canh bao da duoc xu ly truoc do.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/Error'}
+              examples:
+                ALERT_ALREADY_RESOLVED:
+                  value: {statusCode: 409, code: ALERT_ALREADY_RESOLVED, message: Canh bao nay da duoc danh dau xu ly tu truoc.}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/analytics/overview:
+    get:
+      tags: [AdminAnalytics]
+      operationId: adminGetAnalyticsOverview
+      summary: Tong quan KPI doanh thu don hang canh bao ADMIN only
+      description: |
+        ADMIN only. WAREHOUSE_STAFF nhan 403.
+        KPI gom: totalRevenue don CONFIRMED+SHIPPING+DELIVERED trong ky,
+        orderCountByStatus, openAlertCount, criticalAlertCount, lowStockProductCount.
+        fromDate/toDate chi ap dung cho revenue va orderCount. Mac dinh 30 ngay gan nhat.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: fromDate, in: query, schema: {type: string, format: date}, description: Mac dinh 30 ngay truoc.}
+        - {name: toDate, in: query, schema: {type: string, format: date}, description: Mac dinh hom nay.}
+      responses:
+        '200':
+          description: Bo KPI tong quan.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/AnalyticsOverview'}
+              examples:
+                success:
+                  value:
+                    fromDate: "2026-09-10"
+                    toDate: "2026-10-10"
+                    totalRevenue: "125000000.00"
+                    currency: VND
+                    orderCountByStatus: {PENDING_PAYMENT: 12, CONFIRMED: 45, SHIPPING: 30, DELIVERED: 200, CANCELLED: 8}
+                    openAlertCount: 3
+                    criticalAlertCount: 1
+                    lowStockProductCount: 5
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/analytics/revenue:
+    get:
+      tags: [AdminAnalytics]
+      operationId: adminGetRevenueReport
+      summary: Bao cao doanh thu theo ngay tuan thang ADMIN only
+      description: |
+        ADMIN only. WAREHOUSE_STAFF nhan 403.
+        Chuoi thoi gian doanh thu theo granularity day/week/month.
+        Toi da 365 diem cho day, 52 cho week, 24 cho month.
+        Tra 400 neu khoang ngay vuot gioi han hoac fromDate > toDate.
+        Ky khong co doanh thu van xuat hien voi revenue 0.00.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: fromDate, in: query, required: true, schema: {type: string, format: date}}
+        - {name: toDate, in: query, required: true, schema: {type: string, format: date}}
+        - {name: granularity, in: query, schema: {type: string, enum: [day, week, month], default: day}}
+        - {name: warehouseId, in: query, schema: {type: string, format: uuid}, description: Loc theo kho xuat hang. Bo trong = toan he thong.}
+      responses:
+        '200':
+          description: Chuoi thoi gian doanh thu.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/RevenueReport'}
+              examples:
+                dailyRevenue:
+                  value:
+                    fromDate: "2026-10-01"
+                    toDate: "2026-10-10"
+                    granularity: day
+                    currency: VND
+                    data:
+                      - {period: "2026-10-01", revenue: "12000000.00", orderCount: 42, cancelledCount: 2}
+                      - {period: "2026-10-10", revenue: "15000000.00", orderCount: 55, cancelledCount: 0}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/analytics/inventory-summary:
+    get:
+      tags: [AdminAnalytics]
+      operationId: adminGetInventorySummary
+      summary: Tong hop ton kho da kho theo san pham ADMIN only
+      description: |
+        ADMIN only. WAREHOUSE_STAFF nhan 403.
+        Nhom theo san pham: totalStock, totalReserved, totalAvailable, warehouseCount, hasAlert.
+        Sap xep totalAvailable ASC san pham sap het truoc.
+        Dung GET /admin/inventory de xem chi tiet tung dong.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: lowStockOnly, in: query, schema: {type: boolean, default: false}}
+        - {name: search, in: query, schema: {type: string, maxLength: 100}}
+      responses:
+        '200':
+          description: Tong hop ton kho theo san pham.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/InventorySummaryReport'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/analytics/top-products:
+    get:
+      tags: [AdminAnalytics]
+      operationId: adminGetTopProducts
+      summary: San pham ban chay nhat trong ky ADMIN only
+      description: |
+        ADMIN only. WAREHOUSE_STAFF nhan 403.
+        Xep hang theo tong quantity tu OrderItem don CONFIRMED+SHIPPING+DELIVERED.
+        Toi da limit san pham mac dinh 10 toi da 50.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: fromDate, in: query, required: true, schema: {type: string, format: date}}
+        - {name: toDate, in: query, required: true, schema: {type: string, format: date}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 10}}
+        - {name: warehouseId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Danh sach san pham ban chay.
+          content:
+            application/json:
+              schema: {'$ref': '#/components/schemas/TopProductsReport'}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer JWT tu Auth (Khang). Payload can userId, role, isActive, mustChangePassword. Role ADMIN hoac WAREHOUSE_STAFF.
+
+  responses:
+    BadRequest:
+      description: Du lieu dau vao khong hop le.
+      content:
+        application/json:
+          schema: {'$ref': '#/components/schemas/Error'}
+          examples:
+            VALIDATION_ERROR: {value: {statusCode: 400, code: VALIDATION_ERROR, message: Du lieu khong hop le.}}
+    Unauthorized:
+      description: Chua xac thuc hoac token het han.
+      content:
+        application/json:
+          schema: {'$ref': '#/components/schemas/Error'}
+          examples:
+            UNAUTHORIZED: {value: {statusCode: 401, code: UNAUTHORIZED, message: Can dang nhap bang token hop le.}}
+    Forbidden:
+      description: Khong co quyen.
+      content:
+        application/json:
+          schema: {'$ref': '#/components/schemas/Error'}
+          examples:
+            FORBIDDEN: {value: {statusCode: 403, code: FORBIDDEN, message: Vai tro khong duoc phep thuc hien thao tac nay.}}
+            PASSWORD_CHANGE_REQUIRED: {value: {statusCode: 403, code: PASSWORD_CHANGE_REQUIRED, message: Can doi mat khau lan dau.}}
+            ACCOUNT_INACTIVE: {value: {statusCode: 403, code: ACCOUNT_INACTIVE, message: Tai khoan khong duoc phep su dung.}}
+    NotFound:
+      description: Khong tim thay tai nguyen.
+      content:
+        application/json:
+          schema: {'$ref': '#/components/schemas/Error'}
+          examples:
+            NOT_FOUND: {value: {statusCode: 404, code: ORDER_NOT_FOUND, message: Khong tim thay tai nguyen.}}
+    InternalError:
+      description: Loi he thong.
+      content:
+        application/json:
+          schema: {'$ref': '#/components/schemas/Error'}
+          examples:
+            INTERNAL_ERROR: {value: {statusCode: 500, code: INTERNAL_ERROR, message: Khong the xu ly yeu cau.}}
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+
+    BigIntId:
+      type: string
+      pattern: '^[1-9][0-9]{0,18}$'
+      maxLength: 19
+      description: BIGINT PostgreSQL serialize thanh chuoi. Khong dung Number.
+
+    Money:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,11})\.[0-9]{2}$'
+      maxLength: 15
+      description: Decimal(14,2) khong am, dung 2 chu so thap phan.
+
+    Currency:
+      type: string
+      enum: [VND]
+
+    OrderStatus:
+      type: string
+      enum: [PENDING_PAYMENT, CONFIRMED, SHIPPING, DELIVERED, CANCELLED]
+
+    AlertLevel:
+      type: string
+      enum: [WARNING, CRITICAL]
+
+    AlertStatus:
+      type: string
+      enum: [OPEN, RESOLVED]
+
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page: {type: integer, minimum: 1}
+        pageSize: {type: integer, minimum: 1, maximum: 100}
+        totalItems: {type: integer, minimum: 0}
+        totalPages: {type: integer, minimum: 0}
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [statusCode, code, message]
+      properties:
+        statusCode:
+          type: integer
+          enum: [400, 401, 403, 404, 409, 422, 500]
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - PASSWORD_CHANGE_REQUIRED
+            - ACCOUNT_INACTIVE
+            - ORDER_NOT_FOUND
+            - INVENTORY_NOT_FOUND
+            - ALERT_NOT_FOUND
+            - INVALID_ORDER_STATE
+            - ALERT_ALREADY_RESOLVED
+            - INTERNAL_ERROR
+          description: Ma loi may doc. Frontend xu ly theo code khong theo message.
+        message: {type: string, minLength: 1}
+      description: Envelope loi chuan. Khong chua SQL, token, stack trace.
+
+    AdminUpdateOrderStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          '$ref': '#/components/schemas/OrderStatus'
+          description: Phai hop le theo state machine trong mo ta endpoint.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Ly do huy chi dung khi status=CANCELLED. Trim truoc khi luu.
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Ghi chu noi bo ghi vao OrderStatusHistory.
+
+    RestockRequest:
+      type: object
+      additionalProperties: false
+      required: [quantity]
+      properties:
+        quantity: {type: integer, minimum: 1, maximum: 100000, description: So luong nhap them. So nguyen duong.}
+        note: {type: string, minLength: 1, maxLength: 500, description: Ghi chu nhap kho so PO nha cung cap. Ghi vao InventoryAuditLog.note.}
+
+    ResolveAlertRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note: {type: string, minLength: 1, maxLength: 500, description: Ghi chu xu ly tuy chon.}
+
+    OrderSummaryAdmin:
+      type: object
+      additionalProperties: false
+      required: [id, orderCode, userId, userEmail, status, grandTotal, currency, reservationExpiresAt, createdAt, updatedAt]
+      properties:
+        id: {'$ref': '#/components/schemas/Uuid'}
+        orderCode: {type: string, minLength: 1, maxLength: 32}
+        userId:
+          '$ref': '#/components/schemas/Uuid'
+          description: UUID chu don hang (users.id).
+        userEmail: {type: string, format: email, description: Email chu don de tra cuu nhanh tren Dashboard.}
+        status: {'$ref': '#/components/schemas/OrderStatus'}
+        grandTotal: {'$ref': '#/components/schemas/Money'}
+        currency: {'$ref': '#/components/schemas/Currency'}
+        reservationExpiresAt: {type: string, format: date-time, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    AdminOrderList:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items: {type: array, items: {'$ref': '#/components/schemas/OrderSummaryAdmin'}}
+        pagination: {'$ref': '#/components/schemas/PageInfo'}
+
+    PaymentSummary:
+      type: object
+      additionalProperties: false
+      required: [id, transactionRef, amount, currency, method, status, failureReason, callbackCount, processedAt, createdAt, updatedAt]
+      properties:
+        id: {'$ref': '#/components/schemas/Uuid'}
+        transactionRef: {type: string, maxLength: 64}
+        amount: {'$ref': '#/components/schemas/Money'}
+        currency: {'$ref': '#/components/schemas/Currency'}
+        method: {type: string, enum: [MOCK_CARD, MOCK_EWALLET, COD]}
+        status: {type: string, enum: [PENDING, SUCCESS, FAILED]}
+        failureReason: {type: string, nullable: true, maxLength: 255}
+        callbackCount: {type: integer, minimum: 0}
+        processedAt: {type: string, format: date-time, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    OrderStatusHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [id, fromStatus, toStatus, actorId, actorEmail, note, createdAt]
+      properties:
+        id: {'$ref': '#/components/schemas/Uuid'}
+        fromStatus:
+          '$ref': '#/components/schemas/OrderStatus'
+          nullable: true
+          description: null = don moi tao.
+        toStatus: {'$ref': '#/components/schemas/OrderStatus'}
+        actorId:
+          '$ref': '#/components/schemas/Uuid'
+          nullable: true
+          description: null = he thong tu dong (cron/callback).
+        actorEmail: {type: string, format: email, nullable: true}
+        note: {type: string, nullable: true, maxLength: 500}
+        createdAt: {type: string, format: date-time}
+
+    OrderItemAdmin:
+      type: object
+      additionalProperties: false
+      required: [id, productId, warehouseId, inventoryId, productName, sku, quantity, unitPrice, discountAmount, lineTotal]
+      properties:
+        id: {'$ref': '#/components/schemas/Uuid'}
+        productId: {'$ref': '#/components/schemas/Uuid'}
+        warehouseId: {'$ref': '#/components/schemas/Uuid'}
+        inventoryId:
+          '$ref': '#/components/schemas/BigIntId'
+          description: Admin duoc xem inventoryId de trace ton kho.
+        productName: {type: string, maxLength: 255}
+        sku: {type: string, maxLength: 64}
+        quantity: {type: integer, minimum: 1}
+        unitPrice: {'$ref': '#/components/schemas/Money'}
+        discountAmount: {'$ref': '#/components/schemas/Money'}
+        lineTotal: {'$ref': '#/components/schemas/Money'}
+
+    OrderDetailsAdmin:
+      type: object
+      additionalProperties: false
+      required: [id, orderCode, userId, userEmail, status, grandTotal, currency, subtotal, discountTotal, shippingFee, shippingRecipient, shippingPhone, shippingAddress, shippingRegion, reservationExpiresAt, confirmedAt, cancelledAt, cancelledReason, createdAt, updatedAt, items, payments, statusHistory]
+      properties:
+        id: {'$ref': '#/components/schemas/Uuid'}
+        orderCode: {type: string, maxLength: 32}
+        userId: {'$ref': '#/components/schemas/Uuid'}
+        userEmail: {type: string, format: email}
+        status: {'$ref': '#/components/schemas/OrderStatus'}
+        grandTotal: {'$ref': '#/components/schemas/Money'}
+        currency: {'$ref': '#/components/schemas/Currency'}
+        subtotal: {'$ref': '#/components/schemas/Money'}
+        discountTotal: {'$ref': '#/components/schemas/Money'}
+        shippingFee: {'$ref': '#/components/schemas/Money'}
+        shippingRecipient: {type: string, maxLength: 150}
+        shippingPhone: {type: string, maxLength: 20}
+        shippingAddress: {type: string, maxLength: 500}
+        shippingRegion: {type: string, maxLength: 100, nullable: true}
+        reservationExpiresAt: {type: string, format: date-time, nullable: true}
+        confirmedAt: {type: string, format: date-time, nullable: true}
+        cancelledAt: {type: string, format: date-time, nullable: true}
+        cancelledReason: {type: string, maxLength: 255, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        items: {type: array, minItems: 1, items: {'$ref': '#/components/schemas/OrderItemAdmin'}}
+        payments: {type: array, items: {'$ref': '#/components/schemas/PaymentSummary'}}
+        statusHistory:
+          type: array
+          items: {'$ref': '#/components/schemas/OrderStatusHistoryEntry'}
+          description: Sap xep createdAt ASC.
+
+    InventoryRow:
+      type: object
+      additionalProperties: false
+      required: [inventoryId, productId, productName, sku, warehouseId, warehouseName, warehouseCode, stock, reservedStock, availableStock, effectiveThreshold, alertLevel, lastRestockedAt]
+      properties:
+        inventoryId: {'$ref': '#/components/schemas/BigIntId'}
+        productId: {'$ref': '#/components/schemas/Uuid'}
+        productName: {type: string, maxLength: 255}
+        sku: {type: string, maxLength: 64}
+        warehouseId: {'$ref': '#/components/schemas/Uuid'}
+        warehouseName: {type: string, maxLength: 150}
+        warehouseCode: {type: string, maxLength: 32}
+        stock: {type: integer, minimum: 0, description: Tong ton kho vat ly ke ca hang dang giu cho.}
+        reservedStock: {type: integer, minimum: 0, description: So luong bi giu cho boi don PENDING_PAYMENT chua het han.}
+        availableStock: {type: integer, minimum: 0, description: stock - reservedStock. So luong co the ban them.}
+        effectiveThreshold: {type: integer, minimum: 0, description: inventory.threshold neu khac null nguoc lai warehouse.defaultLowStockThreshold.}
+        alertLevel:
+          '$ref': '#/components/schemas/AlertLevel'
+          nullable: true
+          description: null = khong co canh bao OPEN hien tai.
+        lastRestockedAt: {type: string, format: date-time, nullable: true}
+
+    AdminInventoryList:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items: {type: array, items: {'$ref': '#/components/schemas/InventoryRow'}}
+        pagination: {'$ref': '#/components/schemas/PageInfo'}
+
+    AlertRow:
+      type: object
+      additionalProperties: false
+      required: [id, inventoryId, productId, productName, sku, warehouseId, warehouseName, alertLevel, status, stockAtTrigger, availableAtTrigger, thresholdAtTrigger, triggeredAt, resolvedAt, resolvedBy]
+      properties:
+        id: {'$ref': '#/components/schemas/BigIntId'}
+        inventoryId: {'$ref': '#/components/schemas/BigIntId'}
+        productId: {'$ref': '#/components/schemas/Uuid'}
+        productName: {type: string, maxLength: 255}
+        sku: {type: string, maxLength: 64}
+        warehouseId: {'$ref': '#/components/schemas/Uuid'}
+        warehouseName: {type: string, maxLength: 150}
+        alertLevel: {'$ref': '#/components/schemas/AlertLevel'}
+        status: {'$ref': '#/components/schemas/AlertStatus'}
+        stockAtTrigger: {type: integer, minimum: 0, description: Snapshot stock luc canh bao kich hoat.}
+        availableAtTrigger: {type: integer, minimum: 0, description: Snapshot availableStock luc canh bao kich hoat.}
+        thresholdAtTrigger: {type: integer, minimum: 0, description: Snapshot nguong hieu luc luc canh bao kich hoat.}
+        triggeredAt: {type: string, format: date-time}
+        resolvedAt: {type: string, format: date-time, nullable: true}
+        resolvedBy:
+          '$ref': '#/components/schemas/Uuid'
+          nullable: true
+          description: userId nguoi danh dau xu ly. null = chua resolve.
+
+    AdminAlertList:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items: {type: array, items: {'$ref': '#/components/schemas/AlertRow'}}
+        pagination: {'$ref': '#/components/schemas/PageInfo'}
+
+    OrderCountByStatus:
+      type: object
+      additionalProperties: false
+      required: [PENDING_PAYMENT, CONFIRMED, SHIPPING, DELIVERED, CANCELLED]
+      properties:
+        PENDING_PAYMENT: {type: integer, minimum: 0}
+        CONFIRMED: {type: integer, minimum: 0}
+        SHIPPING: {type: integer, minimum: 0}
+        DELIVERED: {type: integer, minimum: 0}
+        CANCELLED: {type: integer, minimum: 0}
+
+    AnalyticsOverview:
+      type: object
+      additionalProperties: false
+      required: [fromDate, toDate, totalRevenue, currency, orderCountByStatus, openAlertCount, criticalAlertCount, lowStockProductCount]
+      properties:
+        fromDate: {type: string, format: date}
+        toDate: {type: string, format: date}
+        totalRevenue:
+          '$ref': '#/components/schemas/Money'
+          description: Tong grandTotal don CONFIRMED+SHIPPING+DELIVERED trong ky. Khong tinh PENDING_PAYMENT va CANCELLED.
+        currency: {'$ref': '#/components/schemas/Currency'}
+        orderCountByStatus:
+          '$ref': '#/components/schemas/OrderCountByStatus'
+          description: So don theo trang thai trong ky (createdAt trong [fromDate, toDate]).
+        openAlertCount: {type: integer, minimum: 0, description: So StockAlert OPEN snapshot tai thoi diem goi khong loc theo ky.}
+        criticalAlertCount: {type: integer, minimum: 0, description: Trong openAlertCount so alert CRITICAL.}
+        lowStockProductCount: {type: integer, minimum: 0, description: So dong Inventory dang availableStock le effectiveThreshold snapshot tai thoi diem goi.}
+
+    RevenuePeriod:
+      type: object
+      additionalProperties: false
+      required: [period, revenue, orderCount, cancelledCount]
+      properties:
+        period: {type: string, format: date, description: Ngay dau ky. day=ngay do week=T2 dau tuan month=ngay 1 thang.}
+        revenue: {'$ref': '#/components/schemas/Money'}
+        orderCount: {type: integer, minimum: 0, description: So don CONFIRMED+SHIPPING+DELIVERED trong ky.}
+        cancelledCount: {type: integer, minimum: 0, description: So don CANCELLED trong ky tham khao khong tinh vao revenue.}
+
+    RevenueReport:
+      type: object
+      additionalProperties: false
+      required: [fromDate, toDate, granularity, currency, data]
+      properties:
+        fromDate: {type: string, format: date}
+        toDate: {type: string, format: date}
+        granularity: {type: string, enum: [day, week, month]}
+        currency: {'$ref': '#/components/schemas/Currency'}
+        data:
+          type: array
+          items: {'$ref': '#/components/schemas/RevenuePeriod'}
+          description: Sap xep period ASC. Ky khong co doanh thu van xuat hien voi revenue 0.00.
+
+    InventorySummaryItem:
+      type: object
+      additionalProperties: false
+      required: [productId, productName, sku, totalStock, totalReserved, totalAvailable, warehouseCount, hasAlert]
+      properties:
+        productId: {'$ref': '#/components/schemas/Uuid'}
+        productName: {type: string, maxLength: 255}
+        sku: {type: string, maxLength: 64}
+        totalStock: {type: integer, minimum: 0, description: Tong stock tren tat ca kho.}
+        totalReserved: {type: integer, minimum: 0, description: Tong reservedStock tren tat ca kho.}
+        totalAvailable: {type: integer, minimum: 0, description: Tong availableStock tren tat ca kho.}
+        warehouseCount: {type: integer, minimum: 0, description: So kho co dong Inventory.}
+        hasAlert: {type: boolean, description: true neu co it nhat 1 StockAlert OPEN lien ket.}
+
+    InventorySummaryReport:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items: {type: array, items: {'$ref': '#/components/schemas/InventorySummaryItem'}}
+        pagination: {'$ref': '#/components/schemas/PageInfo'}
+
+    TopProductItem:
+      type: object
+      additionalProperties: false
+      required: [rank, productId, productName, sku, totalQuantitySold, totalRevenue, orderCount]
+      properties:
+        rank: {type: integer, minimum: 1}
+        productId: {'$ref': '#/components/schemas/Uuid'}
+        productName: {type: string, maxLength: 255}
+        sku: {type: string, maxLength: 64}
+        totalQuantitySold: {type: integer, minimum: 0, description: Tong quantity tu OrderItem don dong cua trong ky.}
+        totalRevenue: {'$ref': '#/components/schemas/Money'}
+        orderCount: {type: integer, minimum: 0, description: So don rieng biet chua san pham.}
+
+    TopProductsReport:
+      type: object
+      additionalProperties: false
+      required: [fromDate, toDate, data]
+      properties:
+        fromDate: {type: string, format: date}
+        toDate: {type: string, format: date}
+        data:
+          type: array
+          items: {'$ref': '#/components/schemas/TopProductItem'}
+          description: Sap xep rank ASC (rank 1 = ban nhieu nhat).
+
+x-contract-status: DRAFT_FOR_TEAM_REVIEW
+x-source-commit: "8581411"
+x-based-on: docs/api/openapi.yaml v0.1.1 (Huy)
+
+x-controllers:
+  AdminOrdersController:
+    nestjsPrefix: /admin/orders
+    relatedPaths:
+      - /admin/orders
+      - /admin/orders/{orderId}
+      - /admin/orders/{orderId}/status
+      - /admin/inventory
+      - /admin/inventory/{inventoryId}/restock
+      - /admin/alerts
+      - /admin/alerts/{alertId}/resolve
+    roles: [ADMIN, WAREHOUSE_STAFF]
+    note: >
+      WAREHOUSE_STAFF chi thay du lieu kho minh.
+      Schema hien chua co bang mapping WAREHOUSE_STAFF vs warehouseId. Xem Q01.
+
+  AdminAnalyticsController:
+    nestjsPrefix: /admin/analytics
+    relatedPaths:
+      - /admin/analytics/overview
+      - /admin/analytics/revenue
+      - /admin/analytics/inventory-summary
+      - /admin/analytics/top-products
+    roles: [ADMIN]
+    note: Dung RolesGuard(UserRole.ADMIN) tren toan Controller.
+
+x-open-questions:
+  - id: Q01
+    question: >
+      Schema chua co field/bang mapping WAREHOUSE_STAFF vs warehouseId phu trach.
+      Can them field warehouseId vao users hoac bang staff_warehouse_assignments.
+      De xuat Khang them migration.
+    affects: [adminListOrders, adminGetOrder, adminUpdateOrderStatus, adminListInventory, adminRestockInventory, adminListAlerts, adminResolveAlert]
+  - id: Q02
+    question: >
+      OrderStatusHistory chua co model trong schema.prisma (tuan 1).
+      adminGetOrder tra statusHistory - can Khang xac nhan hoac them model.
+    affects: [adminGetOrder]
+  - id: Q03
+    question: >
+      adminRestockInventory de xuat tu dong resolve StockAlert OPEN neu availableStock vuot threshold sau restock.
+      Nhom can chot: tu dong hay de nhan vien tu resolve thu cong?
+    affects: [adminRestockInventory, adminResolveAlert]
+  - id: Q04
+    question: >
+      Revenue tinh theo createdAt hay confirmedAt cua don?
+      De xuat 0.1 dung createdAt cho don gian.
+    affects: [adminGetRevenueReport, adminGetAnalyticsOverview]
+
+x-error-status-map:
+  VALIDATION_ERROR: 400
+  UNAUTHORIZED: 401
+  FORBIDDEN: 403
+  PASSWORD_CHANGE_REQUIRED: 403
+  ACCOUNT_INACTIVE: 403
+  ORDER_NOT_FOUND: 404
+  INVENTORY_NOT_FOUND: 404
+  ALERT_NOT_FOUND: 404
+  INVALID_ORDER_STATE: 409
+  ALERT_ALREADY_RESOLVED: 409
+  INTERNAL_ERROR: 500
