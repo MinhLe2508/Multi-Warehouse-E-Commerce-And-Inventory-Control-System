@@ -1,4 +1,3 @@
-
 /**
  RolesGuard thực hiện phân quyền theo vai trò (RBAC).
  PHÂN BIỆT:
@@ -20,19 +19,20 @@
  JwtAuthGuard -> RolesGuard.
  */
 
-import { Injectable, type CanActivate, type ExecutionContext, } from '@nestjs/common';
+import {
+  Injectable,
+  type CanActivate,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { type UserRole } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { type AuthenticatedUser, } from '../decorators/current-user.decorator';
-
+import { type AuthenticatedUser } from '../decorators/current-user.decorator';
 
 // ROLES GUARD
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
   /**
     Quyết định người dùng có được phép truy cập endpoint hay không.
@@ -46,18 +46,12 @@ export class RolesGuard implements CanActivate {
     6. Role không hợp lệ -> từ chối (HTTP 403).
    */
   canActivate(context: ExecutionContext): boolean {
-
     // Đọc metadata phân quyền.
     // Ưu tiên @Roles(...) khai báo tại method.
     // Nếu method không khai báo, sử dụng metadata của Controller.
-    const requiredRoles = this.reflector.getAllAndOverride<
-      UserRole[]
-    >(
+    const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>(
       ROLES_KEY,
-      [
-        context.getHandler(),
-        context.getClass(),
-      ],
+      [context.getHandler(), context.getClass()],
     );
 
     // Route không khai báo @Roles(...).

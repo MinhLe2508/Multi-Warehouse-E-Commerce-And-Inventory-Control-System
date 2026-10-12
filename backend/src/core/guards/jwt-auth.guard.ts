@@ -1,4 +1,3 @@
-
 /**
   JwtAuthGuard xác thực Access Token trước khi request
   được phép truy cập các Controller được bảo vệ.
@@ -19,10 +18,13 @@
   Nếu dùng Global Guards, JwtAuthGuard phải được đăng ký trước RolesGuard.
  */
 
-import { Injectable, UnauthorizedException, type ExecutionContext, } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
-
 
 // 1. PUBLIC METADATA KEY
 /**
@@ -39,9 +41,7 @@ export const IS_PUBLIC_KEY = 'isPublic';
 // 2. JWT AUTH GUARD
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(
-    private readonly reflector: Reflector,
-  ) {
+  constructor(private readonly reflector: Reflector) {
     super();
   }
 
@@ -56,13 +56,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     Passport JWT sẽ sử dụng JwtStrategy đã được đăng ký trong hệ thống.
    */
   canActivate(context: ExecutionContext) {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(
-      IS_PUBLIC_KEY,
-      [
-        context.getHandler(),
-        context.getClass(),
-      ],
-    );
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     // Endpoint công khai: bỏ qua JWT Authentication.
     if (isPublic) {
@@ -85,10 +82,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     err: unknown,
     user: TUser | false | null | undefined,
   ): TUser {
-
     // Có lỗi phát sinh khi xác thực.
-    if (err) {
+    if (err instanceof Error) {
       throw err;
+    } else if (err) {
+      throw new UnauthorizedException(
+        typeof err === 'string' ? err : 'Lỗi xác thực người dùng.',
+      );
     }
 
     // Không xác thực được người dùng.
