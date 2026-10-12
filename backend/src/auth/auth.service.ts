@@ -1,21 +1,17 @@
 /**
- * Multi-Warehouse E-Commerce & Inventory Control System
- * File: backend/src/auth/auth.service.ts
- * Owner: P4 (Backend Data Lead)
- *
- * NHIỆM VỤ:
- * - Customer đăng ký, Admin tạo Staff, gửi email thiết lập mật khẩu.
- * - Hoàn tất onboarding qua token một lần; đăng nhập / đăng xuất.
- * - Refresh Token opaque (SHA-256 trong DB), rotate mỗi lần refresh.
- * - Đổi mật khẩu, quên mật khẩu, đặt lại mật khẩu và gửi lại email.
- *
- * QUY ƯỚC:
- * - Không sử dụng mật khẩu mặc định FiveTL524.
- * - isActive là trạng thái khóa/mở khóa do Admin quản lý.
- * - emailVerifiedAt phản ánh hoàn tất onboarding (ADMIN seed ngoại lệ).
- * - Token email và cập nhật User phải cùng transaction khi tiêu thụ.
- * - Mọi email được gửi SAU KHI transaction tạo token đã commit.
- * - Các interface Input tạm thời; DTO sẽ chốt sau khi review Controller.
+  NHIỆM VỤ:
+  - Customer đăng ký, Admin tạo Staff, gửi email thiết lập mật khẩu.
+  - Hoàn tất onboarding qua token một lần; đăng nhập / đăng xuất.
+  - Refresh Token opaque (SHA-256 trong DB), rotate mỗi lần refresh.
+  - Đổi mật khẩu, quên mật khẩu, đặt lại mật khẩu và gửi lại email.
+ 
+  QUY ƯỚC:
+  - Không sử dụng mật khẩu mặc định FiveTL524.
+  - isActive là trạng thái khóa/mở khóa do Admin quản lý.
+  - emailVerifiedAt phản ánh hoàn tất onboarding (ADMIN seed ngoại lệ).
+  - Token email và cập nhật User phải cùng transaction khi tiêu thụ.
+  - Mọi email được gửi SAU KHI transaction tạo token đã commit.
+  - Các interface Input tạm thời; DTO sẽ chốt sau khi review Controller.
  */
 import {
   BadRequestException,
@@ -78,7 +74,6 @@ export interface ResetPasswordInput {
 export interface AuthTokenPair {
   accessToken: string;
   refreshToken: string;
-  /** Unix timestamp tính bằng giây, lấy từ claim exp thực tế của JWT. */
   accessTokenExpiresAt: number;
 }
 export interface PublicUserProfile {
@@ -100,8 +95,8 @@ interface PendingAccountResult {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  // Hash giả tạo một lần khi service khởi tạo để chống đoán username qua
-  // chênh lệch thời gian. Không hash mới cho mỗi lần đăng nhập thất bại.
+  // Hash giả tạo một lần khi service khởi tạo để chống đoán username qua chênh lệch thời gian. 
+  // Không hash mới cho mỗi lần đăng nhập thất bại.
   private readonly dummyPasswordHash = bcrypt.hash(
     randomBytes(32).toString('hex'),
     BCRYPT_SALT_ROUNDS,
@@ -141,7 +136,7 @@ export class AuthService {
       // Frontend cần hướng dẫn sử dụng chức năng gửi lại email.
       this.logger.error('Tạo Customer thành công nhưng gửi email xác thực thất bại.');
       throw new ServiceUnavailableException(
-        'Tài khoản đã được tạo nhưng chưa gửi được email. Vui lòng thử gửi lại email xác thực.',
+        'Tài khoản đã được tạo nhưng chưa gửi được Email. Vui lòng thử gửi lại Email xác thực.',
       );
     }
 
@@ -170,9 +165,9 @@ export class AuthService {
         setupUrl: this.buildFrontendActionUrl('staff-invitation', actionToken.rawToken),
       });
     } catch {
-      this.logger.error('Tạo Staff thành công nhưng gửi email invitation thất bại.');
+      this.logger.error('Tạo Staff thành công nhưng gửi Email Invitation thất bại.');
       throw new ServiceUnavailableException(
-        'Tài khoản Staff đã được tạo nhưng chưa gửi được thư mời. Admin cần gửi lại invitation.',
+        'Tài khoản Staff đã được tạo nhưng chưa gửi được thư mời. Admin cần gửi lại Invitation.',
       );
     }
 
@@ -190,15 +185,13 @@ export class AuthService {
   ): Promise<PublicUserProfile> {
     this.validateNewPassword(input.password);
 
-    // Kiểm tra trước để không tốn bcrypt cho token sai. Đây chỉ là precheck;
-    // consumeToken trong transaction mới là xác nhận cuối cùng.
+    // Kiểm tra trước để không tốn bcrypt cho token sai.
     if (!(await this.accountActionTokenService.verifyToken(input.token, purpose))) {
       throw new BadRequestException('Liên kết không hợp lệ hoặc đã hết hạn.');
     }
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_SALT_ROUNDS);
 
     return this.prisma.$transaction(async (tx) => {
-      // consumeToken khóa dòng User và đánh dấu usedAt TRONG transaction này.
       const consumed = await this.accountActionTokenService.consumeToken(
         input.token,
         purpose,
@@ -226,7 +219,7 @@ export class AuthService {
         throw new BadRequestException('Tài khoản không đủ điều kiện kích hoạt.');
       }
 
-      // Không đổi isActive: hoàn tất onboarding KHÔNG có quyền mở khóa Admin.
+      // Không đổi isActive
       return tx.user.update({
         where: { id: consumed.userId },
         data: {
@@ -259,8 +252,7 @@ export class AuthService {
       throw new UnauthorizedException(invalidMessage);
     }
 
-    // Khóa User để không cấp Refresh Token xen giữa thao tác đổi mật khẩu
-    // và thu hồi tất cả Refresh Token của User.
+    // Khóa User để không cấp Refresh Token xen giữa thao tác đổi mật khẩu và thu hồi tất cả Refresh Token của User.
     return this.prisma.$transaction(async (tx) => {
       await this.lockUser(tx, existing.id);
       const user = await tx.user.findUnique({
@@ -306,9 +298,6 @@ export class AuthService {
       const now = new Date();
 
       if (!token || token.revokedAt !== null || token.expiresAt <= now) {
-        // Cột revokedAt chưa cho biết lý do (rotate, logout, đổi mật khẩu).
-        // Không tự thu hồi mọi thiết bị vì một token cũ có thể bị gửi lại
-        // bởi hai request hợp lệ hoặc retry sau lỗi mạng.
         throw new UnauthorizedException('Refresh Token không hợp lệ hoặc đã hết hạn.');
       }
 
@@ -338,28 +327,10 @@ export class AuthService {
   // =========================================================================
   // 6. ĐĂNG XUẤT — THU HỒI ĐÚNG REFRESH TOKEN ĐƯỢC GỬI
   // =========================================================================
-
-/**
- * Đăng xuất một phiên đăng nhập của người dùng.
- *
- * MỤC ĐÍCH:
- * Thu hồi đúng Refresh Token của tài khoản đang gọi API.
- *
- * NGUYÊN TẮC BẢO MẬT:
- * - userId lấy từ Access Token đã được JwtStrategy xác thực.
- * - refreshToken lấy từ request body.
- * - Chỉ thu hồi token nếu nó thuộc đúng userId.
- * - Không lưu hoặc ghi log Refresh Token gốc.
- * - Nếu token không tồn tại hoặc đã thu hồi, không báo lỗi.
- *
- * Không ảnh hưởng đến Refresh Token của các thiết bị khác.
- */
   async logout(
     userId: string,
     refreshToken: string,
   ): Promise<void> {
-    // Kiểm tra định dạng Refresh Token trước khi băm.
-    // Refresh Token do hệ thống tạo là chuỗi 64 ký tự hex.
     if (
       typeof refreshToken !== 'string' ||
       !/^[0-9a-f]{64}$/.test(refreshToken)
@@ -442,7 +413,6 @@ export class AuthService {
     });
     if (!user || !this.canAuthenticate(user)) return;
 
-    // Lỗi gửi thư không được thay đổi response dựa vào email có tồn tại.
     try {
       const action = await this.accountActionTokenService.createToken(
         user.id,
@@ -454,7 +424,7 @@ export class AuthService {
         resetUrl: this.buildFrontendActionUrl('reset-password', action.rawToken),
       });
     } catch {
-      this.logger.error('Không thể xử lý email quên mật khẩu; cần kiểm tra cấu hình SMTP/database.');
+      this.logger.error('Không thể xử lý Email quên mật khẩu. Cần kiểm tra cấu hình SMTP/DataBase.');
     }
   }
 
@@ -528,11 +498,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Gửi lại invitation cho Staff chưa hoàn tất onboarding.
-   * Chỉ expose phương thức này qua Admin API có @Roles(UserRole.ADMIN).
-   * Cần thêm cooldown/rate limit tại endpoint.
-   */
   async resendStaffInvitation(email: string): Promise<void> {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.prisma.user.findUnique({
@@ -558,12 +523,6 @@ export class AuthService {
   // =========================================================================
   // 11. CÁC HÀM DÙNG CHUNG (PRIVATE)
   // =========================================================================
-
-  /**
-   * Tạo User + AccountActionToken cùng transaction.
-   * Nếu username đụng UNIQUE do hai request đồng thời, thử tên mới.
-   * Nếu email đụng UNIQUE, trả 409; không dựa duy nhất vào precheck.
-   */
   private async createPendingAccount(
     input: { email: string; fullName: string; phone: string | null },
     role: typeof UserRole.CUSTOMER | typeof UserRole.WAREHOUSE_STAFF,
@@ -593,7 +552,7 @@ export class AuthService {
               phone: input.phone,
               passwordHash,
               role,
-              isActive: true, // Chưa onboarding được phân biệt bằng emailVerifiedAt.
+              isActive: true,
               emailVerifiedAt: null,
               mustChangePassword: false,
             },
@@ -620,7 +579,6 @@ export class AuthService {
     throw new ConflictException('Không thể tạo tên đăng nhập duy nhất. Vui lòng thử lại.');
   }
 
-  /** Cấp một Access JWT + một Refresh Token opaque trong cùng DB client. */
   private async issueTokenPair(
     userId: string,
     tx: Prisma.TransactionClient,
@@ -639,7 +597,7 @@ export class AuthService {
     const payload: JwtPayload = { sub: userId, type: 'access' };
     const accessToken = await this.jwtService.signAsync(payload, {
       secret,
-      algorithm: 'HS256', // Phải khớp JwtStrategy.algorithms.
+      algorithm: 'HS256',
       expiresIn: accessSeconds,
     });
     const decoded = this.jwtService.decode(accessToken) as { exp?: number } | null;
@@ -658,11 +616,6 @@ export class AuthService {
     return { accessToken, refreshToken, accessTokenExpiresAt: decoded.exp };
   }
 
-  /**
-   * Khóa dòng User để tuần tự hóa login/refresh/change-password với nhau.
-   * Cùng thứ tự khóa như AccountActionTokenService: User trước, token sau.
-   * $queryRaw dạng tagged template chống SQL injection; id là UUID.
-   */
   private async lockUser(tx: Prisma.TransactionClient, userId: string): Promise<void> {
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "users" WHERE "id" = ${userId}::uuid FOR UPDATE
@@ -672,7 +625,7 @@ export class AuthService {
     }
   }
 
-  /** Trạng thái cho phép đăng nhập/cấp token, nhất quán với JwtStrategy. */
+  // Trạng thái cho phép đăng nhập/cấp token, nhất quán với JwtStrategy.
   private canAuthenticate(user: {
     isActive: boolean;
     role: UserRole;
@@ -683,7 +636,7 @@ export class AuthService {
     );
   }
 
-  /** Những field công khai được phép trả cho client; không có passwordHash. */
+  // Những field công khai được phép trả cho client; không có passwordHash
   private publicUserSelect() {
     return {
       id: true as const,
@@ -695,7 +648,7 @@ export class AuthService {
     };
   }
 
-  /** Chỉ trích xuất thông tin công khai từ đối tượng User. */
+  // Chỉ trích xuất thông tin công khai từ đối tượng User.
   private toPublicUser(user: PublicUserProfile): PublicUserProfile {
     return {
       id: user.id,
@@ -707,7 +660,7 @@ export class AuthService {
     };
   }
 
-  /** Sinh username từ local-part email, có fallback nếu toàn ký tự đặc biệt. */
+  // Sinh username từ local-part email, có fallback nếu toàn ký tự đặc biệt
   private generateUsernameCandidate(email: string, attempt: number): string {
     const localPart = email.split('@')[0] ?? '';
     const base = localPart.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 20) || 'user';
@@ -738,11 +691,11 @@ export class AuthService {
     return phone.trim() || null;
   }
 
-  /** Bcrypt chỉ sử dụng tối đa 72 byte đầu; giới hạn để tránh cắt cụt bí mật. */
+  // Bcrypt chỉ sử dụng tối đa 72 byte đầu; giới hạn để tránh cắt cụt bí mật
   private validateNewPassword(password: unknown): asserts password is string {
     if (typeof password !== 'string' || password.length < 8 ||
         Buffer.byteLength(password, 'utf8') > 72) {
-      throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự và không quá 72 byte UTF-8.');
+      throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự.');
     }
   }
 
@@ -754,10 +707,7 @@ export class AuthService {
     return createHash('sha256').update(rawToken).digest('hex');
   }
 
-  /**
-   * Dựng link email; không log URL này vì có token gốc.
-   * FRONTEND_ORIGIN phải là origin đáng tin, cấu hình qua .env.
-   */
+  // Dựng link email; không log URL này vì có token gốc.
   private buildFrontendActionUrl(
     slug: 'verify-email' | 'staff-invitation' | 'reset-password',
     rawToken: string,
@@ -772,17 +722,13 @@ export class AuthService {
     return url.toString();
   }
 
-  /**
-   * Chỉ chấp nhận 15m / 7d hoặc chuỗi tương tự có đơn vị s,m,h,d.
-   * Sai cấu hình -> ném lỗi, không âm thầm trả 0 giây.
-   */
   private parseExpiresInToSeconds(value: string): number {
     const match = /^(\d+)(s|m|h|d)$/.exec(value.trim());
     if (!match) throw new Error('Định dạng thời hạn token không hợp lệ.');
     const unitSeconds: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
     const seconds = Number(match[1]) * unitSeconds[match[2]];
     if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 365 * 86400) {
-      throw new Error('Thời hạn token phải là số nguyên dương tối đa 365 ngày.');
+      throw new Error('Thời hạn Token phải là số nguyên dương tối đa 365 ngày.');
     }
     return seconds;
   }
