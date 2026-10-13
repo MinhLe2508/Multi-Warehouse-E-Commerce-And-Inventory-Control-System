@@ -1,4 +1,3 @@
-
 /**
 Định nghĩa JWT Strategy cho Passport, dùng để xác thực Access Token trước khi cho phép người dùng truy cập các endpoint được bảo vệ.
 NGUYÊN TẮC BẢO MẬT:
@@ -11,17 +10,22 @@ NGUYÊN TẮC BẢO MẬT:
   - Không tự gửi email, cấp token hoặc đổi mật khẩu tại đây.
  */
 
-import { Injectable, UnauthorizedException, } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy, } from 'passport-jwt';
+import { ExtractJwt, Strategy } from 'passport-jwt';
 import { isUUID } from 'class-validator';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { type AuthenticatedUser, } from '../../core/decorators/current-user.decorator';
+import { type AuthenticatedUser } from '../../core/decorators/current-user.decorator';
 
 // JWT ACCESS PAYLOAD
 // Khai báo hình dạng dữ liệu bên trong JWT Access Token.
-export interface JwtPayload { sub: string; type: 'access'; iat?: number; exp?: number; }
+export interface JwtPayload {
+  sub: string;
+  type: 'access';
+  iat?: number;
+  exp?: number;
+}
 
 // ĐỌC JWT ACCESS SECRET
 // Đọc JWT_ACCESS_SECRET từ biến môi trường
@@ -30,9 +34,7 @@ function getJwtAccessSecret(): string {
   const secret = process.env.JWT_ACCESS_SECRET;
 
   if (!secret || secret.trim().length === 0) {
-    throw new Error(
-      'JWT_ACCESS_SECRET chưa được cấu hình hoặc đang rỗng.',
-    );
+    throw new Error('JWT_ACCESS_SECRET chưa được cấu hình hoặc đang rỗng.');
   }
 
   return secret;
@@ -40,13 +42,8 @@ function getJwtAccessSecret(): string {
 
 // JWT STRATEGY
 @Injectable()
-export class JwtStrategy extends PassportStrategy(
-  Strategy,
-  'jwt',
-) {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  constructor(private readonly prisma: PrismaService) {
     // Cấu hình Passport JWT Strategy
     super({
       // Lấy Access Token từ HTTP Authorization header.
@@ -63,25 +60,15 @@ export class JwtStrategy extends PassportStrategy(
 
   // VALIDATE ACCESS TOKEN
   // Passport gọi phương thức này sau khi JWT đã được xác minh chữ ký và kiểm tra thời hạn thành công.
-  async validate(
-    payload: JwtPayload,
-  ): Promise<AuthenticatedUser> {
-
+  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     // Kiểm tra loại token
     if (!payload || payload.type !== 'access') {
-      throw new UnauthorizedException(
-        'Access Token không hợp lệ.',
-      );
+      throw new UnauthorizedException('Access Token không hợp lệ.');
     }
 
     // Kiểm tra claim "sub"
-    if (
-      typeof payload.sub !== 'string' ||
-      !isUUID(payload.sub)
-    ) {
-      throw new UnauthorizedException(
-        'Access Token không hợp lệ.',
-      );
+    if (typeof payload.sub !== 'string' || !isUUID(payload.sub)) {
+      throw new UnauthorizedException('Access Token không hợp lệ.');
     }
 
     // Kiểm tra claim "exp"
@@ -91,9 +78,7 @@ export class JwtStrategy extends PassportStrategy(
       !Number.isSafeInteger(payload.exp) ||
       payload.exp <= 0
     ) {
-      throw new UnauthorizedException(
-        'Access Token không hợp lệ.',
-      );
+      throw new UnauthorizedException('Access Token không hợp lệ.');
     }
 
     // Truy vấn User hiện tại từ PostgreSQL
@@ -129,10 +114,7 @@ export class JwtStrategy extends PassportStrategy(
     }
 
     // Kiểm tra trạng thái xác thực email
-    if (
-      user.role !== UserRole.ADMIN &&
-      user.emailVerifiedAt === null
-    ) {
+    if (user.role !== UserRole.ADMIN && user.emailVerifiedAt === null) {
       throw new UnauthorizedException(
         'Tài khoản chưa hoàn tất xác thực Email.',
       );

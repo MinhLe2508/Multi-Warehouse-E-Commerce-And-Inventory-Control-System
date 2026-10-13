@@ -1,4 +1,4 @@
-// Mục đích: 
+// Mục đích:
 // - Khai báo AuthModule của NestJS — "đóng gói" toàn bộ Controller, Service và Strategy của hệ thống xác thực thành 1 module hoàn chỉnh
 // - EXPORT "AuthService" ra ngoài để các module khác có thể INJECT và gọi trực tiếp các method nghiệp vụ như "createStaff()"
 
@@ -34,7 +34,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   ],
 
   controllers: [AuthController],
-  providers: [ AuthService, AccountActionTokenService, JwtStrategy, ],
+  providers: [AuthService, AccountActionTokenService, JwtStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}

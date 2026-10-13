@@ -23,24 +23,26 @@
   - Việc tiêu thụ token phải nằm cùng transaction với hành động nghiệp vụ do AuthService thực hiện.
  */
 
-import { Injectable, BadRequestException, NotFoundException, } from '@nestjs/common';
-import { randomBytes, createHash, } from 'node:crypto';
-import { AccountActionPurpose, type Prisma, } from '@prisma/client';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomBytes, createHash } from 'node:crypto';
+import { AccountActionPurpose, type Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-
 
 // Kết quả khi tạo một token hành động thành công.
 export interface CreatedActionToken {
-  rawToken: string;   // Token gốc, chỉ trả cho AuthService để tạo link gửi email. Không lưu vào database hoặc ghi log.
-  expiresAt: Date;    // Thời điểm token hết hạn.
+  rawToken: string; // Token gốc, chỉ trả cho AuthService để tạo link gửi email. Không lưu vào database hoặc ghi log.
+  expiresAt: Date; // Thời điểm token hết hạn.
 }
-
 
 // Kết quả khi tiêu thụ token thành công.
 // AuthService sử dụng kết quả này để thực hiện nghiệp vụ tương ứng trong cùng transaction.
 export interface ConsumeTokenResult {
-  userId: string;                    // ID của tài khoản sở hữu token.
-  purpose: AccountActionPurpose;     // Mục đích mà token được phát hành.
+  userId: string; // ID của tài khoản sở hữu token.
+  purpose: AccountActionPurpose; // Mục đích mà token được phát hành.
 }
 
 // CẤU HÌNH THỜI HẠN TOKEN
@@ -48,8 +50,8 @@ export interface ConsumeTokenResult {
 const TOKEN_TTL_CONFIG: Record<
   AccountActionPurpose,
   {
-    envName: string;            // Tên biến môi trường cần đọc.
-    defaultSeconds: number;     // Thời gian mặc định nếu biến môi trường chưa được khai báo.
+    envName: string; // Tên biến môi trường cần đọc.
+    defaultSeconds: number; // Thời gian mặc định nếu biến môi trường chưa được khai báo.
   }
 > = {
   [AccountActionPurpose.EMAIL_VERIFICATION]: {
@@ -68,7 +70,6 @@ const TOKEN_TTL_CONFIG: Record<
   },
 };
 
-
 // Định dạng token do hệ thống tự tạo:
 // Kiểm tra định dạng trước khi hash giúp từ chối sớm các giá trị không hợp lệ nhận từ request.
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
@@ -76,9 +77,7 @@ const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 // ACCOUNT ACTION TOKEN SERVICE
 @Injectable()
 export class AccountActionTokenService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    LUỒNG XỬ LÝ:
@@ -104,14 +103,11 @@ export class AccountActionTokenService {
         userId,
       )
     ) {
-      throw new BadRequestException(
-        'User ID không hợp lệ.',
-      );
+      throw new BadRequestException('User ID không hợp lệ.');
     }
 
     // Đọc TTL và kiểm tra cấu hình trước khi tạo token.
     const ttlSeconds = this.getTtlSeconds(purpose);
-
 
     const createWithinTransaction = async (
       client: Prisma.TransactionClient,
@@ -120,9 +116,7 @@ export class AccountActionTokenService {
       const userExists = await this.lockUser(client, userId);
 
       if (!userExists) {
-        throw new NotFoundException(
-          'Không tìm thấy tài khoản cần tạo Token.',
-        );
+        throw new NotFoundException('Không tìm thấy tài khoản cần tạo Token.');
       }
 
       // Sinh 32 byte ngẫu nhiên, mã hóa thành hex
@@ -135,15 +129,11 @@ export class AccountActionTokenService {
       // Tránh làm mất TTL trong thời gian chờ transaction khác.
       const now = new Date();
 
-      const expiresAt = new Date(
-        now.getTime() + ttlSeconds * 1000,
-      );
+      const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
 
       // Phòng trường hợp TTL quá lớn khiến Date không hợp lệ.
       if (Number.isNaN(expiresAt.getTime())) {
-        throw new Error(
-          'Cấu hình TTL tạo ra thời điểm hết hạn không hợp lệ.',
-        );
+        throw new Error('Cấu hình TTL tạo ra thời điểm hết hạn không hợp lệ.');
       }
 
       // Vô hiệu hóa toàn bộ token cũ cùng purpose.
@@ -183,11 +173,10 @@ export class AccountActionTokenService {
       return createWithinTransaction(tx);
     }
 
-    return this.prisma.$transaction(
-      async (client) => createWithinTransaction(client),
+    return this.prisma.$transaction(async (client) =>
+      createWithinTransaction(client),
     );
   }
-
 
   // Kiểm tra token có hợp lệ tại thời điểm hiện tại hay không.
   // Có thể dùng khi Frontend cần kiểm tra link trước khi hiển thị form thiết lập mật khẩu.
@@ -244,7 +233,6 @@ export class AccountActionTokenService {
     return true;
   }
 
-
   // Kiểm tra và đánh dấu một token đã được sử dụng.
   async consumeToken(
     rawToken: string,
@@ -272,13 +260,9 @@ export class AccountActionTokenService {
       return null;
     }
 
-
     // Khóa dòng User.
     // Điều này giúp tránh hai nghiệp vụ cùng tài khoản thao tác token theo thứ tự khóa trái ngược.
-    const userExists = await this.lockUser(
-      tx,
-      existingToken.userId,
-    );
+    const userExists = await this.lockUser(tx, existingToken.userId);
 
     if (!userExists) {
       return null;
@@ -286,7 +270,6 @@ export class AccountActionTokenService {
 
     // Lấy thời điểm hiện tại sau khi đã có khóa User.
     const now = new Date();
-
 
     // UPDATE nguyên tử.
     const result = await tx.accountActionToken.updateMany({
@@ -304,12 +287,10 @@ export class AccountActionTokenService {
       },
     });
 
-
     // Không có bản ghi nào đáp ứng điều kiện: token sai, đã dùng, bị vô hiệu hóa hoặc hết hạn.
     if (result.count !== 1) {
       return null;
     }
-
 
     // Trả về User ID đã được tìm thấy.
     // Không cần truy vấn lại token sau UPDATE.
@@ -318,7 +299,6 @@ export class AccountActionTokenService {
       purpose,
     };
   }
-
 
   // Khóa bản ghi User bằng PostgreSQL SELECT ... FOR UPDATE.
   private async lockUser(
@@ -335,31 +315,21 @@ export class AccountActionTokenService {
     return rows.length === 1;
   }
 
-
   // Đọc thời hạn token theo từng AccountActionPurpose.
-  private getTtlSeconds(
-    purpose: AccountActionPurpose,
-  ): number {
+  private getTtlSeconds(purpose: AccountActionPurpose): number {
     const config = TOKEN_TTL_CONFIG[purpose];
 
     if (!config) {
-      throw new Error(
-        'AccountActionPurpose không được hỗ trợ.',
-      );
+      throw new Error('AccountActionPurpose không được hỗ trợ.');
     }
 
     const rawValue = process.env[config.envName];
 
     // Chỉ dùng mặc định nếu biến thực sự chưa khai báo.
     const ttlSeconds =
-      rawValue === undefined
-        ? config.defaultSeconds
-        : Number(rawValue);
+      rawValue === undefined ? config.defaultSeconds : Number(rawValue);
 
-    if (
-      !Number.isSafeInteger(ttlSeconds) ||
-      ttlSeconds <= 0
-    ) {
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds <= 0) {
       throw new Error(
         `Cấu hình ${config.envName} phải là số nguyên dương hợp lệ.`,
       );
@@ -368,25 +338,16 @@ export class AccountActionTokenService {
     return ttlSeconds;
   }
 
-
   // Chỉ chấp nhận token 64 ký tự hex viết thường, đúng định dạng do randomBytes(32) tạo ra.
   // Kiểm tra này không thay thế việc truy vấn database.
-  private isValidTokenFormat(
-    rawToken: unknown,
-  ): rawToken is string {
-    return (
-      typeof rawToken === 'string' &&
-      TOKEN_PATTERN.test(rawToken)
-    );
+  private isValidTokenFormat(rawToken: unknown): rawToken is string {
+    return typeof rawToken === 'string' && TOKEN_PATTERN.test(rawToken);
   }
-
 
   // Dùng SHA-256 để băm raw token thành 64 ký tự hex.
   // Không dùng hàm này để hash password người dùng.
   // Mật khẩu phải được hash bằng thuật toán chuyên dụng như Argon2 hoặc bcrypt trong AuthService.
   private hashToken(rawToken: string): string {
-    return createHash('sha256')
-      .update(rawToken)
-      .digest('hex');
+    return createHash('sha256').update(rawToken).digest('hex');
   }
 }

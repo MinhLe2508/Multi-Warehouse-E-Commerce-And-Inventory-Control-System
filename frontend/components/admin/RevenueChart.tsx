@@ -14,7 +14,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
             <XAxis dataKey="date" tick={{ fontSize: 12 }} />
             <YAxis yAxisId="rev" tick={{ fontSize: 12 }} tickFormatter={(v: number) => `${Math.round(v / 1_000_000)}tr`} width={44} />
             <YAxis yAxisId="ord" orientation="right" tick={{ fontSize: 12 }} width={36} />
-            <Tooltip formatter={(value: any, name: any) => (name === 'Doanh thu' ? formatVnd(Number(value) || 0) : value)} />
+            <Tooltip formatter={(value, name) => (name === 'Doanh thu' ? formatVnd(Number(value) || 0) : value)} />
             <Legend />
             <Bar yAxisId="rev" dataKey="revenue" name="Doanh thu" fill="#0f766e" radius={[3, 3, 0, 0]} />
             <Line yAxisId="ord" dataKey="orders" name="Số đơn" stroke="#b45309" strokeWidth={2} dot={false} />

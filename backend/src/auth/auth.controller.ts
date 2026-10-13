@@ -24,10 +24,21 @@
     @UseGuards(JwtAuthGuard) trùng để tránh xác thực hai lần.
  */
 
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards, } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AccountActionPurpose } from '@prisma/client';
 import { Public } from '../core/decorators/public.decorator';
-import { CurrentUser, type AuthenticatedUser, } from '../core/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  type AuthenticatedUser,
+} from '../core/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import {
   AuthService,
@@ -42,7 +53,6 @@ import {
   type AuthTokenPair,
 } from './auth.service';
 
-
 // Kiểu dữ liệu tạm cho yêu cầu gửi lại email xác thực.
 interface ResendVerificationInput {
   email: string;
@@ -53,7 +63,7 @@ interface MessageResponse {
   message: string;
 }
 
-// Phản hồi sau khi xác thực email hoặc chấp nhận lời mời thành công. 
+// Phản hồi sau khi xác thực email hoặc chấp nhận lời mời thành công.
 interface ActivationResponse extends MessageResponse {
   user: PublicUserProfile;
 }
@@ -72,7 +82,6 @@ export class AuthController {
   // 1. ĐĂNG KÝ VÀ HOÀN TẤT THIẾT LẬP TÀI KHOẢN
   // ==========================================================================
 
-
   // Customer gửi thông tin đăng ký.
   @Public()
   @Post('register')
@@ -88,7 +97,6 @@ export class AuthController {
         'Đăng ký thành công. Vui lòng kiểm tra Email để xác thực và thiết lập mật khẩu.',
     };
   }
-
 
   // Customer mở link xác thực rồi gửi token và mật khẩu tự chọn.
   @Public()
@@ -108,7 +116,6 @@ export class AuthController {
     };
   }
 
-
   // Gửi lại link xác thực cho Customer chưa hoàn tất thiết lập tài khoản.
   @Public()
   @Post('resend-verification')
@@ -123,7 +130,6 @@ export class AuthController {
         'Nếu Email tồn tại và chưa được xác thực, hệ thống sẽ gửi Email xác thực mới.',
     };
   }
-
 
   // Staff mở link lời mời rồi gửi token và mật khẩu tự chọn.
   @Public()
@@ -148,32 +154,25 @@ export class AuthController {
   // 2. ĐĂNG NHẬP VÀ LÀM MỚI TOKEN
   // ==========================================================================
 
-
   // Đăng nhập bằng username và mật khẩu, dùng chung cho ba vai trò.
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(
-    @Body() input: LoginInput,
-  ): Promise<AuthenticationResponse> {
+  async login(@Body() input: LoginInput): Promise<AuthenticationResponse> {
     return this.authService.login(input);
   }
-
 
   // Cấp cặp token mới từ Refresh Token hợp lệ.
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(
-    @Body() input: RefreshInput,
-  ): Promise<AuthenticationResponse> {
+  async refresh(@Body() input: RefreshInput): Promise<AuthenticationResponse> {
     return this.authService.refresh(input);
   }
 
   // ==========================================================================
   // 3. NGHIỆP VỤ YÊU CẦU ACCESS TOKEN HỢP LỆ
   // ==========================================================================
-
 
   // Đăng xuất một phiên, chỉ thu hồi Refresh Token thuộc người đang gọi.
   @UseGuards(JwtAuthGuard)
@@ -186,7 +185,6 @@ export class AuthController {
     await this.authService.logout(userId, input.refreshToken);
   }
 
-
   // Đổi mật khẩu của tài khoản hiện tại.
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
@@ -198,21 +196,17 @@ export class AuthController {
     await this.authService.changePassword(userId, input);
   }
 
-
   // Lấy thông tin tài khoản đang đăng nhập.
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @HttpCode(HttpStatus.OK)
-  getProfile(
-    @CurrentUser() user: AuthenticatedUser,
-  ): AuthenticatedUser {
+  getProfile(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
     return user;
   }
 
   // ==========================================================================
   // 4. QUÊN MẬT KHẨU VÀ ĐẶT LẠI MẬT KHẨU
   // ==========================================================================
-
 
   // Gửi yêu cầu cấp link đặt lại mật khẩu có thời hạn mặc định 900 giây.
   @Public()
@@ -228,7 +222,6 @@ export class AuthController {
         'Nếu Email tồn tại trong hệ thống, hệ thống sẽ gửi hướng dẫn đặt lại mật khẩu.',
     };
   }
-
 
   // Dùng token PASSWORD_RESET để thiết lập mật khẩu mới do người dùng chọn.
   @Public()

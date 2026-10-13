@@ -95,7 +95,7 @@ interface PendingAccountResult {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  // Hash giả tạo một lần khi service khởi tạo để chống đoán username qua chênh lệch thời gian. 
+  // Hash giả tạo một lần khi service khởi tạo để chống đoán username qua chênh lệch thời gian.
   // Không hash mới cho mỗi lần đăng nhập thất bại.
   private readonly dummyPasswordHash = bcrypt.hash(
     randomBytes(32).toString('hex'),
@@ -112,7 +112,9 @@ export class AuthService {
   // =========================================================================
   // 1. CUSTOMER ĐĂNG KÝ
   // =========================================================================
-  async registerCustomer(input: RegisterCustomerInput): Promise<{ email: string }> {
+  async registerCustomer(
+    input: RegisterCustomerInput,
+  ): Promise<{ email: string }> {
     const email = this.normalizeEmail(input.email);
     const fullName = this.normalizeFullName(input.fullName);
     const phone = this.normalizePhone(input.phone);
@@ -129,12 +131,17 @@ export class AuthService {
       await this.mailService.sendCustomerVerification({
         to: user.email,
         fullName: user.fullName,
-        verifyUrl: this.buildFrontendActionUrl('verify-email', actionToken.rawToken),
+        verifyUrl: this.buildFrontendActionUrl(
+          'verify-email',
+          actionToken.rawToken,
+        ),
       });
     } catch {
       // User đã tồn tại; không xóa User/rollback giả sau khi commit.
       // Frontend cần hướng dẫn sử dụng chức năng gửi lại email.
-      this.logger.error('Tạo Customer thành công nhưng gửi email xác thực thất bại.');
+      this.logger.error(
+        'Tạo Customer thành công nhưng gửi email xác thực thất bại.',
+      );
       throw new ServiceUnavailableException(
         'Tài khoản đã được tạo nhưng chưa gửi được Email. Vui lòng thử gửi lại Email xác thực.',
       );
@@ -162,10 +169,15 @@ export class AuthService {
         to: user.email,
         fullName: user.fullName,
         username: user.username,
-        setupUrl: this.buildFrontendActionUrl('staff-invitation', actionToken.rawToken),
+        setupUrl: this.buildFrontendActionUrl(
+          'staff-invitation',
+          actionToken.rawToken,
+        ),
       });
     } catch {
-      this.logger.error('Tạo Staff thành công nhưng gửi Email Invitation thất bại.');
+      this.logger.error(
+        'Tạo Staff thành công nhưng gửi Email Invitation thất bại.',
+      );
       throw new ServiceUnavailableException(
         'Tài khoản Staff đã được tạo nhưng chưa gửi được thư mời. Admin cần gửi lại Invitation.',
       );
@@ -186,7 +198,9 @@ export class AuthService {
     this.validateNewPassword(input.password);
 
     // Kiểm tra trước để không tốn bcrypt cho token sai.
-    if (!(await this.accountActionTokenService.verifyToken(input.token, purpose))) {
+    if (
+      !(await this.accountActionTokenService.verifyToken(input.token, purpose))
+    ) {
       throw new BadRequestException('Liên kết không hợp lệ hoặc đã hết hạn.');
     }
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_SALT_ROUNDS);
@@ -198,16 +212,19 @@ export class AuthService {
         tx,
       );
       if (!consumed) {
-        throw new BadRequestException('Liên kết không hợp lệ, đã dùng hoặc đã hết hạn.');
+        throw new BadRequestException(
+          'Liên kết không hợp lệ, đã dùng hoặc đã hết hạn.',
+        );
       }
 
       const account = await tx.user.findUnique({
         where: { id: consumed.userId },
         select: { role: true, isActive: true, emailVerifiedAt: true },
       });
-      const expectedRole = purpose === AccountActionPurpose.EMAIL_VERIFICATION
-        ? UserRole.CUSTOMER
-        : UserRole.WAREHOUSE_STAFF;
+      const expectedRole =
+        purpose === AccountActionPurpose.EMAIL_VERIFICATION
+          ? UserRole.CUSTOMER
+          : UserRole.WAREHOUSE_STAFF;
 
       // Token cũ không được kích hoạt tài khoản đã bị Admin khóa/đổi role.
       if (
@@ -216,7 +233,9 @@ export class AuthService {
         account.role !== expectedRole ||
         account.emailVerifiedAt !== null
       ) {
-        throw new BadRequestException('Tài khoản không đủ điều kiện kích hoạt.');
+        throw new BadRequestException(
+          'Tài khoản không đủ điều kiện kích hoạt.',
+        );
       }
 
       // Không đổi isActive
@@ -235,9 +254,16 @@ export class AuthService {
   // =========================================================================
   // 4. ĐĂNG NHẬP
   // =========================================================================
-  async login(input: LoginInput): Promise<{ tokens: AuthTokenPair; user: PublicUserProfile }> {
-    if (typeof input.username !== 'string' || typeof input.password !== 'string') {
-      throw new UnauthorizedException('Tên đăng nhập hoặc mật khẩu không chính xác.');
+  async login(
+    input: LoginInput,
+  ): Promise<{ tokens: AuthTokenPair; user: PublicUserProfile }> {
+    if (
+      typeof input.username !== 'string' ||
+      typeof input.password !== 'string'
+    ) {
+      throw new UnauthorizedException(
+        'Tên đăng nhập hoặc mật khẩu không chính xác.',
+      );
     }
     const username = input.username.trim();
     const invalidMessage = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
@@ -246,7 +272,8 @@ export class AuthService {
       where: { username },
       select: { id: true, passwordHash: true },
     });
-    const hashToCompare = existing?.passwordHash ?? await this.dummyPasswordHash;
+    const hashToCompare =
+      existing?.passwordHash ?? (await this.dummyPasswordHash);
     const valid = await bcrypt.compare(input.password, hashToCompare);
     if (!existing || !valid) {
       throw new UnauthorizedException(invalidMessage);
@@ -257,12 +284,22 @@ export class AuthService {
       await this.lockUser(tx, existing.id);
       const user = await tx.user.findUnique({
         where: { id: existing.id },
-        select: { ...this.publicUserSelect(), passwordHash: true,
-          isActive: true, emailVerifiedAt: true },
+        select: {
+          ...this.publicUserSelect(),
+          passwordHash: true,
+          isActive: true,
+          emailVerifiedAt: true,
+        },
       });
       // Nếu mật khẩu vừa bị thay đổi, không cấp phiên từ lần kiểm tra cũ.
-      if (!user || user.passwordHash !== existing.passwordHash || !this.canAuthenticate(user)) {
-        throw new UnauthorizedException('Tài khoản không khả dụng hoặc thông tin đăng nhập đã thay đổi.');
+      if (
+        !user ||
+        user.passwordHash !== existing.passwordHash ||
+        !this.canAuthenticate(user)
+      ) {
+        throw new UnauthorizedException(
+          'Tài khoản không khả dụng hoặc thông tin đăng nhập đã thay đổi.',
+        );
       }
       const tokens = await this.issueTokenPair(user.id, tx);
       return { tokens, user: this.toPublicUser(user) };
@@ -272,7 +309,9 @@ export class AuthService {
   // =========================================================================
   // 5. REFRESH — ROTATE TOKEN CŨ, CHỈ MỘT REQUEST ĐƯỢC THÀNH CÔNG
   // =========================================================================
-  async refresh(input: RefreshInput): Promise<{ tokens: AuthTokenPair; user: PublicUserProfile }> {
+  async refresh(
+    input: RefreshInput,
+  ): Promise<{ tokens: AuthTokenPair; user: PublicUserProfile }> {
     const rawToken = input?.refreshToken;
     if (!this.isOpaqueToken(rawToken)) {
       throw new UnauthorizedException('Refresh Token không hợp lệ.');
@@ -298,12 +337,18 @@ export class AuthService {
       const now = new Date();
 
       if (!token || token.revokedAt !== null || token.expiresAt <= now) {
-        throw new UnauthorizedException('Refresh Token không hợp lệ hoặc đã hết hạn.');
+        throw new UnauthorizedException(
+          'Refresh Token không hợp lệ hoặc đã hết hạn.',
+        );
       }
 
       const user = await tx.user.findUnique({
         where: { id: reference.userId },
-        select: { ...this.publicUserSelect(), isActive: true, emailVerifiedAt: true },
+        select: {
+          ...this.publicUserSelect(),
+          isActive: true,
+          emailVerifiedAt: true,
+        },
       });
       if (!user || !this.canAuthenticate(user)) {
         throw new UnauthorizedException('Tài khoản không còn khả dụng.');
@@ -311,7 +356,12 @@ export class AuthService {
 
       // UPDATE có điều kiện: chỉ một request có thể đổi revokedAt từ null.
       const changed = await tx.refreshToken.updateMany({
-        where: { id: token.id, userId: user.id, revokedAt: null, expiresAt: { gt: now } },
+        where: {
+          id: token.id,
+          userId: user.id,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
         data: { revokedAt: now },
       });
       if (changed.count !== 1) {
@@ -327,10 +377,7 @@ export class AuthService {
   // =========================================================================
   // 6. ĐĂNG XUẤT — THU HỒI ĐÚNG REFRESH TOKEN ĐƯỢC GỬI
   // =========================================================================
-  async logout(
-    userId: string,
-    refreshToken: string,
-  ): Promise<void> {
+  async logout(userId: string, refreshToken: string): Promise<void> {
     if (
       typeof refreshToken !== 'string' ||
       !/^[0-9a-f]{64}$/.test(refreshToken)
@@ -357,11 +404,13 @@ export class AuthService {
     });
   }
 
-
   // =========================================================================
   // 7. ĐỔI MẬT KHẨU KHI ĐÃ ĐĂNG NHẬP
   // =========================================================================
-  async changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
+  async changePassword(
+    userId: string,
+    input: ChangePasswordInput,
+  ): Promise<void> {
     this.validateNewPassword(input.newPassword);
     if (typeof input.currentPassword !== 'string') {
       throw new BadRequestException('Mật khẩu hiện tại không hợp lệ.');
@@ -370,25 +419,40 @@ export class AuthService {
       where: { id: userId },
       select: { passwordHash: true },
     });
-    if (!existing || !(await bcrypt.compare(input.currentPassword, existing.passwordHash))) {
+    if (
+      !existing ||
+      !(await bcrypt.compare(input.currentPassword, existing.passwordHash))
+    ) {
       throw new BadRequestException('Mật khẩu hiện tại không chính xác.');
     }
     if (await bcrypt.compare(input.newPassword, existing.passwordHash)) {
-      throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại.');
+      throw new BadRequestException(
+        'Mật khẩu mới phải khác mật khẩu hiện tại.',
+      );
     }
-    const passwordHash = await bcrypt.hash(input.newPassword, BCRYPT_SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(
+      input.newPassword,
+      BCRYPT_SALT_ROUNDS,
+    );
 
     await this.prisma.$transaction(async (tx) => {
       await this.lockUser(tx, userId);
       const current = await tx.user.findUnique({
         where: { id: userId },
-        select: { passwordHash: true, isActive: true, emailVerifiedAt: true, role: true },
+        select: {
+          passwordHash: true,
+          isActive: true,
+          emailVerifiedAt: true,
+          role: true,
+        },
       });
       if (!current || !this.canAuthenticate(current)) {
         throw new UnauthorizedException('Tài khoản không còn khả dụng.');
       }
       if (current.passwordHash !== existing.passwordHash) {
-        throw new ConflictException('Mật khẩu đã được thay đổi bởi một yêu cầu khác.');
+        throw new ConflictException(
+          'Mật khẩu đã được thay đổi bởi một yêu cầu khác.',
+        );
       }
       await tx.user.update({
         where: { id: userId },
@@ -408,8 +472,14 @@ export class AuthService {
     const email = this.normalizeEmail(input.email);
     const user = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, email: true, fullName: true, isActive: true,
-        role: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        isActive: true,
+        role: true,
+        emailVerifiedAt: true,
+      },
     });
     if (!user || !this.canAuthenticate(user)) return;
 
@@ -421,10 +491,15 @@ export class AuthService {
       await this.mailService.sendPasswordReset({
         to: user.email,
         fullName: user.fullName,
-        resetUrl: this.buildFrontendActionUrl('reset-password', action.rawToken),
+        resetUrl: this.buildFrontendActionUrl(
+          'reset-password',
+          action.rawToken,
+        ),
       });
     } catch {
-      this.logger.error('Không thể xử lý Email quên mật khẩu. Cần kiểm tra cấu hình SMTP/DataBase.');
+      this.logger.error(
+        'Không thể xử lý Email quên mật khẩu. Cần kiểm tra cấu hình SMTP/DataBase.',
+      );
     }
   }
 
@@ -433,13 +508,20 @@ export class AuthService {
   // =========================================================================
   async resetPassword(input: ResetPasswordInput): Promise<void> {
     this.validateNewPassword(input.newPassword);
-    if (!(await this.accountActionTokenService.verifyToken(
-      input.token,
-      AccountActionPurpose.PASSWORD_RESET,
-    ))) {
-      throw new BadRequestException('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
+    if (
+      !(await this.accountActionTokenService.verifyToken(
+        input.token,
+        AccountActionPurpose.PASSWORD_RESET,
+      ))
+    ) {
+      throw new BadRequestException(
+        'Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.',
+      );
     }
-    const passwordHash = await bcrypt.hash(input.newPassword, BCRYPT_SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(
+      input.newPassword,
+      BCRYPT_SALT_ROUNDS,
+    );
 
     await this.prisma.$transaction(async (tx) => {
       const consumed = await this.accountActionTokenService.consumeToken(
@@ -448,14 +530,18 @@ export class AuthService {
         tx,
       );
       if (!consumed) {
-        throw new BadRequestException('Liên kết đã hết hạn hoặc được sử dụng trước đó.');
+        throw new BadRequestException(
+          'Liên kết đã hết hạn hoặc được sử dụng trước đó.',
+        );
       }
       const user = await tx.user.findUnique({
         where: { id: consumed.userId },
         select: { isActive: true, role: true, emailVerifiedAt: true },
       });
       if (!user || !this.canAuthenticate(user)) {
-        throw new BadRequestException('Tài khoản không đủ điều kiện đặt lại mật khẩu.');
+        throw new BadRequestException(
+          'Tài khoản không đủ điều kiện đặt lại mật khẩu.',
+        );
       }
 
       await tx.user.update({
@@ -476,16 +562,28 @@ export class AuthService {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, email: true, fullName: true, role: true,
-        isActive: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        emailVerifiedAt: true,
+      },
     });
     // Không gửi lại cho User đã xác thực hoặc bị Admin khóa.
-    if (!user || user.role !== UserRole.CUSTOMER || !user.isActive ||
-        user.emailVerifiedAt !== null) return;
+    if (
+      !user ||
+      user.role !== UserRole.CUSTOMER ||
+      !user.isActive ||
+      user.emailVerifiedAt !== null
+    )
+      return;
 
     try {
       const action = await this.accountActionTokenService.createToken(
-        user.id, AccountActionPurpose.EMAIL_VERIFICATION,
+        user.id,
+        AccountActionPurpose.EMAIL_VERIFICATION,
       );
       await this.mailService.sendCustomerVerification({
         to: user.email,
@@ -502,21 +600,38 @@ export class AuthService {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, email: true, fullName: true, username: true,
-        role: true, isActive: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        username: true,
+        role: true,
+        isActive: true,
+        emailVerifiedAt: true,
+      },
     });
-    if (!user || user.role !== UserRole.WAREHOUSE_STAFF || !user.isActive ||
-        user.emailVerifiedAt !== null) {
-      throw new BadRequestException('Staff không tồn tại hoặc không cần kích hoạt.');
+    if (
+      !user ||
+      user.role !== UserRole.WAREHOUSE_STAFF ||
+      !user.isActive ||
+      user.emailVerifiedAt !== null
+    ) {
+      throw new BadRequestException(
+        'Staff không tồn tại hoặc không cần kích hoạt.',
+      );
     }
     const action = await this.accountActionTokenService.createToken(
-      user.id, AccountActionPurpose.STAFF_INVITATION,
+      user.id,
+      AccountActionPurpose.STAFF_INVITATION,
     );
     await this.mailService.sendStaffInvitation({
       to: user.email,
       fullName: user.fullName,
       username: user.username,
-      setupUrl: this.buildFrontendActionUrl('staff-invitation', action.rawToken),
+      setupUrl: this.buildFrontendActionUrl(
+        'staff-invitation',
+        action.rawToken,
+      ),
     });
   }
 
@@ -529,15 +644,19 @@ export class AuthService {
     purpose: AccountActionPurpose,
   ): Promise<PendingAccountResult> {
     const duplicatedEmail = await this.prisma.user.findUnique({
-      where: { email: input.email }, select: { id: true },
+      where: { email: input.email },
+      select: { id: true },
     });
     if (duplicatedEmail) {
-      throw new ConflictException('Email này đã được đăng ký tài khoản trước đó.');
+      throw new ConflictException(
+        'Email này đã được đăng ký tài khoản trước đó.',
+      );
     }
 
     // Hash placeholder bên ngoài transaction để không giữ khóa lâu.
     const passwordHash = await bcrypt.hash(
-      randomBytes(32).toString('hex'), BCRYPT_SALT_ROUNDS,
+      randomBytes(32).toString('hex'),
+      BCRYPT_SALT_ROUNDS,
     );
 
     for (let attempt = 0; attempt < MAX_USERNAME_ATTEMPTS; attempt += 1) {
@@ -559,15 +678,22 @@ export class AuthService {
             select: this.publicUserSelect(),
           });
           const actionToken = await this.accountActionTokenService.createToken(
-            user.id, purpose, tx,
+            user.id,
+            purpose,
+            tx,
           );
           return { user, actionToken };
         });
       } catch (error: unknown) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
           const target = JSON.stringify(error.meta?.target ?? '').toLowerCase();
           if (target.includes('email')) {
-            throw new ConflictException('Email này đã được đăng ký tài khoản trước đó.');
+            throw new ConflictException(
+              'Email này đã được đăng ký tài khoản trước đó.',
+            );
           }
           // Chỉ thử lại khi trùng username; không che giấu lỗi unique khác.
           if (target.includes('username')) continue;
@@ -576,7 +702,9 @@ export class AuthService {
         throw error;
       }
     }
-    throw new ConflictException('Không thể tạo tên đăng nhập duy nhất. Vui lòng thử lại.');
+    throw new ConflictException(
+      'Không thể tạo tên đăng nhập duy nhất. Vui lòng thử lại.',
+    );
   }
 
   private async issueTokenPair(
@@ -600,7 +728,9 @@ export class AuthService {
       algorithm: 'HS256',
       expiresIn: accessSeconds,
     });
-    const decoded = this.jwtService.decode(accessToken) as { exp?: number } | null;
+    const decoded = this.jwtService.decode<{ exp?: number } | null>(
+      accessToken,
+    );
     if (typeof decoded?.exp !== 'number') {
       throw new Error('Access Token vừa ký không có thời điểm hết hạn.');
     }
@@ -616,7 +746,10 @@ export class AuthService {
     return { accessToken, refreshToken, accessTokenExpiresAt: decoded.exp };
   }
 
-  private async lockUser(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  private async lockUser(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<void> {
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "users" WHERE "id" = ${userId}::uuid FOR UPDATE
     `;
@@ -631,8 +764,9 @@ export class AuthService {
     role: UserRole;
     emailVerifiedAt: Date | null;
   }): boolean {
-    return user.isActive && (
-      user.role === UserRole.ADMIN || user.emailVerifiedAt !== null
+    return (
+      user.isActive &&
+      (user.role === UserRole.ADMIN || user.emailVerifiedAt !== null)
     );
   }
 
@@ -663,12 +797,17 @@ export class AuthService {
   // Sinh username từ local-part email, có fallback nếu toàn ký tự đặc biệt
   private generateUsernameCandidate(email: string, attempt: number): string {
     const localPart = email.split('@')[0] ?? '';
-    const base = localPart.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 20) || 'user';
+    const base =
+      localPart
+        .replace(/[^a-z0-9]/gi, '')
+        .toLowerCase()
+        .slice(0, 20) || 'user';
     return attempt === 0 ? base : `${base}${randomBytes(4).toString('hex')}`;
   }
 
   private normalizeEmail(email: string): string {
-    if (typeof email !== 'string') throw new BadRequestException('Email không hợp lệ.');
+    if (typeof email !== 'string')
+      throw new BadRequestException('Email không hợp lệ.');
     const value = email.trim().toLowerCase();
     if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
       throw new BadRequestException('Email không hợp lệ.');
@@ -677,7 +816,11 @@ export class AuthService {
   }
 
   private normalizeFullName(fullName: string): string {
-    if (typeof fullName !== 'string' || !fullName.trim() || fullName.trim().length > 150) {
+    if (
+      typeof fullName !== 'string' ||
+      !fullName.trim() ||
+      fullName.trim().length > 150
+    ) {
       throw new BadRequestException('Họ và tên không hợp lệ.');
     }
     return fullName.trim();
@@ -693,8 +836,11 @@ export class AuthService {
 
   // Bcrypt chỉ sử dụng tối đa 72 byte đầu; giới hạn để tránh cắt cụt bí mật
   private validateNewPassword(password: unknown): asserts password is string {
-    if (typeof password !== 'string' || password.length < 8 ||
-        Buffer.byteLength(password, 'utf8') > 72) {
+    if (
+      typeof password !== 'string' ||
+      password.length < 8 ||
+      Buffer.byteLength(password, 'utf8') > 72
+    ) {
       throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự.');
     }
   }
@@ -725,10 +871,21 @@ export class AuthService {
   private parseExpiresInToSeconds(value: string): number {
     const match = /^(\d+)(s|m|h|d)$/.exec(value.trim());
     if (!match) throw new Error('Định dạng thời hạn token không hợp lệ.');
-    const unitSeconds: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+    const unitSeconds: Record<string, number> = {
+      s: 1,
+      m: 60,
+      h: 3600,
+      d: 86400,
+    };
     const seconds = Number(match[1]) * unitSeconds[match[2]];
-    if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 365 * 86400) {
-      throw new Error('Thời hạn Token phải là số nguyên dương tối đa 365 ngày.');
+    if (
+      !Number.isSafeInteger(seconds) ||
+      seconds <= 0 ||
+      seconds > 365 * 86400
+    ) {
+      throw new Error(
+        'Thời hạn Token phải là số nguyên dương tối đa 365 ngày.',
+      );
     }
     return seconds;
   }
