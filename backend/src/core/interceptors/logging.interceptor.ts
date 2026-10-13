@@ -24,11 +24,7 @@ import { tap } from 'rxjs/operators';
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
 
-  intercept(
-    context: ExecutionContext,
-    next: CallHandler,
-  ): Observable<unknown> {
-
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     // Chỉ ghi log cho HTTP request, bỏ qua WebSocket và RPC context.
     if (context.getType() !== 'http') {
       return next.handle();
@@ -45,9 +41,7 @@ export class LoggingInterceptor implements NestInterceptor {
         const elapsedMs = Date.now() - startedAt;
         const { statusCode } = response;
 
-        this.logger.log(
-          `${method} ${path} ${statusCode} - ${elapsedMs}ms`,
-        );
+        this.logger.log(`${method} ${path} ${statusCode} - ${elapsedMs}ms`);
       }),
     );
   }

@@ -9,9 +9,8 @@
 // JwtAuthGuard và JwtStrategy chịu trách nhiệm xác thực.
 // RolesGuard chịu trách nhiệm kiểm tra vai trò.
 
-import { createParamDecorator, type ExecutionContext, } from '@nestjs/common';
+import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import { type UserRole } from '@prisma/client';
-
 
 // 1. AUTHENTICATED USER INTERFACE
 
@@ -31,30 +30,23 @@ export interface AuthenticatedUser {
   mustChangePassword: boolean;
 }
 
-
 // 2. CURRENT USER DECORATOR
 export const CurrentUser = createParamDecorator<
   keyof AuthenticatedUser | undefined
->(
-  (
-    data: keyof AuthenticatedUser | undefined,
-    ctx: ExecutionContext,
-  ) => {
+>((data: keyof AuthenticatedUser | undefined, ctx: ExecutionContext) => {
+  // Lấy HTTP Request từ NestJS ExecutionContext
+  const request = ctx.switchToHttp().getRequest<{
+    user?: AuthenticatedUser;
+  }>();
 
-    // Lấy HTTP Request từ NestJS ExecutionContext
-    const request = ctx.switchToHttp().getRequest<{
-      user?: AuthenticatedUser;
-    }>();
+  // Lấy user đã được Passport gắn vào request
+  const user = request.user;
 
-    // Lấy user đã được Passport gắn vào request
-    const user = request.user;
+  // Nếu yêu cầu một field cụ thể, chỉ trả về field đó
+  if (data !== undefined) {
+    return user?.[data];
+  }
 
-    // Nếu yêu cầu một field cụ thể, chỉ trả về field đó
-    if (data !== undefined) {
-      return user?.[data];
-    }
-
-    // Không truyền field: trả về toàn bộ AuthenticatedUser
-    return user;
-  },
-);
+  // Không truyền field: trả về toàn bộ AuthenticatedUser
+  return user;
+});

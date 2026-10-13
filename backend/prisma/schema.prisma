@@ -147,6 +147,7 @@ model User {
   statusChanges       OrderStatusHistory[] // Các lần User này thay đổi trạng thái đơn hàng
   resolvedAlerts      StockAlert[] // Các cảnh báo tồn kho User này (WAREHOUSE_STAFF) đã xử lý
   chatSessions        ChatSession[] // Các phiên chat với AI Chatbot của User này
+  notifications       Notification[] // Thông báo in-app của User
 
   // Index trên "role" giúp truy vấn nhanh "lấy hết ADMIN" hoặc "lấy hết WAREHOUSE_STAFF"
   // Ví dụ: Màn hình quản lý phân quyền của Admin
@@ -668,4 +669,32 @@ model AccountActionToken {
   @@index([userId, purpose, expiresAt])
   // Tên bảng trong PostgreSQL.
   @@map("account_action_tokens")
+}
+
+// =============================================================================
+// NHÓM J — NOTIFICATION (Thông báo In-App đa mục đích)
+// =============================================================================
+/// Loại thông báo trong hệ thống
+enum NotificationType {
+  LOW_STOCK        // Cảnh báo tồn kho thấp (từ StockAlert)
+  ORDER_UPDATE     // Cập nhật trạng thái đơn hàng
+  SYSTEM           // Thông báo hệ thống chung
+}
+/// Thông báo in-app cho người dùng
+model Notification {
+  id        BigInt @id @default(autoincrement())
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  body      String           @db.Text
+  // Tham chiếu đa hình: trỏ đến entity liên quan (Order, StockAlert, ...)
+  referenceType String?      @map("reference_type") @db.VarChar(40)
+  referenceId   String?      @map("reference_id")   @db.VarChar(64)
+  isRead    Boolean  @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, isRead, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("notifications")
 }

@@ -1,4 +1,4 @@
-// Định nghĩa Custom Decorator "@Roles(...)" 
+// Định nghĩa Custom Decorator "@Roles(...)"
 // Cho phép gắn metadata "vai trò nào được phép gọi endpoint này" ngay trên Controller hoặc trên từng method handler
 
 import { SetMetadata } from '@nestjs/common';
@@ -12,4 +12,5 @@ export const ROLES_KEY = 'roles';
 // Ví dụ:
 //  @Roles(UserRole.ADMIN)
 //  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_STAFF)
-export const Roles = (...roles: [UserRole, ...UserRole[]]) => SetMetadata(ROLES_KEY, roles);
+export const Roles = (...roles: [UserRole, ...UserRole[]]) =>
+  SetMetadata(ROLES_KEY, roles);

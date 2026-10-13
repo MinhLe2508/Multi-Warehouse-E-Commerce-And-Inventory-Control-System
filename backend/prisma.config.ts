@@ -1,7 +1,13 @@
+
 import dotenv from 'dotenv';
+import path from 'node:path';
 import { defineConfig, env } from 'prisma/config';
 
-dotenv.config({ path: '../.env' });
+// Nạp .env từ thư mục gốc dự án,
+// tính tương đối từ vị trí của prisma.config.ts.
+dotenv.config({
+  path: path.resolve(__dirname, '../.env'),
+});
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
@@ -11,5 +17,7 @@ export default defineConfig({
     seed: 'ts-node prisma/seed.ts',
   },
 
-  datasource: { url: env('DATABASE_URL') },
+  datasource: {
+    url: env('DATABASE_URL'),
+  },
 });

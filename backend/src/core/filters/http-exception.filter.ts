@@ -4,7 +4,6 @@
 // - Che giấu chi tiết kỹ thuật đối với lõi server (5xx).
 // - Ghi log để hỗ trợ debug và giám sát hệ thống.
 
-
 import {
   ArgumentsHost,
   Catch,
@@ -16,7 +15,6 @@ import {
 
 import { STATUS_CODES } from 'node:http';
 import type { Request, Response } from 'express';
-
 
 // Định dạng response lỗi thống nhất cho Frontend
 interface ErrorResponseBody {
@@ -30,7 +28,6 @@ interface ErrorResponseBody {
 // Thông báo chung cho lỗi phía Server
 // Không trả về chi tiết kỹ thuật nội bộ cho Client
 const INTERNAL_ERROR_MESSAGE = 'Đã xảy ra lỗi hệ thống, vui lòng thử lại sau!';
-
 
 // @Catch() không truyền loại exception: Bắt các exception được NestJS chuyển dến HTTP exception layer.
 @Catch()
@@ -66,10 +63,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           typeof exceptionResponse === 'object' &&
           exceptionResponse !== null
         ) {
-          const responseObject = exceptionResponse as Record<
-            string,
-            unknown
-          >;
+          const responseObject = exceptionResponse as Record<string, unknown>;
 
           const responseMessage = responseObject.message;
           const responseError = responseObject.error;
@@ -119,9 +113,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         errorDetails,
       );
     } else {
-      this.logger.warn(
-        `${request.method} ${path} -> ${statusCode}`,
-      );
+      this.logger.warn(`${request.method} ${path} -> ${statusCode}`);
     }
 
     if (response.headersSent) {

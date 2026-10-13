@@ -5,7 +5,11 @@
 // 2. sendStaffInvitation(): Mời Staff kích hoạt tài khoản.
 // 3. sendPasswordReset(): Khôi phục mật khẩu cho Customer/Staff.
 
-import {Injectable, Logger, ServiceUnavailableException,} from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 
 // 1. INTERFACES
@@ -52,17 +56,10 @@ function escapeHtml(value: string): string {
     "'": '&#39;',
   };
 
-  return value.replace(
-    /[&<>"']/g,
-    (character) => entities[character],
-  );
+  return value.replace(/[&<>"']/g, (character) => entities[character]);
 }
 
-
-function readTtlSeconds(
-  envName: string,
-  defaultValue: number,
-): number {
+function readTtlSeconds(envName: string, defaultValue: number): number {
   const rawValue = process.env[envName];
 
   if (rawValue === undefined || rawValue.trim() === '') {
@@ -72,9 +69,7 @@ function readTtlSeconds(
   const value = Number(rawValue);
 
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(
-      `Biến môi trường ${envName} phải là số nguyên dương.`,
-    );
+    throw new Error(`Biến môi trường ${envName} phải là số nguyên dương.`);
   }
 
   return value;
@@ -87,7 +82,6 @@ function formatTtl(seconds: number): string {
 
   return `${seconds} giây`;
 }
-
 
 // 3. MAIL SERVICE
 @Injectable()
@@ -108,51 +102,56 @@ export class MailService {
 
   constructor() {
     // Đọc Gmail credentials
-    this.senderAddress = ( process.env.GMAIL_USER ?? '').trim();
+    this.senderAddress = (process.env.GMAIL_USER ?? '').trim();
 
     // Google App Password gồm 16 ký tự
     // Loại bỏ khoảng trắng nếu copy theo nhóm 4 ký tự.
-    const appPassword = (
-      process.env.GMAIL_APP_PASSWORD ?? ''
-    ).replace(/\s+/g, '');
+    const appPassword = (process.env.GMAIL_APP_PASSWORD ?? '').replace(
+      /\s+/g,
+      '',
+    );
 
     // Đọc FRONTEND_ORIGIN
-    const frontendOriginValue = process.env.FRONTEND_ORIGIN?.trim() || 'http://localhost:3000';
+    const frontendOriginValue =
+      process.env.FRONTEND_ORIGIN?.trim() || 'http://localhost:3000';
     let parsedFrontendOrigin: URL;
 
     try {
-      parsedFrontendOrigin = new URL(
-        frontendOriginValue,
-      );
+      parsedFrontendOrigin = new URL(frontendOriginValue);
     } catch {
-      throw new Error(
-        'FRONTEND_ORIGIN không phải URL hợp lệ.',
-      );
+      throw new Error('FRONTEND_ORIGIN không phải URL hợp lệ.');
     }
 
     if (
-      !['http:', 'https:'].includes(
-        parsedFrontendOrigin.protocol,
-      ) ||
+      !['http:', 'https:'].includes(parsedFrontendOrigin.protocol) ||
       parsedFrontendOrigin.username ||
       parsedFrontendOrigin.password
     ) {
-      throw new Error(
-        'FRONTEND_ORIGIN phải sử dụng HTTP hoặc HTTPS hợp lệ.',
-      );
+      throw new Error('FRONTEND_ORIGIN phải sử dụng HTTP hoặc HTTPS hợp lệ.');
     }
 
     this.frontendOrigin = parsedFrontendOrigin.origin;
 
     // Đọc TTL từ environment
-    this.customerVerificationTtlSeconds = readTtlSeconds('EMAIL_VERIFICATION_TTL_SECONDS', 60,);
-    this.staffInvitationTtlSeconds      = readTtlSeconds('STAFF_INVITATION_TTL_SECONDS', 60,);
-    this.passwordResetTtlSeconds        = readTtlSeconds('PASSWORD_RESET_TTL_SECONDS', 900,);
+    this.customerVerificationTtlSeconds = readTtlSeconds(
+      'EMAIL_VERIFICATION_TTL_SECONDS',
+      60,
+    );
+    this.staffInvitationTtlSeconds = readTtlSeconds(
+      'STAFF_INVITATION_TTL_SECONDS',
+      60,
+    );
+    this.passwordResetTtlSeconds = readTtlSeconds(
+      'PASSWORD_RESET_TTL_SECONDS',
+      900,
+    );
 
     // Khởi tạo Nodemailer transporter
     if (!this.senderAddress || !appPassword) {
       this.transporter = null;
-      this.logger.warn( 'Chưa cấu hình Gmail SMTP đầy đủ. Chức năng gửi Email tạm thời không sử dụng được.',);
+      this.logger.warn(
+        'Chưa cấu hình Gmail SMTP đầy đủ. Chức năng gửi Email tạm thời không sử dụng được.',
+      );
       return;
     }
 
@@ -169,41 +168,37 @@ export class MailService {
       socketTimeout: 20000,
     });
 
-    this.logger.log( 'MailService đã được khởi tạo với Gmail SMTP.',);
+    this.logger.log('MailService đã được khởi tạo với Gmail SMTP.');
   }
 
-
   // 4. VALIDATE FRONTEND URL
-  private validateFrontendUrl(inputUrl: string,): string { 
+  private validateFrontendUrl(inputUrl: string): string {
     let parsedUrl: URL;
 
     try {
-        parsedUrl = new URL(inputUrl);
+      parsedUrl = new URL(inputUrl);
     } catch {
-        throw new Error('Liên kết xác thực không phải URL hợp lệ.',);
+      throw new Error('Liên kết xác thực không phải URL hợp lệ.');
     }
 
     if (
-      !['http:', 'https:'].includes(
-        parsedUrl.protocol,
-      ) ||
+      !['http:', 'https:'].includes(parsedUrl.protocol) ||
       parsedUrl.origin !== this.frontendOrigin ||
       parsedUrl.username ||
       parsedUrl.password
     ) {
-      throw new Error('Liên kết Email không thuộc FRONTEND_ORIGIN cho phép.',);
+      throw new Error('Liên kết Email không thuộc FRONTEND_ORIGIN cho phép.');
     }
 
     return parsedUrl.toString();
   }
 
-
   // 5. SEND MAIL
-  private async sendMail(
-    params: SendMailParams,
-  ): Promise<void> {
+  private async sendMail(params: SendMailParams): Promise<void> {
     if (!this.transporter) {
-      throw new ServiceUnavailableException('Hệ thống gửi Email chưa được cấu hình.',);
+      throw new ServiceUnavailableException(
+        'Hệ thống gửi Email chưa được cấu hình.',
+      );
     }
 
     try {
@@ -224,9 +219,9 @@ export class MailService {
       });
 
       // Không log địa chỉ Email hay URL chứa token.
-      this.logger.log('Gmail SMTP đã tiếp nhận yêu cầu gửi Email.',);
+      this.logger.log('Gmail SMTP đã tiếp nhận yêu cầu gửi Email.');
     } catch (error: unknown) {
-        const errorCode =
+      const errorCode =
         error !== null &&
         typeof error === 'object' &&
         'code' in error &&
@@ -234,34 +229,30 @@ export class MailService {
           ? error.code
           : 'UNKNOWN';
 
-      this.logger.error(`Gửi Email thất bại. SMTP Error Code: ${errorCode}`,);
+      this.logger.error(`Gửi Email thất bại. SMTP Error Code: ${errorCode}`);
 
       // Không để lộ chi tiết SMTP cho client
-      throw new ServiceUnavailableException('Không thể gửi Email vào lúc này. Vui lòng thử lại sau.',);
+      throw new ServiceUnavailableException(
+        'Không thể gửi Email vào lúc này. Vui lòng thử lại sau.',
+      );
     }
   }
-
 
   // 6. SEND CUSTOMER VERIFICATION
   async sendCustomerVerification(
     params: CustomerVerificationParams,
   ): Promise<void> {
-    const verifyUrl = this.validateFrontendUrl(
-      params.verifyUrl,
-    );
+    const verifyUrl = this.validateFrontendUrl(params.verifyUrl);
 
     const safeName = escapeHtml(params.fullName);
     const safeUrl = escapeHtml(verifyUrl);
 
-    const ttl = formatTtl(
-      this.customerVerificationTtlSeconds,
-    );
+    const ttl = formatTtl(this.customerVerificationTtlSeconds);
 
     await this.sendMail({
       to: params.to,
 
-      subject:
-        'Xác thực tài khoản - Multi Warehouse E-Commerce',
+      subject: 'Xác thực tài khoản - Multi Warehouse E-Commerce',
 
       text: [
         `Xin chào ${params.fullName},`,
@@ -331,28 +322,20 @@ export class MailService {
     });
   }
 
-
   // 7. SEND STAFF INVITATION
-  async sendStaffInvitation(
-    params: StaffInvitationParams,
-  ): Promise<void> {
-    const setupUrl = this.validateFrontendUrl(
-      params.setupUrl,
-    );
+  async sendStaffInvitation(params: StaffInvitationParams): Promise<void> {
+    const setupUrl = this.validateFrontendUrl(params.setupUrl);
 
     const safeName = escapeHtml(params.fullName);
     const safeUsername = escapeHtml(params.username);
     const safeUrl = escapeHtml(setupUrl);
 
-    const ttl = formatTtl(
-      this.staffInvitationTtlSeconds,
-    );
+    const ttl = formatTtl(this.staffInvitationTtlSeconds);
 
     await this.sendMail({
       to: params.to,
 
-      subject:
-        'Thư mời kích hoạt tài khoản nhân viên',
+      subject: 'Thư mời kích hoạt tài khoản nhân viên',
 
       text: [
         `Xin chào ${params.fullName},`,
@@ -432,27 +415,19 @@ export class MailService {
     });
   }
 
-
   // 8. SEND PASSWORD RESET
-  async sendPasswordReset(
-    params: PasswordResetParams,
-  ): Promise<void> {
-    const resetUrl = this.validateFrontendUrl(
-      params.resetUrl,
-    );
+  async sendPasswordReset(params: PasswordResetParams): Promise<void> {
+    const resetUrl = this.validateFrontendUrl(params.resetUrl);
 
     const safeName = escapeHtml(params.fullName);
     const safeUrl = escapeHtml(resetUrl);
 
-    const ttl = formatTtl(
-      this.passwordResetTtlSeconds,
-    );
+    const ttl = formatTtl(this.passwordResetTtlSeconds);
 
     await this.sendMail({
       to: params.to,
 
-      subject:
-        'Yêu cầu đặt lại mật khẩu - Multi Warehouse E-Commerce',
+      subject: 'Yêu cầu đặt lại mật khẩu - Multi Warehouse E-Commerce',
 
       text: [
         `Xin chào ${params.fullName},`,

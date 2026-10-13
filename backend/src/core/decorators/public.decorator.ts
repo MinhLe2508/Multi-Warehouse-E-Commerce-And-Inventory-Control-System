@@ -21,6 +21,6 @@
 import { SetMetadata } from '@nestjs/common';
 import { IS_PUBLIC_KEY } from '../guards/jwt-auth.guard';
 
- // Đánh dấu một endpoint hoặc Controller là công khai đối với cơ chế xác thực JWT.
- // JwtAuthGuard sẽ đọc IS_PUBLIC_KEY và bỏ qua xác thực Access Token nếu metadata có giá trị true.
+// Đánh dấu một endpoint hoặc Controller là công khai đối với cơ chế xác thực JWT.
+// JwtAuthGuard sẽ đọc IS_PUBLIC_KEY và bỏ qua xác thực Access Token nếu metadata có giá trị true.
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
