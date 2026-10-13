@@ -17,6 +17,9 @@ export interface Product {
   name: string;
   /** Giá VND, SỐ NGUYÊN (không dùng số thực) */
   price: number;
+  /** Giá niêm yết chính xác từ API; không dùng để quyết định tổng tiền checkout. */
+  basePrice?: string;
+  categoryName?: string;
   /** URL ảnh (hiện là placeholder, sau này là URL từ API) */
   image: string;
   /** id của Category (ví dụ "grocery") */

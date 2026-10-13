@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Product } from "@/shared/types/product";
+import { MOCK_CATALOG } from "@/shared/lib/catalogApi";
 import { getProductById } from "@/shared/lib/mockData";
 import { getTotalStock } from "@/shared/lib/utils";
 import { isRecord } from "@/shared/lib/storage";
@@ -40,6 +41,16 @@ function restoreItems(persisted: unknown): CartItem[] {
     if (!isRecord(value) || typeof value.productId !== "string" ||
       typeof value.quantity !== "number" || !Number.isSafeInteger(value.quantity) ||
       value.quantity < 1) continue;
+    if (!MOCK_CATALOG) {
+      if (typeof value.name !== "string" || typeof value.image !== "string" ||
+        typeof value.price !== "number" || !Number.isFinite(value.price) || value.price < 0 ||
+        typeof value.maxStock !== "number" || !Number.isSafeInteger(value.maxStock) || value.maxStock < 0) continue;
+      const quantity = (result.get(value.productId)?.quantity ?? 0) + value.quantity;
+      if (!Number.isSafeInteger(quantity)) continue;
+      result.set(value.productId, { productId: value.productId, name: value.name,
+        image: value.image, price: value.price, maxStock: value.maxStock, quantity });
+      continue;
+    }
     const product = getProductById(value.productId);
     if (!product) continue;
     const quantity = (result.get(product.id)?.quantity ?? 0) + value.quantity;
@@ -73,6 +84,11 @@ export const useCartStore = create<CartState>()(
       },
       setQuantity: (productId, quantity) => {
         if (!Number.isFinite(quantity)) return;
+        if (!MOCK_CATALOG) {
+          set((state) => ({ items: state.items.map((item) => item.productId === productId
+            ? { ...item, quantity: Math.min(Math.max(1, Math.floor(quantity)), Math.max(1, item.maxStock)) } : item) }));
+          return;
+        }
         const product = getProductById(productId);
         const maxStock = product ? getTotalStock(product) : 0;
         if (!product || maxStock <= 0) return;
@@ -87,7 +103,7 @@ export const useCartStore = create<CartState>()(
       clearCart: () => set({ items: [] }),
     }),
     {
-      name: "multimart-cart",
+      name: MOCK_CATALOG ? "multimart-cart" : "multimart-api-cart",
       partialize: (state) => ({ items: state.items }),
       merge: (persisted, current) => ({ ...current, items: restoreItems(persisted) }),
     },

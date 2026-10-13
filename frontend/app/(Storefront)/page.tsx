@@ -3,14 +3,10 @@
 import Link from "next/link";
 import { useTranslation } from "@/hooks/useTranslation";
 import ProductCard from "@/components/storefront/ProductCard";
-import {
-  getCategoryCount,
-  getWarehouseName,
-  WAREHOUSES,
-  getCategories,
-  getFeaturedProducts,
-  getProductById,
-} from "@/shared/lib/mockData";
+import { getWarehouseName } from "@/shared/lib/mockData";
+import { useProducts, useCategories } from "@/hooks/useCatalog";
+import CatalogStatus from "@/components/storefront/CatalogStatus";
+
 
 function PerkIcon({ path }: { path: string }) {
   return (
@@ -31,9 +27,11 @@ function PerkIcon({ path }: { path: string }) {
 
 export default function HomePage() {
   const { t, language } = useTranslation();
-  const categories = getCategories();
-  const featured = getFeaturedProducts();
-  const sample = getProductById("p-001");
+  const productsRequest = useProducts({ pageSize: 8 });
+  const categoriesRequest = useCategories();
+  const categories = categoriesRequest.data ?? [];
+  const featured = productsRequest.data?.items ?? [];
+  const sample = featured[0];
 
   const perks = [
     {
@@ -109,7 +107,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <p className="mt-5 text-xs text-slate-400">
-                {WAREHOUSES.map((w) => getWarehouseName(w.id, language)).join(" · ")}
+                {sample.stockByWarehouse.map((w) => w.warehouseName).join(" · ")}
               </p>
             </div>
           )}
@@ -136,6 +134,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      {(productsRequest.loading || !!productsRequest.error || !!categoriesRequest.error) && <CatalogStatus error={productsRequest.error || categoriesRequest.error} retry={() => { productsRequest.retry(); categoriesRequest.retry(); }} />}
       {/* Danh mục nổi bật */}
       <section id="categories" className="mx-auto max-w-7xl scroll-mt-24 px-4 pt-16 sm:px-6 lg:px-8">
         <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
@@ -144,7 +143,7 @@ export default function HomePage() {
         <p className="mt-1 text-sm text-slate-500">{t.home.categoriesSubtitle}</p>
         <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           {categories.map((c) => {
-            const count = getCategoryCount(c.id);
+
             return (
               <Link
                 key={c.id}
@@ -158,7 +157,7 @@ export default function HomePage() {
                   {c.name[language]}
                 </span>
                 <span className="mt-1 text-xs text-slate-400">
-                  {count} {t.common.units}
+                  {t.common.viewAll}
                 </span>
               </Link>
             );

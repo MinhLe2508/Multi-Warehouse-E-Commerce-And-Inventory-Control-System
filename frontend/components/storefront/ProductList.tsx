@@ -4,7 +4,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import ProductCard from "@/components/storefront/ProductCard";
-import { getCategories, queryProducts } from "@/shared/lib/mockData";
+import { useProducts, useCategories } from "@/hooks/useCatalog";
+import CatalogStatus from "./CatalogStatus";
 import type { ProductSort } from "@/shared/types/product";
 
 const SORTS: ProductSort[] = ["default", "price-asc", "price-desc"];
@@ -70,8 +71,10 @@ export default function ProductList() {
   const pageNumber = Number(params.get("page"));
   const page = Number.isInteger(pageNumber) && pageNumber > 0 ? pageNumber : 1;
 
-  const result = queryProducts({ category, search, sort, page });
-  const categories = getCategories();
+  const productsRequest = useProducts({ category, search, sort, page });
+  const categoriesRequest = useCategories();
+  const categories = categoriesRequest.data ?? [];
+  const result = productsRequest.data;
   const hasFilters = category !== "all" || search !== "" || sort !== "default";
 
   function update(changes: Record<string, string>) {
@@ -90,6 +93,8 @@ export default function ProductList() {
     const qs = next.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
+
+  if (!result || productsRequest.error || categoriesRequest.error) return <CatalogStatus error={productsRequest.error || categoriesRequest.error} retry={() => { productsRequest.retry(); categoriesRequest.retry(); }} />;
 
   const categoryOptions = [
     { id: "all", label: t.products.allCategories },
@@ -221,7 +226,7 @@ export default function ProductList() {
               >
                 {t.products.previous}
               </button>
-              {Array.from({ length: result.totalPages }, (_, i) => i + 1).map((n) => (
+              {Array.from({ length: Math.min(7, result.totalPages) }, (_, i) => Math.max(1, Math.min(result.page - 3, result.totalPages - 6)) + i).map((n) => (
                 <button
                   key={n}
                   type="button"

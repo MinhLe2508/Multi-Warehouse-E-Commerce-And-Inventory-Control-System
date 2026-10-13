@@ -9,7 +9,10 @@ import { useHydrated } from "@/hooks/useHydrated";
 import { useCartStore } from "@/store/useCartStore";
 import ProductCard from "@/components/storefront/ProductCard";
 import WarehouseStockList from "@/components/storefront/WarehouseStockList";
-import { getCategories, getProductById, getRelatedProducts } from "@/shared/lib/mockData";
+import { getCategories } from "@/shared/lib/mockData";
+import { useProduct, useProducts } from "@/hooks/useCatalog";
+import { CatalogError } from "@/shared/lib/catalogApi";
+import CatalogStatus from "./CatalogStatus";
 import { formatVND, getTotalStock, isOutOfStock } from "@/shared/lib/utils";
 import type { Product } from "@/shared/types/product";
 
@@ -41,7 +44,7 @@ function DetailView({ product }: { product: Product }) {
 
   const totalStock = getTotalStock(product);
   const outOfStock = isOutOfStock(product);
-  const categoryName = getCategories().find((c) => c.id === product.category)?.name[language];
+  const categoryName = product.categoryName ?? getCategories().find((c) => c.id === product.category)?.name[language];
 
   // Số đã có trong giỏ chỉ tính sau khi hydrate (tránh lệch HTML server/client)
   const inCart = hydrated ? inCartRaw : 0;
@@ -52,7 +55,8 @@ function DetailView({ product }: { product: Product }) {
   const qty = canAdd ? Math.min(Math.max(1, quantity), remaining) : 1;
   const atMax = canAdd && qty >= remaining;
 
-  const related = getRelatedProducts(product);
+  const relatedRequest = useProducts({ category: product.category || undefined, pageSize: 5 });
+  const related = (relatedRequest.data?.items ?? []).filter((p) => p.id !== product.id).slice(0, 4);
 
   function handleAdd() {
     if (!canAdd) return;
@@ -106,7 +110,8 @@ function DetailView({ product }: { product: Product }) {
             {product.name}
           </h1>
           <p className="mt-4 whitespace-nowrap text-3xl font-semibold text-brand-700">
-            {formatVND(product.price)}
+            {product.basePrice && <span className="mb-1 block text-xs font-normal text-slate-500">{language === "vi" ? "Giá niêm yết" : "List price"}</span>}
+            {formatVND(product.basePrice ?? product.price)}
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -232,8 +237,10 @@ function DetailView({ product }: { product: Product }) {
 }
 
 export default function ProductDetail({ id }: { id: string }) {
-  const product = getProductById(id);
-  if (!product) return <NotFoundView />;
+  const request = useProduct(id);
+  if (request.error instanceof CatalogError && [400, 404].includes(request.error.status)) return <NotFoundView />;
+  const product = request.data;
+  if (!product) return <CatalogStatus error={request.error} retry={request.retry} />;
   // key theo id: chuyển sang sản phẩm khác thì reset số lượng đang chọn
   return <DetailView key={product.id} product={product} />;
 }

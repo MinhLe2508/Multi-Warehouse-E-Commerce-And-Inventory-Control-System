@@ -6,6 +6,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useHydrated } from "@/hooks/useHydrated";
 import { selectSubtotal, selectTotalItems, useCartStore } from "@/store/useCartStore";
 import { getProductById } from "@/shared/lib/mockData";
+import { MOCK_CATALOG } from "@/shared/lib/catalogApi";
 import { SHIPPING_FEE } from "@/shared/lib/mockOrders";
 import { formatVND, getTotalStock } from "@/shared/lib/utils";
 
@@ -70,7 +71,7 @@ export default function CartView() {
   // Tồn kho hiện tại của từng sản phẩm (mock: đọc từ mockData, sau này lấy từ API)
   const rows = items.map((item) => {
     const live = getProductById(item.productId);
-    const max = live ? getTotalStock(live) : 0;
+    const max = MOCK_CATALOG ? (live ? getTotalStock(live) : 0) : item.maxStock;
     return { item, max, soldOut: max <= 0, overStock: max > 0 && item.quantity > max };
   });
   const hasProblem = rows.some((r) => r.soldOut || r.overStock);
@@ -78,6 +79,7 @@ export default function CartView() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      {!MOCK_CATALOG && <p role="status" className="mb-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Giỏ hàng tạm lưu trên thiết bị. Giá và tồn kho cần được xác nhận lại khi đặt hàng. Chức năng đặt hàng đang được hoàn thiện.</p>}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">

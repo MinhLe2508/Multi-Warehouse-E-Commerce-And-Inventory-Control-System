@@ -22,7 +22,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const atLimit = hydrated && inCart >= totalStock;
   const canAdd = !outOfStock && !atLimit;
   const lowStock = !outOfStock && totalStock <= LOW_STOCK_THRESHOLD;
-  const categoryName = getCategories().find((c) => c.id === product.category)?.name[language];
+  const categoryName = product.categoryName ?? getCategories().find((c) => c.id === product.category)?.name[language];
 
   function handleAdd() {
     if (!canAdd) return;
@@ -74,7 +74,8 @@ export default function ProductCard({ product }: { product: Product }) {
 
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="whitespace-nowrap text-base font-semibold text-brand-700">
-            {formatVND(product.price)}
+            {product.basePrice && <span className="mb-1 block text-xs font-normal text-slate-500">{language === "vi" ? "Giá niêm yết" : "List price"}</span>}
+            {formatVND(product.basePrice ?? product.price)}
           </span>
         </div>
 

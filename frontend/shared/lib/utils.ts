@@ -3,9 +3,10 @@ import type { Product } from "@/shared/types/product";
 export const LOW_STOCK_THRESHOLD = 10;
 
 /** 125000 -> "125.000 ₫" (tự định dạng để server và client luôn cho kết quả giống nhau) */
-export function formatVND(amount: number): string {
-  const rounded = Math.round(amount);
-  return `${rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")} ₫`;
+export function formatVND(amount: number | string): string {
+  if (typeof amount === "number") return `${Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")} ₫`;
+  const [whole, fraction = "00"] = amount.split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".")}${fraction !== "00" ? `,${fraction}` : ""} ₫`;
 }
 
 /** Tổng tồn kho của sản phẩm trên tất cả các kho */
