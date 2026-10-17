@@ -1,44 +1,156 @@
 'use client';
+
+import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAdminCtx } from './AdminContext';
-import { NAV, useIsActive } from './Sidebar';
 import { ALERTS } from '../../shared/mock/adminMock';
 
-export function Header() {
+export interface HeaderProps {
+  variant?: 'admin' | 'staff';
+  onToggleMobileSidebar?: () => void;
+}
+
+export function Header({
+  variant = 'admin',
+  onToggleMobileSidebar,
+}: HeaderProps) {
+  const pathname = usePathname();
   const { warehouses, warehouseId, setWarehouseId } = useAdminCtx();
-  const isActive = useIsActive();
-  const open = ALERTS.filter(a => a.status === 'OPEN').length; // TODO(API): lấy từ WebSocket / GET /admin/analytics/low-stock
+  const [hasScrolled, setHasScrolled] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const openAlertsCount = ALERTS.filter(a => a.status === 'OPEN').length;
+
+  // Lấy tiêu đề trang ngắn gọn theo pathname
+  const getPageTitle = () => {
+    if (pathname.includes('/dashboard')) return 'Dashboard';
+    if (pathname.includes('/orders')) return 'Quản lý đơn hàng';
+    if (pathname.includes('/inventory/alerts') || pathname.includes('/alerts')) return 'Cảnh báo tồn kho';
+    if (pathname.includes('/inventory')) return 'Quản lý tồn kho';
+    if (pathname.includes('/settings')) return 'Cài đặt hệ thống';
+    return 'Dashboard';
+  };
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setHasScrolled(!entry.isIntersecting);
+      },
+      { threshold: 0 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
+  const isStaff = variant === 'staff';
+
   return (
-    <header className="border-b border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          Kho đang xem
-          <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
-            className="min-h-11 rounded-md border border-slate-300 bg-white px-2 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
-            <option value="ALL">Tất cả kho</option>
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-        </label>
-        <div className="flex items-center gap-4">
-          <Link href="/admin/alerts" aria-label={`Thông báo: ${open} cảnh báo đang mở`}
-            className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 2 7 2 7H4s2-1 2-7" /><path d="M10 20a2 2 0 0 0 4 0" /></svg>
-            {open > 0 && <span className="absolute right-1 top-1 rounded-full bg-rose-700 px-1.5 text-[11px] font-bold text-white">{open}</span>}
-          </Link>
-          <div className="text-right text-sm leading-tight">
-            <div className="font-semibold">Admin</div>
-            <div className="text-slate-500">admin@shop.vn</div>
+    <>
+      <div ref={sentinelRef} className="admin-scroll-sentinel" />
+
+      <header
+        className={`admin-header ${hasScrolled ? 'has-shadow' : ''} px-3 px-md-4`}
+        style={{
+          height: '56px',
+          borderBottom: '1px solid #ede9fe',
+        }}
+      >
+        <div className="d-flex align-items-center justify-content-between h-100 w-100">
+          {/* Cụm trái: Nút hamburger (mobile) & Tiêu đề trang (Khớp Ảnh 2 & 3) */}
+          <div className="d-flex align-items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-outline-secondary d-lg-none d-flex align-items-center justify-content-center p-0"
+              style={{ width: '36px', height: '36px', borderRadius: '6px' }}
+              onClick={onToggleMobileSidebar}
+              aria-label="Mở menu điều hướng"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+
+            <span className="fw-semibold text-dark fs-6" style={{ letterSpacing: '-0.01em' }}>
+              {getPageTitle()}
+            </span>
+
+            {/* Dropdown chọn kho đang xem */}
+            <div className="d-none d-md-flex align-items-center gap-2 ms-3">
+              <select
+                value={warehouseId}
+                onChange={e => setWarehouseId(e.target.value)}
+                className="form-select form-select-sm"
+                style={{
+                  minHeight: '34px',
+                  fontSize: '0.8rem',
+                  borderColor: '#d1d5db',
+                  borderRadius: '6px',
+                  maxWidth: '180px',
+                }}
+                aria-label="Chọn kho xem dữ liệu"
+              >
+                <option value="ALL">Tất cả kho hàng</option>
+                {warehouses.map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Cụm phải: Chuông cảnh báo & Nhãn vai trò (Khớp Ảnh 2 & 3: "Trang quản trị (Admin)" / "Trang nhân viên (Staff)") */}
+          <div className="d-flex align-items-center gap-3">
+            <Link
+              href={isStaff ? '/staff/inventory/alerts' : '/admin/inventory/alerts'}
+              className="position-relative d-inline-flex align-items-center justify-content-center text-secondary text-decoration-none"
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '6px',
+              }}
+              aria-label="Cảnh báo tồn kho"
+              title="Cảnh báo tồn kho"
+            >
+              <svg
+                className={openAlertsCount > 0 ? 'bell-shake-once' : ''}
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+              </svg>
+
+              {openAlertsCount > 0 && (
+                <span
+                  className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                  style={{ fontSize: '0.65rem' }}
+                >
+                  {openAlertsCount}
+                </span>
+              )}
+            </Link>
+
+            <span
+              className="small text-secondary fw-normal d-none d-sm-inline-block"
+              style={{ fontSize: '0.85rem' }}
+            >
+              {isStaff ? 'Trang nhân viên (Staff)' : 'Trang quản trị (Admin)'}
+            </span>
           </div>
         </div>
-      </div>
-      <nav aria-label="Điều hướng (di động)" className="flex gap-1 overflow-x-auto border-t border-slate-100 px-3 md:hidden">
-        {NAV.map(n => (
-          <Link key={n.href} href={n.href} aria-current={isActive(n.href) ? 'page' : undefined}
-            className={`whitespace-nowrap px-3 py-3 text-sm ${isActive(n.href) ? 'border-b-2 border-teal-700 font-semibold text-teal-800' : 'text-slate-600'}`}>
-            {n.label}
-          </Link>
-        ))}
-      </nav>
-    </header>
+      </header>
+    </>
   );
 }

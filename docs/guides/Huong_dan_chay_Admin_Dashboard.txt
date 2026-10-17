@@ -1,0 +1,86 @@
+================================================================================
+          HƯỚNG DẪN CHẠY GIAO DIỆN ADMIN DASHBOARD (TUẦN 1) - TRIẾT
+================================================================================
+
+Chào mọi người, Triết đã hoàn thành và đẩy lên branch 'project':
+  1. API Contract cho Admin API (docs/api/admin-api-contract.yaml)
+  2. Mockup UI Admin Dashboard & các trang quản lý kho, đơn hàng (frontend/app/admin)
+
+Mọi người làm theo các bước dưới đây để chạy và kiểm tra thử trên máy nhé:
+
+--------------------------------------------------------------------------------
+BƯỚC 1: KÉO CODE MỚI NHẤT VỀ MÁY
+--------------------------------------------------------------------------------
+Mở terminal tại thư mục gốc dự án (Multi-Warehouse-E-Commerce-And-Inventory-Control-System):
+
+git checkout project
+git pull origin project
+
+
+--------------------------------------------------------------------------------
+BƯỚC 2: CÀI ĐẶT THƯ VIỆN & CHẠY FRONTEND
+--------------------------------------------------------------------------------
+* Lưu ý: Cần cài đặt node_modules ở thư mục frontend (dùng recharts, lucide-react...).
+
+Mở terminal chạy các lệnh:
+
+cd frontend
+npm ci
+npm run dev
+
+-> Server Next.js sẽ khởi động tại: http://localhost:3000
+
+
+--------------------------------------------------------------------------------
+BƯỚC 3: CÁC ĐƯỜNG LINK TRUY CẬP TRÊN TRÌNH DUYỆT
+--------------------------------------------------------------------------------
+Mở trình duyệt (Chrome / Edge / Firefox) và vào các link sau:
+
+1. Dashboard Tổng quan:
+   http://localhost:3000/admin
+   - 4 thẻ KPI thống kê tổng quan (doanh thu, số đơn, cảnh báo tồn, tồn khả dụng).
+   - Biểu đồ ComposedChart (kết hợp cột doanh thu & đường số đơn) dùng Recharts.
+   - 2 widget cảnh báo tồn kho và danh sách đơn hàng cần xử lý gấp.
+
+2. Tồn kho đa kho:
+   http://localhost:3000/admin/inventory
+   - Bảng tổng hợp tồn kho đa kho: SKU, tên sản phẩm, tổng tồn, đang giữ chỗ, khả dụng.
+   - Cột chi tiết số lượng khả dụng phân bổ theo từng chi nhánh (Kho Hà Nội, Kho TP.HCM...).
+   - Tìm kiếm theo SKU / tên sản phẩm và bộ lọc theo kho.
+   - Cảnh báo màu đỏ nổi bật khi số lượng chạm ngưỡng tối thiểu.
+
+3. Cảnh báo tồn kho thấp:
+   http://localhost:3000/admin/alerts
+   - Danh sách mặt hàng chạm ngưỡng tồn kho tối thiểu.
+   - Lọc theo mức độ cảnh báo (Mọi mức / Nghiêm trọng / Sắp hết).
+   - Nút "Tạo yêu cầu nhập kho" mở popup Restock Dialog (nhập số lượng và kho nhận).
+   - Nút "Đánh dấu đã xử lý".
+
+4. Quản lý đơn hàng:
+   http://localhost:3000/admin/orders
+   - Bảng đơn hàng: Mã đơn, tên khách, kho xuất hàng, tổng tiền, trạng thái, ngày tạo.
+   - Lọc theo kho và trạng thái đơn hàng (PENDING, CONFIRMED, PROCESSING, SHIPPED...).
+   - Tìm kiếm theo mã đơn hoặc tên khách.
+   - Nút "Chi tiết" mở Drawer trượt bên phải hiển thị chi tiết sản phẩm, kho xuất,
+     lịch sử trạng thái và nút chuyển tiếp trạng thái đơn hàng.
+
+5. Cài đặt Admin:
+   http://localhost:3000/admin/settings
+   - Thông tin hệ thống và tài khoản quản trị.
+
+* TÍNH NĂNG NỔI BẬT:
+  Ở thanh Header phía trên có dropdown "Kho đang xem" (Tất cả kho / Kho Hà Nội / Kho TP.HCM).
+  Khi bạn chọn đổi kho, dữ liệu ở tất cả các trang (Dashboard, Tồn kho, Đơn hàng) sẽ
+  tự động lọc theo kho tương ứng.
+
+
+--------------------------------------------------------------------------------
+BƯỚC 4: DÀNH CHO CÁC BẠN LÀM BACKEND / DATABASE
+--------------------------------------------------------------------------------
+- File API Contract chi tiết đã được viết sẵn tại:
+  docs/api/admin-api-contract.yaml
+- Đặc tả đầy đủ 12 endpoints cho:
+  + AdminOrdersController (prefix: /admin/orders)
+  + AdminAnalyticsController (prefix: /admin/analytics)
+  + Bao gồm chuẩn hóa Status enum, kiểu Money (string), BigIntId, phân trang và mã lỗi.
+================================================================================

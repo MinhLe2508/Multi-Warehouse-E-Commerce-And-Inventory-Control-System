@@ -26,10 +26,22 @@ export default function AdminInventoryPage() {
     <div className="mx-auto max-w-7xl">
       <h1 className="mb-4 text-xl font-bold">Tồn kho theo kho</h1>
       <div className="mb-3 flex flex-wrap gap-3">
-        <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm theo SKU hoặc tên sản phẩm" aria-label="Tìm sản phẩm"
-          className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm sm:w-72 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600" />
-        <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} aria-label="Lọc theo kho"
-          className="min-h-11 rounded-md border border-slate-300 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
+        <input
+          type="search"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Tìm theo SKU hoặc tên sản phẩm"
+          aria-label="Tìm sản phẩm"
+          className="form-control form-control-sm sm:w-72"
+          style={{ maxWidth: '320px', minHeight: '40px', borderColor: '#ede9fe', borderRadius: '8px' }}
+        />
+        <select
+          value={warehouseId}
+          onChange={e => setWarehouseId(e.target.value)}
+          aria-label="Lọc theo kho"
+          className="form-select form-select-sm"
+          style={{ maxWidth: '200px', minHeight: '40px', borderColor: '#ede9fe', borderRadius: '8px' }}
+        >
           <option value="ALL">Tất cả kho</option>
           {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
         </select>
@@ -39,9 +51,9 @@ export default function AdminInventoryPage() {
         : loading ? <p className="text-sm text-slate-500">Đang tải tồn kho…</p>
         : products.length === 0 ? <p className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Không tìm thấy sản phẩm. Thử từ khóa khác hoặc chọn “Tất cả kho”.</p>
         : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm" style={{ borderColor: '#ede9fe' }}>
           <table className="w-full min-w-[760px] text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600">
+            <thead className="bg-slate-50 text-left text-slate-600" style={{ backgroundColor: '#faf5ff' }}>
               <tr><th className="px-3 py-2">SKU</th><th className="px-3 py-2">Sản phẩm</th><th className="px-3 py-2 text-right">Tổng tồn kho</th><th className="px-3 py-2 text-right">Đang giữ chỗ</th><th className="px-3 py-2 text-right">Khả dụng</th><th className="px-3 py-2">Khả dụng theo kho</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -46,7 +46,12 @@ export function OrderDrawer({ order, onClose, onAdvance }: Props) {
 
         <div className="mt-6">
           {next ? (
-            <button onClick={() => onAdvance(order.id)} className="min-h-11 w-full rounded-md bg-teal-700 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2">
+            <button
+              type="button"
+              onClick={() => onAdvance(order.id)}
+              className="btn btn-gradient-purple w-100 py-2.5 small"
+              style={{ minHeight: '44px', fontSize: '0.875rem' }}
+            >
               Chuyển sang “{STATUS_LABEL[next]}”
             </button>
           ) : (

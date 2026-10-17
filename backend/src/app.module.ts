@@ -8,6 +8,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { ProductsModule } from './products/products.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ProductsModule } from './products/products.module';
     MailModule,
     AuthModule,
     ProductsModule,
+    AdminModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, HealthService],

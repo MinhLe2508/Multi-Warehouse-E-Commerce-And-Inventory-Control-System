@@ -1,18 +1,52 @@
 'use client';
-import type { ReactNode } from 'react';
+
+import React, { useState, type ReactNode } from 'react';
 import { AdminProvider } from './AdminContext';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
+import { RoleGate } from './RoleGate';
+import { ScrollTopButton } from './ScrollTopButton';
 
-export function AdminShell({ children, fontClass }: { children: ReactNode; fontClass: string }) {
+export interface AdminShellProps {
+  children: ReactNode;
+  fontClass?: string;
+  variant?: 'admin' | 'staff';
+}
+
+export function AdminShell({
+  children,
+  fontClass = '',
+  variant = 'admin',
+}: AdminShellProps) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   return (
     <AdminProvider>
-      <div className={`${fontClass} flex min-h-screen bg-slate-50 text-slate-900`}>
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Header />
-          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
-        </div>
+      <div className={`admin-root ${fontClass}`}>
+        <RoleGate variant={variant}>
+          <div className="admin-layout-wrapper">
+            {/* Sidebar (Desktop cố định & Mobile Offcanvas) */}
+            <Sidebar
+              variant={variant}
+              showMobile={mobileSidebarOpen}
+              onHideMobile={() => setMobileSidebarOpen(false)}
+            />
+
+            {/* Khung nội dung chính */}
+            <div className="admin-main-container">
+              <Header
+                variant={variant}
+                onToggleMobileSidebar={() => setMobileSidebarOpen(true)}
+              />
+              <main className="flex-grow-1 p-3 p-md-4" style={{ minWidth: 0 }}>
+                {children}
+              </main>
+            </div>
+          </div>
+        </RoleGate>
+
+        {/* Nút cuộn lên đầu trang */}
+        <ScrollTopButton />
       </div>
     </AdminProvider>
   );
