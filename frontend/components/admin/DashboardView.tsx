@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Row, Col, Card } from 'react-bootstrap';
 import {
   DollarSign,
@@ -121,26 +122,31 @@ export function DashboardView() {
       <RevealWrapper className="mb-3">
         <Row className="g-3">
           <Col xs={12} sm={6} md={3}>
-            <Card className="admin-kpi-card p-3">
-              <div className="d-flex align-items-center justify-content-between mb-2">
-                <span className="text-secondary small fw-medium">
-                  Cảnh báo chưa xử lý
-                </span>
-                <div
-                  className="kpi-icon-badge"
-                  style={{
-                    backgroundColor: '#fee2e2',
-                    color: '#dc2626',
-                    border: '1px solid #fecaca',
-                  }}
-                >
-                  <AlertTriangle size={18} />
+            <Link href="/admin/inventory" className="text-decoration-none">
+              <Card className="admin-kpi-card p-3 h-100">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-secondary small fw-medium">
+                    Cảnh báo tồn kho
+                  </span>
+                  <div
+                    className="kpi-icon-badge"
+                    style={{
+                      backgroundColor: '#fee2e2',
+                      color: '#dc2626',
+                      border: '1px solid #fecaca',
+                    }}
+                  >
+                    <AlertTriangle size={18} />
+                  </div>
                 </div>
-              </div>
-              <div className="h3 fw-bold mb-0" style={{ color: '#dc2626' }}>
-                3
-              </div>
-            </Card>
+                <div className="h3 fw-bold mb-0" style={{ color: '#dc2626' }}>
+                  3
+                </div>
+                <div className="text-muted small mt-1" style={{ fontSize: '0.75rem' }}>
+                  Xem ma trận đa kho →
+                </div>
+              </Card>
+            </Link>
           </Col>
         </Row>
       </RevealWrapper>

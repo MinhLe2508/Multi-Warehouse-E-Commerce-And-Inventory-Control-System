@@ -189,6 +189,158 @@ paths:
         '404': {'$ref': '#/components/responses/NotFound'}
         '500': {'$ref': '#/components/responses/InternalError'}
 
+  /admin/inventory:
+    get:
+      tags: [AdminInventory]
+      operationId: adminListInventory
+      summary: Danh sach ton kho da kho phan trang theo san pham
+      description: |
+        Phan trang theo San Pham (Product). Moi san pham tra kem danh sach ton kho chi tiet tai tung kho.
+        ADMIN xem tat ca kho. WAREHOUSE_STAFF chi xem du lieu.
+        Ho tro loc theo warehouseId, status (ALL, OUT_OF_STOCK, LOW_STOCK, SAFE), categoryId va tim kiem substring.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: warehouseId, in: query, schema: {type: string, format: uuid}}
+        - {name: categoryId, in: query, schema: {type: string, format: uuid}}
+        - {name: status, in: query, schema: {type: string, enum: [ALL, OUT_OF_STOCK, LOW_STOCK, SAFE]}}
+        - {name: search, in: query, schema: {type: string, maxLength: 100}, description: Tim theo SKU hoac ten san pham.}
+      responses:
+        '200':
+          description: Danh sach ton kho phan trang theo san pham.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productId: {type: string, format: uuid}
+                        sku: {type: string}
+                        name: {type: string}
+                        categoryName: {type: string}
+                        totalStock: {type: integer}
+                        totalReserved: {type: integer}
+                        totalAvailable: {type: integer}
+                        status: {type: string, enum: [OUT_OF_STOCK, LOW_STOCK, SAFE]}
+                        warehouses:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              inventoryId: {type: string}
+                              warehouseId: {type: string, format: uuid}
+                              warehouseCode: {type: string}
+                              warehouseName: {type: string}
+                              stock: {type: integer}
+                              reservedStock: {type: integer}
+                              availableStock: {type: integer}
+                              threshold: {type: integer, nullable: true}
+                              effectiveThreshold: {type: integer}
+                              status: {type: string, enum: [OUT_OF_STOCK, LOW_STOCK, SAFE]}
+                              version: {type: integer}
+                  total: {type: integer}
+                  page: {type: integer}
+                  pageSize: {type: integer}
+                  totalPages: {type: integer}
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '500': {'$ref': '#/components/responses/InternalError'}
+
+  /admin/inventory/summary:
+    get:
+      tags: [AdminInventory]
+      operationId: adminGetInventorySummary
+      summary: Tong hop so lieu ton kho toan he thong cho bieu do WarehouseStockChart
+      description: Tra ve so lieu thong ke toan he thong (doc lap bo loc bang danh sach).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: So lieu tong hop ton kho.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalProducts: {type: integer}
+                  totalStock: {type: integer}
+                  totalReserved: {type: integer}
+                  totalAvailable: {type: integer}
+                  alertItemCount: {type: integer}
+                  availabilityRate: {type: number}
+                  byWarehouse:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        warehouseId: {type: string, format: uuid}
+                        warehouseCode: {type: string}
+                        warehouseName: {type: string}
+                        stock: {type: integer}
+                        reservedStock: {type: integer}
+                        availableStock: {type: integer}
+                        sharePercent: {type: number}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+
+  /admin/inventory/{id}:
+    patch:
+      tags: [AdminInventory]
+      operationId: adminAdjustInventoryStock
+      summary: Dieu chinh so luong ton kho kiem ke (chong lost-update)
+      description: |
+        ADMIN only. Yeu cau expectedVersion de kiem tra Optimistic Locking.
+        Ghi audit log voi ly do MANUAL_ADJUST hoac RESTOCK va note bat buoc (5-500 ky tu).
+        Tu choi neu newStock < reservedStock (tra 422).
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newStock, expectedVersion, reason, note]
+              properties:
+                newStock: {type: integer, minimum: 0}
+                expectedVersion: {type: integer, minimum: 0}
+                reason: {type: string, enum: [MANUAL_ADJUST, RESTOCK]}
+                note: {type: string, minLength: 5, maxLength: 500}
+      responses:
+        '200':
+          description: Cap nhat ton kho thanh cong.
+        '400': {'$ref': '#/components/responses/BadRequest'}
+        '401': {'$ref': '#/components/responses/Unauthorized'}
+        '403': {'$ref': '#/components/responses/Forbidden'}
+        '404': {'$ref': '#/components/responses/NotFound'}
+        '409':
+          description: Xung dot phien ban (Optimistic lock conflict).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode: {type: integer, example: 409}
+                  message: {type: string, example: "Version conflict: Inventory row has been modified by another transaction"}
+        '422':
+          description: So luong moi thap hon so dang giu cho (newStock < reservedStock).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode: {type: integer, example: 422}
+                  message: {type: string, example: "Cannot reduce stock below reserved stock"}
+
   /admin/alerts:
     get:
       tags: [AdminAlerts]

@@ -1,3 +1,7 @@
 'use client';
 
-export { default } from '../../admin/inventory/page';
+import AdminInventoryPage from '../../admin/inventory/page';
+
+export default function StaffInventoryPage() {
+  return <AdminInventoryPage />;
+}

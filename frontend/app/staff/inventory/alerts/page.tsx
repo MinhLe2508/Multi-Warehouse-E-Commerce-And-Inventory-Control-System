@@ -1,3 +1,7 @@
 'use client';
 
-export { default } from '../../../admin/alerts/page';
+import AdminAlertsPage from '../../../admin/alerts/page';
+
+export default function StaffAlertsPage() {
+  return <AdminAlertsPage />;
+}

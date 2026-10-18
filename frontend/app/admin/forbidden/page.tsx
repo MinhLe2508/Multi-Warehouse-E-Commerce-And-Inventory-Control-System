@@ -9,7 +9,7 @@ import { useCurrentAdminUser } from '../../../hooks/useCurrentAdminUser';
 
 export default function ForbiddenPage() {
   const router = useRouter();
-  const { role, isAdmin, isStaff, isCustomer, loginAs, logout } = useCurrentAdminUser();
+  const { isAdmin, isStaff, loginAs, logout } = useCurrentAdminUser();
 
   return (
     <div className="container py-5">

@@ -28,3 +28,75 @@ export interface AdminOrder {
   items: AdminOrderItem[]; history: OrderHistoryItem[];
 }
 export interface RevenuePoint { date: string; revenue: number; orders: number }
+
+export type StockStatus = 'OUT_OF_STOCK' | 'LOW_STOCK' | 'IN_STOCK';
+
+export interface WarehouseStockDetail {
+  inventoryId: string;
+  warehouseId: string;
+  warehouseCode: string;
+  warehouseName: string;
+  stock: number;
+  reservedStock: number;
+  availableStock: number;
+  threshold: number;
+  effectiveThreshold: number;
+  isLowStock: boolean;
+  version: number;
+  updatedAt: string;
+}
+
+export interface ProductInventoryItem {
+  id: string;
+  sku: string;
+  name: string;
+  category: string;
+  totalStock: number;
+  totalReserved: number;
+  totalAvailable: number;
+  effectiveThreshold: number;
+  status: StockStatus;
+  warehouses: Record<string, WarehouseStockDetail>;
+}
+
+export interface InventoryWarehouseStat {
+  warehouseId: string;
+  warehouseCode: string;
+  warehouseName: string;
+  totalStock: number;
+  totalReserved: number;
+  totalAvailable: number;
+  capacityRate: number;
+}
+
+export interface InventorySummaryResponse {
+  kpis: {
+    totalProducts: number;
+    totalStock: number;
+    totalReserved: number;
+    totalAvailable: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+  };
+  warehouseDistribution: InventoryWarehouseStat[];
+  topLowStockProducts: Array<{
+    id: string;
+    sku: string;
+    name: string;
+    totalAvailable: number;
+    status: StockStatus;
+  }>;
+}
+
+export interface StockAdjustPayload {
+  inventoryId: string;
+  newStock: number;
+  expectedVersion: number;
+  note: string;
+}
+
+export interface StockAdjustResponse {
+  success: boolean;
+  message: string;
+  data?: WarehouseStockDetail;
+}

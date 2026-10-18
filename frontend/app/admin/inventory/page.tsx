@@ -1,77 +1,157 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { useAdminCtx } from '../../../components/admin/AdminContext';
-import { useInventory } from '../../../hooks/useAdminAnalytics';
+
+import React from 'react';
+import { RefreshCw, Download, Layers } from 'lucide-react';
+import { useAdminInventory } from '../../../hooks/useAdminInventory';
+import { WarehouseStockChart } from '../../../components/admin/WarehouseStockChart';
+import { InventoryFilterBar } from '../../../components/admin/InventoryFilterBar';
+import { InventoryTable } from '../../../components/admin/InventoryTable';
+import { StockAdjustModal } from '../../../components/admin/StockAdjustModal';
 
 export default function AdminInventoryPage() {
-  const { rows, warehouses, loading, error } = useInventory();
-  const { warehouseId, setWarehouseId } = useAdminCtx();
-  const [q, setQ] = useState('');
+  const {
+    products,
+    paginatedProducts,
+    summary,
+    loading,
+    error,
+    search,
+    category,
+    warehouseId,
+    status,
+    page,
+    pageSize,
+    totalPages,
+    totalFilteredCount,
+    warehouses,
+    categories,
+    editingTarget,
+    setSearch,
+    setCategory,
+    setWarehouseId,
+    setStatus,
+    setPage,
+    setPageSize,
+    resetFilters,
+    openAdjustModal,
+    closeAdjustModal,
+    submitStockAdjustment,
+    refreshData,
+  } = useAdminInventory();
 
-  const products = useMemo(() => {
-    const map = new Map<string, { sku: string; name: string; category: string; stock: number; reserved: number; available: number; low: boolean; perWh: { code: string; available: number; low: boolean }[] }>();
-    for (const r of rows) {
-      if (warehouseId !== 'ALL' && r.warehouseId !== warehouseId) continue;
-      if (q && !(r.sku + r.name).toLowerCase().includes(q.toLowerCase())) continue;
-      const p = map.get(r.sku) ?? { sku: r.sku, name: r.name, category: r.categoryName, stock: 0, reserved: 0, available: 0, low: false, perWh: [] };
-      const low = r.availableStock <= r.threshold; // TODO: nhóm chốt so với stock hay available_stock
-      p.stock += r.stock; p.reserved += r.reservedStock; p.available += r.availableStock; p.low ||= low;
-      p.perWh.push({ code: warehouses.find(w => w.id === r.warehouseId)?.code ?? '?', available: r.availableStock, low });
-      map.set(r.sku, p);
-    }
-    return [...map.values()];
-  }, [rows, warehouses, warehouseId, q]);
+  const handleExportCSV = () => {
+    // Xuất CSV đơn giản cho quản trị viên
+    const headers = ['Mã SKU', 'Tên sản phẩm', 'Danh mục', 'Tổng tồn', 'Tổng giữ chỗ', 'Tổng khả dụng', 'Trạng thái'];
+    const rows = products.map((p) => [
+      `"${p.sku}"`,
+      `"${p.name.replace(/"/g, '""')}"`,
+      `"${p.category}"`,
+      p.totalStock,
+      p.totalReserved,
+      p.totalAvailable,
+      p.status,
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,\uFEFF' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `bao_cao_ton_kho_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
-    <div className="mx-auto max-w-7xl">
-      <h1 className="mb-4 text-xl font-bold">Tồn kho theo kho</h1>
-      <div className="mb-3 flex flex-wrap gap-3">
-        <input
-          type="search"
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          placeholder="Tìm theo SKU hoặc tên sản phẩm"
-          aria-label="Tìm sản phẩm"
-          className="form-control form-control-sm sm:w-72"
-          style={{ maxWidth: '320px', minHeight: '40px', borderColor: '#ede9fe', borderRadius: '8px' }}
-        />
-        <select
-          value={warehouseId}
-          onChange={e => setWarehouseId(e.target.value)}
-          aria-label="Lọc theo kho"
-          className="form-select form-select-sm"
-          style={{ maxWidth: '200px', minHeight: '40px', borderColor: '#ede9fe', borderRadius: '8px' }}
-        >
-          <option value="ALL">Tất cả kho</option>
-          {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </select>
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 space-y-6">
+      {/* Top Banner & Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="p-1.5 rounded-lg bg-purple-100 text-purple-700">
+              <Layers className="w-5 h-5" />
+            </span>
+            <span className="text-xs font-bold uppercase tracking-wider text-purple-600 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+              Quản Trị Tồn Kho Đa Kho (FR-INV-01)
+            </span>
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            Ma Trận Kiểm Soát Tồn Kho Toàn Quốc
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Kiểm tra lượng tồn khả dụng, số lượng giữ chỗ và cảnh báo ngưỡng an toàn theo thời gian thực
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={refreshData}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-all hover:scale-[1.02] active:scale-95"
+            title="Làm mới dữ liệu tồn kho"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-purple-600' : ''}`} />
+            Làm mới
+          </button>
+          <button
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-200 transition-all hover:scale-[1.02] active:scale-95"
+            title="Xuất báo cáo CSV"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Xuất file CSV
+          </button>
+        </div>
       </div>
 
-      {error ? <p role="alert" className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">Không tải được tồn kho. Kiểm tra kết nối rồi tải lại trang.</p>
-        : loading ? <p className="text-sm text-slate-500">Đang tải tồn kho…</p>
-        : products.length === 0 ? <p className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Không tìm thấy sản phẩm. Thử từ khóa khác hoặc chọn “Tất cả kho”.</p>
-        : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm" style={{ borderColor: '#ede9fe' }}>
-          <table className="w-full min-w-[760px] text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600" style={{ backgroundColor: '#faf5ff' }}>
-              <tr><th className="px-3 py-2">SKU</th><th className="px-3 py-2">Sản phẩm</th><th className="px-3 py-2 text-right">Tổng tồn kho</th><th className="px-3 py-2 text-right">Đang giữ chỗ</th><th className="px-3 py-2 text-right">Khả dụng</th><th className="px-3 py-2">Khả dụng theo kho</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {products.map(p => (
-                <tr key={p.sku}>
-                  <td className="px-3 py-2.5 font-medium">{p.sku}</td>
-                  <td className="px-3 py-2.5">{p.name}<div className="text-xs text-slate-500">{p.category}</div></td>
-                  <td className="px-3 py-2.5 text-right">{p.stock}</td><td className="px-3 py-2.5 text-right">{p.reserved}</td>
-                  <td className={`px-3 py-2.5 text-right font-semibold ${p.low ? 'text-rose-800' : ''}`}>{p.available}</td>
-                  <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1.5">
-                    {p.perWh.map(w => <span key={w.code} className={`rounded px-2 py-0.5 text-xs ${w.low ? 'bg-rose-100 text-rose-900' : 'bg-slate-100 text-slate-800'}`}>{w.code}: {w.available}{w.low ? ' (thấp)' : ''}</span>)}
-                  </div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Thông báo lỗi nếu có */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-800">
+          {error}
         </div>
       )}
+
+      {/* Phân hệ Biểu đồ & 6 KPIs (FR-DASH-01) */}
+      <WarehouseStockChart summary={summary} />
+
+      {/* Bộ lọc tìm kiếm & Kho hàng (FR-INV-01, FR-DASH-01) */}
+      <InventoryFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        category={category}
+        onCategoryChange={setCategory}
+        categories={categories}
+        warehouseId={warehouseId}
+        onWarehouseChange={setWarehouseId}
+        warehouses={warehouses}
+        status={status}
+        onStatusChange={setStatus}
+        onReset={resetFilters}
+        totalFilteredCount={totalFilteredCount}
+        totalProductsCount={products.length}
+      />
+
+      {/* Bảng Ma trận Tồn kho Sản phẩm x Kho hàng */}
+      <InventoryTable
+        products={paginatedProducts}
+        warehouses={warehouses}
+        page={page}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        totalFilteredCount={totalFilteredCount}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        onOpenAdjust={openAdjustModal}
+      />
+
+      {/* Modal Điều chỉnh Tồn kho (Optimistic Lock & Audit) */}
+      <StockAdjustModal
+        target={editingTarget}
+        onClose={closeAdjustModal}
+        onSubmit={submitStockAdjustment}
+      />
     </div>
   );
 }
