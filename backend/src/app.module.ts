@@ -11,9 +11,13 @@ import { ProductsModule } from './products/products.module';
 import { AdminModule } from './admin/admin.module';
 import { PricingModule } from './pricing/pricing.module';
 import { OrdersModule } from './orders/orders.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { InventoryModule } from './inventory/inventory.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
+    InventoryModule,
     PrismaModule,
     NotificationsModule,
     MailModule,
