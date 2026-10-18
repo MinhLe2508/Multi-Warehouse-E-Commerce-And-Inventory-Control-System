@@ -9,6 +9,8 @@ import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { ProductsModule } from './products/products.module';
 import { AdminModule } from './admin/admin.module';
+import { PricingModule } from './pricing/pricing.module';
+import { OrdersModule } from './orders/orders.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { AdminModule } from './admin/admin.module';
     AuthModule,
     ProductsModule,
     AdminModule,
+    PricingModule,
+    OrdersModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, HealthService],
