@@ -1,116 +1,110 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { Product } from "@/shared/types/product";
-import { MOCK_CATALOG } from "@/shared/lib/catalogApi";
-import { getProductById } from "@/shared/lib/mockData";
-import { getTotalStock } from "@/shared/lib/utils";
-import { isRecord } from "@/shared/lib/storage";
-
-export interface CartItem {
-  productId: string;
-  name: string;
-  /** Giá VND, số nguyên */
-  price: number;
-  image: string;
-  quantity: number;
-  maxStock: number;
-}
+import { CatalogError, fetchProduct, MOCK_CATALOG } from "@/shared/lib/catalogApi";
+import {
+  changeQuantity, reconcileCart, restoreCart, toCartItem,
+  type CartItem, type CatalogResult,
+} from "@/shared/lib/cartModel";
+export type { CartItem } from "@/shared/lib/cartModel";
 
 interface CartState {
   items: CartItem[];
+  syncStatus: "idle" | "loading" | "ready" | "error";
+  storageError: boolean;
   addItem: (product: Product, quantity?: number) => number;
   setQuantity: (productId: string, quantity: number) => void;
   removeItem: (productId: string) => void;
   clearCart: () => void;
+  refreshCatalog: (signal: AbortSignal) => Promise<void>;
 }
 
-function cartItem(product: Product, quantity: number): CartItem {
-  return {
-    productId: product.id, name: product.name, price: product.price,
-    image: product.image, quantity, maxStock: getTotalStock(product),
-  };
-}
-
-/** Hỗ trợ key cũ; bỏ dữ liệu hỏng, gộp id trùng, lấy giá từ catalog mock. */
-function restoreItems(persisted: unknown): CartItem[] {
-  if (!isRecord(persisted) || !Array.isArray(persisted.items)) return [];
-  const result = new Map<string, CartItem>();
-  for (const value of persisted.items) {
-    if (!isRecord(value) || typeof value.productId !== "string" ||
-      typeof value.quantity !== "number" || !Number.isSafeInteger(value.quantity) ||
-      value.quantity < 1) continue;
-    if (!MOCK_CATALOG) {
-      if (typeof value.name !== "string" || typeof value.image !== "string" ||
-        typeof value.price !== "number" || !Number.isFinite(value.price) || value.price < 0 ||
-        typeof value.maxStock !== "number" || !Number.isSafeInteger(value.maxStock) || value.maxStock < 0) continue;
-      const quantity = (result.get(value.productId)?.quantity ?? 0) + value.quantity;
-      if (!Number.isSafeInteger(quantity)) continue;
-      result.set(value.productId, { productId: value.productId, name: value.name,
-        image: value.image, price: value.price, maxStock: value.maxStock, quantity });
-      continue;
+let requestVersion = 0;
+let storageFailed = false;
+// Keep the cart usable in memory when storage is unavailable or full.
+const storage = createJSONStorage(() => ({
+  getItem: (key: string) => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) JSON.parse(raw);
+      return raw;
+    } catch { storageFailed = true; return null; }
+  },
+  setItem: (key: string, value: string) => {
+    try { localStorage.setItem(key, value); }
+    catch {
+      storageFailed = true;
+      queueMicrotask(() => {
+        if (!useCartStore.getState().storageError) useCartStore.setState({ storageError: true });
+      });
     }
-    const product = getProductById(value.productId);
-    if (!product) continue;
-    const quantity = (result.get(product.id)?.quantity ?? 0) + value.quantity;
-    if (!Number.isSafeInteger(quantity)) continue;
-    // Không âm thầm kẹp giỏ stale: CartView cảnh báo, đặt hàng trả 409.
-    result.set(product.id, cartItem(product, quantity));
-  }
-  return [...result.values()];
-}
+  },
+  removeItem: (key: string) => { try { localStorage.removeItem(key); } catch { storageFailed = true; } },
+}));
 
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
-      items: [],
+      items: [], syncStatus: "idle", storageError: false,
       addItem: (product, quantity = 1) => {
-        if (!Number.isFinite(quantity) || quantity < 1) return 0;
-        const maxStock = getTotalStock(product);
-        if (maxStock <= 0) return 0;
-        const existing = get().items.find((item) => item.productId === product.id);
+        if (!Number.isSafeInteger(quantity) || quantity < 1) return 0;
+        const item = toCartItem(product, quantity);
+        if (!item.unitPrice || !Number.isSafeInteger(item.maxStock) || item.maxStock <= 0) return 0;
+        const existing = get().items.find((row) => row.productId === product.id);
         const current = existing?.quantity ?? 0;
-        const next = Math.min(current + Math.floor(quantity), maxStock);
+        const next = Math.min(current + quantity, item.maxStock);
         const added = next - current;
         if (added <= 0) return 0;
-        const updated = cartItem(product, next);
-        set((state) => ({
-          items: existing
-            ? state.items.map((item) => item.productId === product.id ? updated : item)
-            : [...state.items, updated],
+        set((state) => ({ items: existing
+          ? state.items.map((row) => row.productId === product.id ? { ...item, quantity: next } : row)
+          : [...state.items, { ...item, quantity: next }],
         }));
         return added;
       },
-      setQuantity: (productId, quantity) => {
-        if (!Number.isFinite(quantity)) return;
-        if (!MOCK_CATALOG) {
-          set((state) => ({ items: state.items.map((item) => item.productId === productId
-            ? { ...item, quantity: Math.min(Math.max(1, Math.floor(quantity)), Math.max(1, item.maxStock)) } : item) }));
-          return;
+      setQuantity: (productId, quantity) => set((state) => ({
+        items: state.items.map((item) => item.productId === productId ? changeQuantity(item, quantity) : item),
+      })),
+      removeItem: (productId) => set((state) => ({ items: state.items.filter((item) => item.productId !== productId) })),
+      clearCart: () => { requestVersion++; set({ items: [], syncStatus: "idle" }); },
+      refreshCatalog: async (signal) => {
+        const version = ++requestVersion;
+        const ids = get().items.map((item) => item.productId);
+        if (!ids.length) { set({ syncStatus: "idle" }); return; }
+        set({ syncStatus: "loading" });
+        const results: CatalogResult[] = [];
+        // Bound concurrency so a restored large cart cannot flood the API.
+        for (let start = 0; start < ids.length; start += 6) {
+          const batch = await Promise.all(ids.slice(start, start + 6).map(async (id): Promise<CatalogResult> => {
+            try {
+              const timeout = AbortSignal.timeout(10000);
+              const product = await fetchProduct(id, AbortSignal.any([signal, timeout]));
+              return { id, kind: "available", product };
+            } catch (error) {
+              return { id, kind: error instanceof CatalogError && error.status === 404 ? "unavailable" : "error" };
+            }
+          }));
+          if (signal.aborted || version !== requestVersion) return;
+          results.push(...batch);
         }
-        const product = getProductById(productId);
-        const maxStock = product ? getTotalStock(product) : 0;
-        if (!product || maxStock <= 0) return;
-        const next = Math.min(Math.max(1, Math.floor(quantity)), maxStock);
         set((state) => ({
-          items: state.items.map((item) => item.productId === productId ? cartItem(product, next) : item),
+          items: reconcileCart(state.items, results),
+          syncStatus: results.some((result) => result.kind === "error") ? "error" : "ready",
         }));
       },
-      removeItem: (productId) => set((state) => ({
-        items: state.items.filter((item) => item.productId !== productId),
-      })),
-      clearCart: () => set({ items: [] }),
     }),
     {
       name: MOCK_CATALOG ? "multimart-cart" : "multimart-api-cart",
+      storage,
       partialize: (state) => ({ items: state.items }),
-      merge: (persisted, current) => ({ ...current, items: restoreItems(persisted) }),
+      merge: (persisted, current) => ({ ...current, items: restoreCart(persisted), storageError: storageFailed }),
     },
   ),
 );
 
 export const selectTotalItems = (state: CartState): number =>
   state.items.reduce((sum, item) => sum + item.quantity, 0);
+// Kept for the existing mock checkout; real pricing remains owned by P3.
 export const selectSubtotal = (state: CartState): number =>
   state.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
