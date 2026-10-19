@@ -24,39 +24,19 @@
     @UseGuards(JwtAuthGuard) trùng để tránh xác thực hai lần.
  */
 
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards,} from '@nestjs/common';
 import { AccountActionPurpose } from '@prisma/client';
 import { Public } from '../core/decorators/public.decorator';
-import {
-  CurrentUser,
-  type AuthenticatedUser,
-} from '../core/decorators/current-user.decorator';
+import { CurrentUser, type AuthenticatedUser, } from '../core/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
-import {
-  AuthService,
-  type RegisterCustomerInput,
-  type CompleteActivationInput,
-  type LoginInput,
-  type RefreshInput,
-  type ChangePasswordInput,
-  type ForgotPasswordInput,
-  type ResetPasswordInput,
-  type PublicUserProfile,
-  type AuthTokenPair,
-} from './auth.service';
-
-// Kiểu dữ liệu tạm cho yêu cầu gửi lại email xác thực.
-interface ResendVerificationInput {
-  email: string;
-}
+import { AuthService, type PublicUserProfile, type AuthTokenPair, } from './auth.service';
+import { RegisterCustomerDto } from './dto/register-customer.dto';
+import { CompleteActivationDto } from './dto/complete-activation.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { EmailDto } from './dto/email.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 // Phản hồi chỉ chứa thông báo để Frontend hiển thị.
 interface MessageResponse {
@@ -87,7 +67,7 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.ACCEPTED)
   async register(
-    @Body() input: RegisterCustomerInput,
+    @Body() input: RegisterCustomerDto,
   ): Promise<{ email: string; message: string }> {
     const result = await this.authService.registerCustomer(input);
 
@@ -103,7 +83,7 @@ export class AuthController {
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
   async verifyEmail(
-    @Body() input: CompleteActivationInput,
+    @Body() input: CompleteActivationDto,
   ): Promise<ActivationResponse> {
     const user = await this.authService.completeActivation(
       input,
@@ -121,7 +101,7 @@ export class AuthController {
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   async resendVerification(
-    @Body() input: ResendVerificationInput,
+    @Body() input: EmailDto,
   ): Promise<MessageResponse> {
     await this.authService.resendEmailVerification(input.email);
 
@@ -136,7 +116,7 @@ export class AuthController {
   @Post('activate-staff')
   @HttpCode(HttpStatus.OK)
   async activateStaff(
-    @Body() input: CompleteActivationInput,
+    @Body() input: CompleteActivationDto,
   ): Promise<ActivationResponse> {
     const user = await this.authService.completeActivation(
       input,
@@ -158,7 +138,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() input: LoginInput): Promise<AuthenticationResponse> {
+  async login(@Body() input: LoginDto): Promise<AuthenticationResponse> {
     return this.authService.login(input);
   }
 
@@ -166,7 +146,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() input: RefreshInput): Promise<AuthenticationResponse> {
+  async refresh(@Body() input: RefreshTokenDto): Promise<AuthenticationResponse> {
     return this.authService.refresh(input);
   }
 
@@ -180,7 +160,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
     @CurrentUser('userId') userId: string,
-    @Body() input: RefreshInput,
+    @Body() input: RefreshTokenDto,
   ): Promise<void> {
     await this.authService.logout(userId, input.refreshToken);
   }
@@ -191,7 +171,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async changePassword(
     @CurrentUser('userId') userId: string,
-    @Body() input: ChangePasswordInput,
+    @Body() input: ChangePasswordDto,
   ): Promise<void> {
     await this.authService.changePassword(userId, input);
   }
@@ -213,7 +193,7 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(
-    @Body() input: ForgotPasswordInput,
+    @Body() input: EmailDto,
   ): Promise<MessageResponse> {
     await this.authService.forgotPassword(input);
 
@@ -228,7 +208,7 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(
-    @Body() input: ResetPasswordInput,
+    @Body() input: ResetPasswordDto,
   ): Promise<MessageResponse> {
     await this.authService.resetPassword(input);
 
