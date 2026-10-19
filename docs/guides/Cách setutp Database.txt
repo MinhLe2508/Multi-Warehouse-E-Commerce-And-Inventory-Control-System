@@ -72,6 +72,15 @@ Bước 6: Build và khởi động các service
 - Lệnh này sẽ xây dựng và khởi động các service được định nghĩa trong docker-compose.yml.
 
 
+Bước 7: Nếu muốn Reset Database có thể làm như sau:
+- Kiểm tra trạng thái migration trước khi xóa:
+		npx prisma migrate status
+
+- Reset Database, sau khi Reset sau có thể kiểm tra lại bằng lệnh trên:
+		npx prisma migrate reset
+
+- Nếu muốn xài lại dữ liệu mẫu có thể sử dụng lại Bước 5
+
 
 ==================================================================================================
 2. Nếu đã chạy 2 Migration từ trước.
