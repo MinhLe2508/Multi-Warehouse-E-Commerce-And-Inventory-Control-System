@@ -206,8 +206,9 @@ model Product {
   slug        String  @unique @db.VarChar(280)
   description String? @db.Text
 
-  basePrice       Decimal @map("base_price") @db.Decimal(14, 2) // Dùng Decimal tránh sai số làm tròn khi tính tiền
-  discountPercent Decimal @default(0) @map("discount_percent") @db.Decimal(5, 2) // % Giảm giá, 0-100
+  basePrice       Decimal @map("base_price") @db.Decimal(14, 2)                   // Giá bán lẻ niêm yết
+  costPrice       Decimal? @map("cost_price") @db.Decimal(14, 2)                   // Giá nhập (giá gốc), chỉ Admin được xem
+  discountPercent Decimal @default(0) @map("discount_percent") @db.Decimal(5, 2)  // % Giảm giá, 0-100
 
   categoryId String? @map("category_id") @db.Uuid
   imageUrl   String? @map("image_url") @db.VarChar(500)

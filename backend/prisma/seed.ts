@@ -437,6 +437,7 @@ async function main(): Promise<void> {
     const namePrefix = pickRandom(PRODUCT_NAME_PREFIXES);
     const category = pickRandom(categories);
     const basePrice = randomInt(50, 30000) * 1000;
+    const costPrice = Math.round((basePrice * randomInt(60, 85)) / 100 / 1000) * 1000;
     const hasDiscount = randomInt(1, 100) <= 20;
     const discountPercent = hasDiscount ? randomInt(5, 30) : 0;
 
@@ -446,6 +447,7 @@ async function main(): Promise<void> {
       slug: `${namePrefix.toLowerCase().replace(/\s+/g, '-')}-model-${seq}`,
       description: `${namePrefix} chính hãng, bảo hành 12 tháng, hỗ trợ đổi trả trong 7 ngày.`,
       basePrice,
+      costPrice,
       discountPercent,
       categoryId: category.id,
     };
