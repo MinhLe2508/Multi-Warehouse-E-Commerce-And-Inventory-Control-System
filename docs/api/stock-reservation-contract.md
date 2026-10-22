@@ -1,4 +1,4 @@
-# Stock Reservation — contract nội bộ 0.1.1
+# Stock Reservation — contract nội bộ 0.1.2
 
 **Chủ phần tài liệu:** Huy · **Phối hợp:** Khang (Inventory/DB), Minh (cleanup).  
 **Trạng thái:** Bản dự thảo đủ nội dung để review. Chữ ký SQL và hành vi mục 2 đã có trong source; các giao diện service, chính sách và chuyển trạng thái còn lại là thiết kế đề xuất, chưa triển khai hoặc được nhóm duyệt.
@@ -6,6 +6,8 @@
 Nguồn: ZIP nhánh `project`, commit `2cc0677fd6fd1a0253f400a71a2f71d1d01ff505`; schema Prisma, hai migration và tài liệu `Documents/Ngày 04-10 đến 11-10/Thiết kế CSDL và ERD.pdf`. Huy xác nhận Khang chọn `fn_reserve_stock()`.
 
 **Cập nhật 09/10/2026:** đã đối chiếu ba ảnh `image(2).png`, `image(3).png`, `image(4).png`. Thay đổi liên quan: chặn API khách khi chưa đổi mật khẩu lần đầu; phối hợp trạng thái tài khoản từ Auth. Chưa nhận source Auth mới, không coi nội dung chat là code đã triển khai. Chữ ký SQL giữ nguyên vì ảnh không thông báo đổi hàm/DB reservation.
+
+**Cập nhật 20/10/2026 (0.1.2):** kiểm thử với PostgreSQL 16 thật cho thấy quy trình tạo đơn ở mục 4.3 bản 0.1.1 (INSERT OrderItem rồi mới giữ chỗ) gây **deadlock** khi nhiều khách mua cùng một sản phẩm. Mục 4.3 đã đổi: khóa các dòng inventory TRƯỚC khi INSERT OrderItem. `StockReservationService` đã triển khai (`backend/src/stock-reservation/`); chữ ký `fn_reserve_stock()` không đổi.
 
 ## 1. Phạm vi và ranh giới
 
@@ -123,6 +125,7 @@ Tại biên JSON, inventory/reservation ID chuyển thành chuỗi bằng `.toSt
 
 ### 4.3. Trình tự trong một transaction
 
+0. **Khóa kho trước (bắt buộc):** ngay đầu transaction gọi `StockReservationService.lockInventories(tx, inventoryIds)` cho các inventory ứng viên (`SELECT ... FOR UPDATE`, id tăng dần theo số), rồi mới đọc `availableStock` để lập phân bổ. Lý do: `order_items.inventory_id` có khóa ngoại, nên INSERT OrderItem lấy khóa `FOR KEY SHARE` trên dòng inventory, trong khi `fn_reserve_stock` đòi `FOR UPDATE`. Hai đơn cùng sản phẩm mà INSERT OrderItem trước sẽ cùng giữ KEY SHARE rồi cùng chờ nâng khóa → PostgreSQL báo `deadlock detected` (40P01) và hủy một bên (đã tái hiện bằng test tích hợp). Khóa trước cũng làm `availableStock` đọc được chính xác, tránh lập phân bổ trên số liệu cũ.
 1. Tạo Order PENDING_PAYMENT, mã orderCode duy nhất tối đa 32 ký tự; lưu snapshot và các OrderItem.
 2. Sắp allocations theo **inventoryId tăng dần theo số**, không theo chuỗi và không chỉ theo thứ tự kho ưu tiên.
 3. Với từng allocation, wrapper gọi SQL qua cùng `tx`, TTL 15. Chạy lần lượt, không Promise.all các truy vấn khóa.
@@ -168,6 +171,8 @@ OrderStatusHistory ghi đúng chuyển trạng thái thực: null→PENDING_PAYM
 Mọi luồng tác động một đơn theo cùng thứ tự: **Order → Payment liên quan (nếu có) → Inventory tăng dần → Reservation tăng dần**. Khóa được giữ đến transaction kết thúc. Reserve tạo reservation mới sau khi khóa inventory.
 
 Khi callback đến, có thể đọc ref để tìm order trước, sau đó lấy khóa theo thứ tự trên và đọc/đối chiếu lại. Cleanup không khóa reservation trước rồi quay ngược khóa Order. Worker có thể tìm candidate order bằng EXISTS reservation quá hạn, lấy **Order FOR UPDATE SKIP LOCKED** rồi xử lý một đơn; chỉ coi kết quả đã khóa/kiểm tra lại là có hiệu lực. Đây là điều chỉnh đề xuất cần Minh/Khang review so với cách quét/khóa reservation trong timeline.
+
+Ngoại lệ của luồng **tạo đơn**: khóa Inventory (tăng dần) đi trước, vì Order vừa tạo trong chính transaction đó chưa ai khác nhìn thấy hay khóa được nên không tạo chu trình chờ.
 
 Mục đích là giảm chu kỳ khóa giữa các luồng; không tuyên bố loại bỏ mọi deadlock toàn hệ thống. Transaction bị DB hủy do deadlock không được chuyển thành kết quả thành công; retry nếu có phải giới hạn và theo quy tắc mục 4.4.
 
