@@ -13,6 +13,8 @@ import { PricingModule } from './pricing/pricing.module';
 import { OrdersModule } from './orders/orders.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { InventoryModule } from './inventory/inventory.module';
+import { WarehousesModule } from './warehouses/warehouses.module';
+import { CategoriesModule } from './categories/categories.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { InventoryModule } from './inventory/inventory.module';
     AdminModule,
     PricingModule,
     OrdersModule,
+    WarehousesModule,
+    CategoriesModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, HealthService],
