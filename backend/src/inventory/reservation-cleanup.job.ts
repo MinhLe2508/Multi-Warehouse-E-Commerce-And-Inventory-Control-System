@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { InventoryAlertService } from './inventory-alert.service';
 
 @Injectable()
 export class ReservationCleanupJob {
   private readonly logger = new Logger(ReservationCleanupJob.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alertService: InventoryAlertService, // Đánh giá lại cảnh báo tồn thấp sau khi giữ chỗ hết hạn.
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE, {
     name: 'reservation-cleanup',
@@ -15,7 +19,9 @@ export class ReservationCleanupJob {
   async handleCron(): Promise<void> {
     try {
       const count = await this.cleanupExpired();
-      this.logger.log(`Expired ${count} reservation(s)`);
+      if (count > 0) { 
+        this.logger.log(`Expired ${count} reservation(s)`);
+      }
     } catch (error) {
       this.logger.error(
         'Reservation cleanup failed; transaction rolled back',
@@ -41,6 +47,8 @@ export class ReservationCleanupJob {
         ORDER BY i.id LIMIT 100 FOR UPDATE OF i SKIP LOCKED
       `;
         let count = 0;
+        // Các dòng inventory có ít nhất một giữ chỗ vừa hết hạn, để đánh giá lại cảnh báo.
+        const touchedInventoryIds: bigint[] = []; 
         for (const inventory of inventories) {
           const reservations = await tx.$queryRaw<
             { id: bigint; quantity: number }[]
@@ -51,6 +59,9 @@ export class ReservationCleanupJob {
           ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED
         `;
           let reserved = inventory.reserved_stock;
+          if (reservations.length > 0) {
+            touchedInventoryIds.push(inventory.id);
+          }
           for (const reservation of reservations) {
             if (reservation.quantity <= 0 || reserved < reservation.quantity) {
               throw new Error(
@@ -74,7 +85,7 @@ export class ReservationCleanupJob {
                 stockAfter: inventory.stock,
                 reservedBefore: reserved,
                 reservedAfter: reserved - reservation.quantity,
-                quantityDelta: -reservation.quantity,
+                quantityDelta: 0,
                 referenceType: 'stock_reservation',
                 referenceId: reservation.id.toString(),
                 note: 'Reservation TTL expired',
@@ -84,6 +95,7 @@ export class ReservationCleanupJob {
             count++;
           }
         }
+        await this.alertService.evaluate(tx, touchedInventoryIds);
         return count;
       },
       { timeout: 30000 },

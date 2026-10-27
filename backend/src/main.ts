@@ -12,6 +12,13 @@ dotenv.config({
   path: path.resolve(__dirname, '../../.env'),
 });
 
+// BigInt không serialize được bằng JSON.stringify -> chuyển thành chuỗi.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (
+  this: bigint,
+) {
+  return this.toString();
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(

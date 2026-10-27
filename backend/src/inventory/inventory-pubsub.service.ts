@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, } from '@nestjs/common';
 import Redis from 'ioredis';
 
 export const LOW_STOCK_CHANNEL = 'inventory.low_stock';
@@ -37,7 +32,7 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
   private publisher: Redis;
   private subscriber: Redis;
 
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     const options = {
       connectTimeout: 2000,
@@ -65,13 +60,16 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn('Ignored invalid inventory.low_stock payload');
       }
     });
-    try {
-      await this.subscriber.subscribe(LOW_STOCK_CHANNEL);
-      this.logger.log(`Subscribed to ${LOW_STOCK_CHANNEL}`);
-    } catch (error) {
-      this.onModuleDestroy();
-      throw error;
-    }
+    // Đăng ký kênh mỗi khi kết nối sẵn sàng (lần đầu và cả khi Redis khởi động chậm / kết nối lại). 
+    // Lỗi chỉ ghi cảnh báo, KHÔNG làm sập backend.
+    this.subscriber.on('ready', () => {
+      this.subscriber
+        .subscribe(LOW_STOCK_CHANNEL)
+        .then(() => this.logger.log(`Subscribed to ${LOW_STOCK_CHANNEL}`))
+        .catch(() =>
+          this.logger.warn(`Cannot subscribe to ${LOW_STOCK_CHANNEL}`),
+        );
+    });
   }
 
   // Call AFTER the inventory transaction commits. Redis is not the stock ledger.
