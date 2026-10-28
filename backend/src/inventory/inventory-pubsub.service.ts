@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit, } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import Redis from 'ioredis';
 
 export const LOW_STOCK_CHANNEL = 'inventory.low_stock';
@@ -9,12 +14,34 @@ export interface LowStockEvent {
   warehouseId: string;
   availableStock: number;
   threshold: number;
+  // Các trường TÙY CHỌN do LowStockNotifierService thêm vào để giao diện Alerts hiển thị ngay, không cần gọi lại API.
+  alertId?: string;
+  alertLevel?: 'WARNING' | 'CRITICAL';
+  sku?: string;
+  productName?: string;
+  warehouseCode?: string;
+  triggeredAt?: string;
 }
+
+export type LowStockHandler = (event: LowStockEvent) => void;
 
 export function isLowStockEvent(value: unknown): value is LowStockEvent {
   if (!value || typeof value !== 'object') return false;
   const event = value as Record<string, unknown>;
+  const optionalStringsOk = [
+    'alertId',
+    'sku',
+    'productName',
+    'warehouseCode',
+    'triggeredAt',
+  ].every((key) => event[key] === undefined || typeof event[key] === 'string');
+  const levelOk =
+    event.alertLevel === undefined ||
+    event.alertLevel === 'WARNING' ||
+    event.alertLevel === 'CRITICAL';
   return (
+    optionalStringsOk &&
+    levelOk &&
     ['inventoryId', 'productId', 'warehouseId'].every(
       (key) => typeof event[key] === 'string' && event[key].length > 0,
     ) &&
@@ -31,6 +58,7 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(InventoryPubSubService.name);
   private publisher: Redis;
   private subscriber: Redis;
+  private readonly handlers = new Set<LowStockHandler>();
 
   onModuleInit(): void {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -52,7 +80,14 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
       try {
         const event: unknown = JSON.parse(message);
         if (!isLowStockEvent(event)) throw new Error('Invalid low-stock event');
-        // Week 4 consumer can dispatch authenticated notifications here.
+        // Tuần 4: chuyển sự kiện cho các consumer đã đăng ký (NotificationsGateway đẩy WebSocket).
+        for (const handler of this.handlers) {
+          try {
+            handler(event);
+          } catch {
+            this.logger.warn('A low-stock handler failed');
+          }
+        }
         this.logger.log(
           `Low stock: inventory=${event.inventoryId}, available=${event.availableStock}, threshold=${event.threshold}`,
         );
@@ -60,7 +95,7 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn('Ignored invalid inventory.low_stock payload');
       }
     });
-    // Đăng ký kênh mỗi khi kết nối sẵn sàng (lần đầu và cả khi Redis khởi động chậm / kết nối lại). 
+    // Đăng ký kênh mỗi khi kết nối sẵn sàng (lần đầu và cả khi Redis khởi động chậm / kết nối lại).
     // Lỗi chỉ ghi cảnh báo, KHÔNG làm sập backend.
     this.subscriber.on('ready', () => {
       this.subscriber
@@ -70,6 +105,14 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
           this.logger.warn(`Cannot subscribe to ${LOW_STOCK_CHANNEL}`),
         );
     });
+  }
+
+  // Đăng ký nhận sự kiện tồn thấp. Trả về hàm hủy đăng ký.
+  onLowStock(handler: LowStockHandler): () => void {
+    this.handlers.add(handler);
+    return () => {
+      this.handlers.delete(handler);
+    };
   }
 
   // Call AFTER the inventory transaction commits. Redis is not the stock ledger.
