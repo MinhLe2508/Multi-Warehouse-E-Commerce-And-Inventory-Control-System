@@ -9,7 +9,7 @@ import { useCurrentAdminUser } from '../../../hooks/useCurrentAdminUser';
 
 export default function ForbiddenPage() {
   const router = useRouter();
-  const { isAdmin, isStaff, loginAs, logout } = useCurrentAdminUser();
+  const { isAdmin, isStaff, logout } = useCurrentAdminUser();
 
   return (
     <div className="container py-5">
@@ -118,12 +118,11 @@ export default function ForbiddenPage() {
                       className="btn btn-gradient-purple px-4"
                       style={{ minHeight: '42px' }}
                       onClick={() => {
-                        loginAs('ADMIN');
-                        router.push('/admin/dashboard');
+                        router.push('/login');
                       }}
                     >
                       <LogIn size={16} />
-                      <span>Đăng nhập thử vai trò Admin</span>
+                      <span>Đăng nhập tài khoản khác</span>
                     </button>
                   </div>
                 </>

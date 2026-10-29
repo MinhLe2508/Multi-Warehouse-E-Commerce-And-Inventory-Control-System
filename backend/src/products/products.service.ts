@@ -4,16 +4,29 @@ import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductQueryDto } from './dto/product-query.dto';
 
-const include = {
-  category: true,
+const select = {
+  id: true,
+  sku: true,
+  name: true,
+  slug: true,
+  description: true,
+  basePrice: true,
+  discountPercent: true,
+  imageUrl: true,
+  categoryId: true,
+  category: { select: { name: true, isActive: true } },
   inventory: {
     where: { warehouse: { isActive: true } },
-    include: { warehouse: true },
+    select: {
+      warehouseId: true,
+      availableStock: true,
+      warehouse: { select: { name: true } },
+    },
     orderBy: { warehouseId: 'asc' as const },
   },
-} satisfies Prisma.ProductInclude;
+} satisfies Prisma.ProductSelect;
 
-type CatalogProduct = Prisma.ProductGetPayload<{ include: typeof include }>;
+type CatalogProduct = Prisma.ProductGetPayload<{ select: typeof select }>;
 
 // Explicit public response: never serialize the entire Prisma graph or BigInt IDs.
 export function toCatalogProduct(product: CatalogProduct) {
@@ -82,7 +95,7 @@ export class ProductsService {
         this.prisma.product.count({ where }),
         this.prisma.product.findMany({
           where,
-          include,
+          select,
           orderBy,
           skip: (query.page - 1) * query.pageSize,
           take: query.pageSize,
@@ -102,7 +115,7 @@ export class ProductsService {
   async findOne(id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, isActive: true },
-      include,
+      select,
     });
     if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
     return toCatalogProduct(product);

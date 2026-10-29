@@ -1,7 +1,9 @@
+import { Public } from '../core/decorators/public.decorator';
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { ProductQueryDto } from './dto/product-query.dto';
 
+@Public()
 @Controller('products')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}

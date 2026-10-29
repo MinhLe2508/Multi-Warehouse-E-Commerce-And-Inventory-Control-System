@@ -91,8 +91,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: '/admin/products',
         label: 'Sản phẩm',
-        roles: ['ADMIN'],
-        ready: false,
+        roles: ['ADMIN', 'WAREHOUSE_STAFF'],
+        ready: true,
       },
       {
         href: '/admin/categories',
@@ -168,6 +168,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 
 // Menu dành cho Nhân viên kho (Staff - Khớp Ảnh 3)
 export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
+  { id: 'staff-products', title: 'Sản phẩm', isSingle: true, items: [{ href: '/staff/products', label: 'Sản phẩm', roles: ['WAREHOUSE_STAFF'], ready: true }] },
   {
     id: 'staff-overview',
     title: 'Dashboard',

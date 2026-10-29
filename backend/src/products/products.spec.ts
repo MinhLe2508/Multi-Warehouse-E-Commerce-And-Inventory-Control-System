@@ -19,6 +19,7 @@ const product = {
   discountPercent: new Prisma.Decimal('0'),
   imageUrl: null,
   categoryId,
+  costPrice: new Prisma.Decimal('123.00'),
   category: { name: 'Thực phẩm', isActive: true },
   inventory: [
     {
@@ -83,13 +84,26 @@ describe('Products HTTP contract', () => {
     expect(prisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { isActive: true },
-        include: expect.objectContaining({
+        select: expect.objectContaining({
           inventory: expect.objectContaining({
             where: { warehouse: { isActive: true } },
           }) as unknown,
         }) as unknown,
       }),
     );
+  });
+  it('never returns costPrice or internal relations in either public endpoint', async () => {
+    for (const path of ['/products', `/products/${id}`]) {
+      const response = await request(app.getHttpServer() as Server)
+        .get(path)
+        .expect(200);
+      expect(JSON.stringify(response.body)).not.toContain('costPrice');
+      expect(JSON.stringify(response.body)).not.toContain('reservedStock');
+    }
+    const args = (prisma.product.findMany.mock.calls as unknown[][])[0][0] as {
+      select: Record<string, unknown>;
+    };
+    expect(args.select).not.toHaveProperty('costPrice');
   });
   it('applies search, category UUID, price sorting and page offset in database', async () => {
     await request(app.getHttpServer() as Server)

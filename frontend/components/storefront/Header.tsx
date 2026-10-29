@@ -1,5 +1,6 @@
 "use client";
 
+import AccountMenu from "@/components/auth/AccountMenu";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
@@ -130,6 +131,7 @@ export default function Header() {
 
         {/* Bên phải: đổi ngôn ngữ + giỏ hàng */}
         <div className="ml-auto flex items-center gap-2 lg:ml-0">
+          <AccountMenu />
           <div
             role="group"
             aria-label={t.header.language}

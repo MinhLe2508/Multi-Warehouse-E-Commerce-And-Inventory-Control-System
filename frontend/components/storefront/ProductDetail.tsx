@@ -213,12 +213,6 @@ function DetailView({ product }: { product: Product }) {
         </div>
       </div>
 
-      {/* Mô tả */}
-      <section className="mt-12 max-w-3xl">
-        <h2 className="text-lg font-semibold text-slate-900">{t.product.description}</h2>
-        <p className="mt-3 leading-7 text-slate-600">{product.description}</p>
-      </section>
-
       {/* Sản phẩm liên quan */}
       {related.length > 0 && (
         <section className="mt-16">

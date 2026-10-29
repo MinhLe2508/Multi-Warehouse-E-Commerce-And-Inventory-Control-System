@@ -13,7 +13,7 @@ export function RoleGate({
   variant = 'admin',
   children,
 }: RoleGateProps) {
-  const { isCustomer, isAdmin, isStaff } = useCurrentAdminUser();
+  const { isCustomer, isAdmin, isStaff, ready, authenticated, mustChangePassword } = useCurrentAdminUser();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -22,7 +22,9 @@ export function RoleGate({
     pathname === '/admin/forbidden';
 
   useEffect(() => {
-    if (isBypassPage) return;
+    if (isBypassPage || !ready) return;
+    if (!authenticated) { router.replace('/login'); return; }
+    if (mustChangePassword) { router.replace('/change-password'); return; }
 
     // CUSTOMER vào khu vực quản trị -> điều hướng sang trang 403 Forbidden
     if (isCustomer) {
@@ -41,11 +43,14 @@ export function RoleGate({
       router.replace('/admin/forbidden');
       return;
     }
-  }, [isBypassPage, isCustomer, isStaff, isAdmin, variant, router]);
+  }, [isBypassPage, ready, authenticated, mustChangePassword, isCustomer, isStaff, isAdmin, variant, router]);
 
   if (isBypassPage) {
     return <>{children}</>;
   }
+
+  if (!ready) return <p className="p-4">Đang xác thực tài khoản…</p>;
+  if (!authenticated || mustChangePassword) return null;
 
   // Chặn render nếu vi phạm quyền để chờ redirect
   if (isCustomer) return null;
