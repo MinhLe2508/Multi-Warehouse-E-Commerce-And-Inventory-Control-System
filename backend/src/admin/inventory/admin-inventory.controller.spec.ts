@@ -1,19 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminInventoryController } from './admin-inventory.controller';
 import { AdminInventoryService } from './admin-inventory.service';
-import { AdminRolesGuard } from '../guards/admin-roles.guard';
-import { Reflector } from '@nestjs/core';
+import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
+import { RolesGuard } from '../../core/guards/roles.guard';
 import { ConflictException, UnprocessableEntityException, NotFoundException } from '@nestjs/common';
 
 describe('AdminInventoryController', () => {
+  const actorId = '11111111-1111-4111-8111-111111111111';
   let controller: AdminInventoryController;
   let service: AdminInventoryService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminInventoryController],
-      providers: [AdminInventoryService, AdminRolesGuard, Reflector],
-    }).compile();
+      providers: [AdminInventoryService],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<AdminInventoryController>(AdminInventoryController);
     service = module.get<AdminInventoryService>(AdminInventoryService);
@@ -62,7 +68,6 @@ describe('AdminInventoryController', () => {
       const whDetail = firstItem.warehouses[whKey];
 
       const initialVersion = whDetail.version;
-      const req = { user: { id: 'admin-1', role: 'ADMIN', email: 'admin@test.com' } };
 
       const res = controller.adjustStock(
         whDetail.inventoryId,
@@ -71,7 +76,7 @@ describe('AdminInventoryController', () => {
           expectedVersion: initialVersion,
           note: 'Điều chỉnh kiểm kê định kỳ',
         },
-        req
+        actorId
       );
 
       expect(res.success).toBe(true);
@@ -85,8 +90,6 @@ describe('AdminInventoryController', () => {
       const whKey = Object.keys(firstItem.warehouses)[0];
       const whDetail = firstItem.warehouses[whKey];
 
-      const req = { user: { id: 'admin-1', role: 'ADMIN', email: 'admin@test.com' } };
-
       expect(() => {
         controller.adjustStock(
           whDetail.inventoryId,
@@ -95,7 +98,7 @@ describe('AdminInventoryController', () => {
             expectedVersion: 9999, // Stale version!
             note: 'Cố tình gửi version cũ',
           },
-          req
+          actorId
         );
       }).toThrow(ConflictException);
     });
@@ -109,8 +112,6 @@ describe('AdminInventoryController', () => {
       // Đảm bảo reserved > 0
       whDetail.reservedStock = 10;
 
-      const req = { user: { id: 'admin-1', role: 'ADMIN', email: 'admin@test.com' } };
-
       expect(() => {
         controller.adjustStock(
           whDetail.inventoryId,
@@ -119,13 +120,12 @@ describe('AdminInventoryController', () => {
             expectedVersion: whDetail.version,
             note: 'Số lượng mới nhỏ hơn reserved',
           },
-          req
+          actorId
         );
       }).toThrow(UnprocessableEntityException);
     });
 
     it('should throw NotFoundException (404) when inventory ID does not exist', () => {
-      const req = { user: { id: 'admin-1', role: 'ADMIN', email: 'admin@test.com' } };
 
       expect(() => {
         controller.adjustStock(
@@ -135,7 +135,7 @@ describe('AdminInventoryController', () => {
             expectedVersion: 1,
             note: 'Điều chỉnh id không có',
           },
-          req
+          actorId
         );
       }).toThrow(NotFoundException);
     });

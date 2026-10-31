@@ -19,7 +19,7 @@ export class ReservationCleanupJob {
   async handleCron(): Promise<void> {
     try {
       const count = await this.cleanupExpired();
-      if (count > 0) { 
+      if (count > 0) {
         this.logger.log(`Expired ${count} reservation(s)`);
       }
     } catch (error) {
@@ -48,7 +48,7 @@ export class ReservationCleanupJob {
       `;
         let count = 0;
         // Các dòng inventory có ít nhất một giữ chỗ vừa hết hạn, để đánh giá lại cảnh báo.
-        const touchedInventoryIds: bigint[] = []; 
+        const touchedInventoryIds: bigint[] = [];
         for (const inventory of inventories) {
           const reservations = await tx.$queryRaw<
             { id: bigint; quantity: number }[]
