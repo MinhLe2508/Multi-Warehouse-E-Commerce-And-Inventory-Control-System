@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
@@ -80,6 +80,40 @@ export class OrdersService {
       } });
       const result = await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
       return this.serialize(result);
+    }, { timeout: 30000, maxWait: 10000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
+
+  /** All status changes and their audit rows share the caller's DB transaction. */
+  async changeStatus(orderId: string, target: OrderStatus, actorId: string, reason?: string) {
+    const transitions: Partial<Record<OrderStatus, OrderStatus[]>> = {
+      PENDING_PAYMENT: ['CANCELLED'],
+      CONFIRMED: ['SHIPPING'],
+      SHIPPING: ['DELIVERED'],
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      if (!locked.length) throw new NotFoundException('Không tìm thấy đơn hàng.');
+      const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      if (!(transitions[order.status]?.includes(target))) {
+        throw new ConflictException(`Không thể chuyển trạng thái ${order.status} -> ${target}.`);
+      }
+      // Releasing a pending order's reservations must be atomic with cancellation.
+      if (target === 'CANCELLED') {
+        await this.stockReservation.releaseForOrder(tx, orderId, actorId);
+      }
+      const changed = await tx.order.updateMany({
+        where: { id: orderId, status: order.status },
+        data: target === 'CANCELLED'
+          ? { status: target, cancelledAt: new Date(), cancelledReason: reason ?? 'Hủy bởi quản trị viên' }
+          : { status: target },
+      });
+      if (changed.count !== 1) throw new ConflictException('Trạng thái đơn đã thay đổi.');
+      await tx.orderStatusHistory.create({ data: {
+        orderId, fromStatus: order.status, toStatus: target, actorId,
+        reason: reason ?? `Chuyển trạng thái ${order.status} -> ${target}`,
+      } });
+      return { id: orderId, fromStatus: order.status, status: target };
     }, { timeout: 30000, maxWait: 10000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 

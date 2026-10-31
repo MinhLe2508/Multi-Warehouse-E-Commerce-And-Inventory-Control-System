@@ -27,3 +27,11 @@ Từ `backend`: `npm ci`, cấu hình `DATABASE_URL` Postgres, `npx prisma gener
 - Chưa có endpoint chuyển SHIPPING/DELIVERED hoặc hủy; những chuyển trạng thái tương lai phải ghi thêm `order_status_history` cùng transaction.
 - Chưa chạy được bài kiểm tra tích hợp PostgreSQL trong môi trường xuất ZIP; kiểm thử với DB đã migrate là cần thiết trước merge.
 - ZIP chỉ có các file mới và các file chỉnh sửa của Huy để chép đè theo đúng đường dẫn dự án.
+
+## Bổ sung hoàn thiện yêu cầu STT 20
+- `PATCH /orders/admin/:id/status` chỉ cho ADMIN (JWT + PasswordChanged + Roles).
+- Body: `{ "status": "SHIPPING", "reason": "Đã bàn giao vận chuyển" }`; tiếp theo `DELIVERED`.
+- Các chuyển trạng thái hợp lệ: `PENDING_PAYMENT -> CANCELLED` (đồng thời giải phóng giữ chỗ), `CONFIRMED -> SHIPPING -> DELIVERED`.
+- Mỗi bước khóa order `FOR UPDATE`, kiểm tra cạnh hợp lệ, cập nhật order và ghi `order_status_history` **cùng Prisma transaction**. Lỗi khi ghi history phải rollback cả cập nhật order. Giá trị enum trong schema là `SHIPPING`, không phải `SHIPPED`.
+- Có các bài unit test ở `src/orders/orders.status.spec.ts` kiểm tra trạng thái hợp lệ, chuyển sai, hủy giữ chỗ và lỗi ghi audit.
+- Chưa xác nhận chạy PostgreSQL thực trên máy tạo ZIP; cần kiểm thử tích hợp trước khi đánh dấu 100% vận hành.
