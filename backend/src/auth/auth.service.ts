@@ -828,7 +828,7 @@ export class AuthService {
 
   private normalizePhone(phone?: string): string | null {
     if (phone === undefined || phone === null || phone === '') return null;
-    if (typeof phone !== 'string' || phone.trim().length > 30) {
+    if (typeof phone !== 'string' || phone.trim().length > 20) {
       throw new BadRequestException('Số điện thoại không hợp lệ.');
     }
     return phone.trim() || null;

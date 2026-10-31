@@ -70,7 +70,7 @@ enum AlertLevel {
 // Trạng thái xử lý của 1 cảnh báo tồn kho
 enum AlertStatus {
   OPEN // Cảnh báo đang mở, chưa có ai xử lý (Nhập hàng lại)
-  RESOLVED // Đã được nhân viên kho xử lý
+  RESOLVED // Tự đóng khi hàng khả dụng vượt ngưỡng (ví dụ sau khi Admin nhập hàng)
 }
 
 // Lý do thay đổi số lượng tồn kho - Dùng trong bảng audit log (InventoryAuditLog)
@@ -80,7 +80,7 @@ enum InventoryChangeReason {
   COMMIT // Giảm stock thực sự khi đơn hàng được xác nhận thanh toán
   RELEASE // Giảm reserved_stock do khách hủy đơn trước khi hết hạn giữ chỗ
   EXPIRE // Giảm reserved_stock do cron job đơn reservation quá hạn
-  RESTOCK // Tăng stock do nhập hàng mới (Nhân viên kho thao tác)
+  RESTOCK // Tăng stock do nhập hàng mới (Admin thao tác)
   MANUAL_ADJUST // Điều chỉnh thủ công bởi Admin (Ví dụ: Sửa lỗi kiểm kê)
 }
 
@@ -145,7 +145,7 @@ model User {
   orders              Order[]
   auditLogs           InventoryAuditLog[] // Các lần User này thao tác làm đổi tồn kho (thường là WAREHOUSE_STAFF/ADMIN)
   statusChanges       OrderStatusHistory[] // Các lần User này thay đổi trạng thái đơn hàng
-  resolvedAlerts      StockAlert[] // Các cảnh báo tồn kho User này (WAREHOUSE_STAFF) đã xử lý
+  resolvedAlerts      StockAlert[] // Các cảnh báo tồn kho được đóng nhờ thao tác của User này (thường là ADMIN nhập hàng)
   chatSessions        ChatSession[] // Các phiên chat với AI Chatbot của User này
   notifications       Notification[] // Thông báo in-app của User
 
