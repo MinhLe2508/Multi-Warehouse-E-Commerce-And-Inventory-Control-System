@@ -11,6 +11,7 @@ import { ProductsModule } from './products/products.module';
 import { AdminModule } from './admin/admin.module';
 import { PricingModule } from './pricing/pricing.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { InventoryModule } from './inventory/inventory.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
@@ -28,6 +29,7 @@ import { CategoriesModule } from './categories/categories.module';
     AdminModule,
     PricingModule,
     OrdersModule,
+    PaymentsModule,
     WarehousesModule,
     CategoriesModule,
   ],

@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../core/decorators/current-user.decorator';
@@ -23,7 +23,10 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
-  // Khung: hiện trả 501 cho tới khi OrdersService hoàn thiện ở Tuần 4.
+  @Get(':id')
+  getOwn(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.orders.getOwn(user.userId, id);
+  }
   @Post()
   @HttpCode(201)
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateOrderDto) {
