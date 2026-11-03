@@ -61,6 +61,12 @@ export default function AuthForm({ mode }: { mode: Mode }) {
     setError("");
     setMessage("");
 
+    const phone = value("phone").trim();
+    if (mode === "register" && phone && !/^(0\d{9}|\+84\d{9})$/.test(phone)) {
+      setError("Số điện thoại không hợp lệ. Định dạng cho phép: 0xxxxxxxxx hoặc +84xxxxxxxxx.");
+      return;
+    }
+
     if (action || mode === "change-password") {
       const problem = passwordError(value("password"), value("confirmPassword"));
       if (problem) {
@@ -102,7 +108,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         const result = await authRequest<{ message: string }>("/auth/register", {
           email: value("email").trim(),
           fullName: value("fullName").trim(),
-          ...(value("phone").trim() ? { phone: value("phone").trim() } : {}),
+          ...(phone ? { phone } : {}),
         });
         setMessage(result.message);
         setDone(true);
