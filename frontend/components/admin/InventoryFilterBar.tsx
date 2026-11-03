@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Search, X, RotateCcw, Filter, Warehouse as WarehouseIcon } from 'lucide-react';
+import { Search, X, RotateCcw, Filter } from 'lucide-react';
 import type { Warehouse } from '../../shared/types/admin';
 
 interface InventoryFilterBarProps {
@@ -77,7 +77,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
         {/* Tìm kiếm */}
         <div className="relative">
-          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Tìm kiếm theo SKU hoặc Tên
           </label>
           <div className="relative">
@@ -102,7 +102,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
 
         {/* Danh mục */}
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Danh mục sản phẩm
           </label>
           <select
@@ -118,10 +118,9 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
           </select>
         </div>
 
-        {/* Kho hàng */}
+        {/* Kho hàng — Nhãn văn bản thẳng hàng, không icon, responsive hoàn hảo */}
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1">
-            <WarehouseIcon className="w-3.5 h-3.5 text-purple-600" />
+          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Kho hàng
           </label>
           <select
@@ -140,7 +139,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
 
         {/* Trạng thái tồn kho */}
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Trạng thái tồn kho
           </label>
           <select

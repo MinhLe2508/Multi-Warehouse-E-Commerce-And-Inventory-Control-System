@@ -90,8 +90,10 @@ export interface InventorySummaryResponse {
 
 export interface StockAdjustPayload {
   inventoryId: string;
-  newStock: number;
-  expectedVersion: number;
+  mode: 'ADJUST' | 'RESTOCK';
+  newStock?: number;
+  quantity?: number;
+  threshold?: number | null;
   note: string;
 }
 

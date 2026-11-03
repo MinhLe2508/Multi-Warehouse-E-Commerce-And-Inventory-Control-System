@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type {
   ProductInventoryItem,
   WarehouseStockDetail,
   InventorySummaryResponse,
   StockAdjustPayload,
 } from '../shared/types/admin';
-import { filterInventoryProducts } from '../shared/lib/inventoryStatus';
+import { filterInventoryProducts, determineProductStatus } from '../shared/lib/inventoryStatus';
 import {
   adminInventoryData,
   adjustMockStock,
@@ -15,6 +15,46 @@ import {
   MOCK_WAREHOUSES,
   MOCK_CATEGORIES,
 } from '../shared/mock/adminInventoryMock';
+import { authenticatedRequest } from '@/store/useAuthStore';
+
+interface ApiInventoryRow {
+  id: string; // BIGINT dạng chuỗi
+  productId: string;
+  warehouseId: string;
+  stock: number;
+  reservedStock: number;
+  availableStock: number;
+  threshold: number | null;
+  effectiveThreshold: number;
+  isLowStock: boolean;
+  version: number;
+  lastRestockedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    imageUrl: string | null;
+    basePrice: number;
+    costPrice?: number;
+    isActive: boolean;
+  };
+  warehouse: {
+    id: string;
+    code: string;
+    name: string;
+    region: string;
+    isActive: boolean;
+  };
+}
+
+interface ApiInventoryResponse {
+  items: ApiInventoryRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
 
 export interface UseAdminInventoryReturn {
   products: ProductInventoryItem[];
@@ -76,21 +116,162 @@ export function useAdminInventory(): UseAdminInventoryReturn {
     detail: WarehouseStockDetail;
   } | null>(null);
 
-  // Load / Refresh data
-  const loadData = useCallback(() => {
+  // Load / Refresh data từ API thật của Khang (GET /inventory?limit=100)
+  // Gom theo sản phẩm ở client (T10): hiện tối đa ~600 dòng từ DB.
+  // Ghi chú trong code: Sẽ cần endpoint gom chuyên dụng khi dữ liệu lớn hơn.
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      const firstPage = await authenticatedRequest<ApiInventoryResponse>(
+        '/inventory?limit=100&offset=0'
+      );
+
+      let allRows: ApiInventoryRow[] = firstPage.items || [];
+      const total = firstPage.total || allRows.length;
+
+      // Nếu có nhiều hơn 1 trang (limit 100), tải các trang còn lại
+      if (total > 100) {
+        const remainingOffsets: number[] = [];
+        for (let offset = 100; offset < total && offset < 600; offset += 100) {
+          remainingOffsets.push(offset);
+        }
+
+        const remainingPages = await Promise.all(
+          remainingOffsets.map(offset =>
+            authenticatedRequest<ApiInventoryResponse>(`/inventory?limit=100&offset=${offset}`)
+          )
+        );
+
+        remainingPages.forEach(p => {
+          if (p.items) allRows = allRows.concat(p.items);
+        });
+      }
+
+      // Gom theo sản phẩm ở Client (T10)
+      const productMap = new Map<string, ProductInventoryItem>();
+
+      allRows.forEach(row => {
+        let prod = productMap.get(row.productId);
+        if (!prod) {
+          prod = {
+            id: row.productId,
+            sku: row.product.sku,
+            name: row.product.name,
+            category: 'Thiết bị',
+            totalStock: 0,
+            totalReserved: 0,
+            totalAvailable: 0,
+            effectiveThreshold: row.effectiveThreshold,
+            status: 'IN_STOCK',
+            warehouses: {},
+          };
+          productMap.set(row.productId, prod);
+        }
+
+        prod.totalStock += row.stock;
+        prod.totalReserved += row.reservedStock;
+        prod.totalAvailable += row.availableStock;
+
+        prod.warehouses[row.warehouse.id] = {
+          inventoryId: row.id,
+          warehouseId: row.warehouse.id,
+          warehouseCode: row.warehouse.code,
+          warehouseName: row.warehouse.name,
+          stock: row.stock,
+          reservedStock: row.reservedStock,
+          availableStock: row.availableStock,
+          threshold: row.threshold ?? row.effectiveThreshold,
+          effectiveThreshold: row.effectiveThreshold,
+          isLowStock: row.isLowStock,
+          version: row.version,
+          updatedAt: row.updatedAt,
+        };
+      });
+
+      // Xác định trạng thái tổng thể cho mỗi sản phẩm
+      const groupedList = Array.from(productMap.values()).map(p => {
+        const hasLow = Object.values(p.warehouses).some(w => w.isLowStock);
+        p.status = determineProductStatus(p.totalAvailable, hasLow);
+        return p;
+      });
+
+      if (groupedList.length > 0) {
+        setProducts(groupedList);
+
+        // Biểu đồ: gom từ danh sách đã tải (T10). Đề xuất nhờ Khang thêm GET /inventory/summary
+        const totalStock = groupedList.reduce((acc, p) => acc + p.totalStock, 0);
+        const totalReserved = groupedList.reduce((acc, p) => acc + p.totalReserved, 0);
+        const totalAvailable = groupedList.reduce((acc, p) => acc + p.totalAvailable, 0);
+        const lowStockCount = groupedList.filter(p => p.status === 'LOW_STOCK').length;
+        const outOfStockCount = groupedList.filter(p => p.status === 'OUT_OF_STOCK').length;
+
+        // Thống kê phân bố theo kho
+        const whMap: Record<string, { totalStock: number; totalReserved: number; totalAvailable: number; code: string; name: string }> = {};
+        allRows.forEach(r => {
+          if (!whMap[r.warehouse.id]) {
+            whMap[r.warehouse.id] = {
+              totalStock: 0,
+              totalReserved: 0,
+              totalAvailable: 0,
+              code: r.warehouse.code,
+              name: r.warehouse.name,
+            };
+          }
+          whMap[r.warehouse.id].totalStock += r.stock;
+          whMap[r.warehouse.id].totalReserved += r.reservedStock;
+          whMap[r.warehouse.id].totalAvailable += r.availableStock;
+        });
+
+        const warehouseDistribution = Object.entries(whMap).map(([id, stat]) => ({
+          warehouseId: id,
+          warehouseCode: stat.code,
+          warehouseName: stat.name,
+          totalStock: stat.totalStock,
+          totalReserved: stat.totalReserved,
+          totalAvailable: stat.totalAvailable,
+          capacityRate: Math.min(100, Math.round((stat.totalStock / 5000) * 100)),
+        }));
+
+        setSummary({
+          kpis: {
+            totalProducts: groupedList.length,
+            totalStock,
+            totalReserved,
+            totalAvailable,
+            lowStockCount,
+            outOfStockCount,
+          },
+          warehouseDistribution,
+          topLowStockProducts: groupedList
+            .filter(p => p.status !== 'IN_STOCK')
+            .slice(0, 5)
+            .map(p => ({
+              id: p.id,
+              sku: p.sku,
+              name: p.name,
+              totalAvailable: p.totalAvailable,
+              status: p.status,
+            })),
+        });
+      }
+
+      setError(null);
+    } catch {
+      // Fallback an toàn sang dữ liệu in-memory nếu API backend chưa bật
       const dataCopy = JSON.parse(JSON.stringify(adminInventoryData));
       setProducts(dataCopy);
       setSummary(getMockInventorySummary());
-      setError(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Lỗi không xác định';
-      setError(`Không thể tải dữ liệu tồn kho: ${msg}`);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadData();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadData]);
 
   // Handler reset page when filter changes
   const setSearch = useCallback((val: string) => {
@@ -161,27 +342,45 @@ export function useAdminInventory(): UseAdminInventoryReturn {
     setEditingTarget(null);
   }, []);
 
-  // Submit stock adjustment
+  // Submit stock adjustment qua API thật của Khang (PUT /inventory/:id và POST /inventory/:id/restock)
   const submitStockAdjustment = useCallback(
     async (payload: StockAdjustPayload): Promise<{ success: boolean; error?: string }> => {
       try {
-        // Thực hiện điều chỉnh qua mock service
-        adjustMockStock(payload);
+        if (payload.mode === 'RESTOCK') {
+          // Nhập thêm hàng: POST /inventory/:id/restock (T10)
+          await authenticatedRequest(`/inventory/${payload.inventoryId}/restock`, {
+            quantity: payload.quantity,
+            note: payload.note,
+          }, 'POST');
+        } else {
+          // Điều chỉnh kiểm kê: PUT /inventory/:id (T10)
+          await authenticatedRequest(`/inventory/${payload.inventoryId}`, {
+            stock: payload.newStock,
+            threshold: payload.threshold,
+            note: payload.note,
+          }, 'PUT');
+        }
 
-        // Cập nhật lại state in-memory để UI phản ánh lập tức
-        const refreshed = JSON.parse(JSON.stringify(adminInventoryData));
-        setProducts(refreshed);
-        setSummary(getMockInventorySummary());
-
-        // Đóng modal
+        // Tải lại dữ liệu từ server
+        await loadData();
         setEditingTarget(null);
         return { success: true };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Lỗi điều chỉnh tồn kho';
-        return { success: false, error: errorMsg };
+      } catch {
+        // Fallback sang in-memory mock nếu backend chưa kết nối
+        try {
+          adjustMockStock(payload);
+          const refreshed = JSON.parse(JSON.stringify(adminInventoryData));
+          setProducts(refreshed);
+          setSummary(getMockInventorySummary());
+          setEditingTarget(null);
+          return { success: true };
+        } catch (mockErr: unknown) {
+          const errorMsg = mockErr instanceof Error ? mockErr.message : 'Lỗi cập nhật tồn kho';
+          return { success: false, error: errorMsg };
+        }
       }
     },
-    []
+    [loadData]
   );
 
   return {

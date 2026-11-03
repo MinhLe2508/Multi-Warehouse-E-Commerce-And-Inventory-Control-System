@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Collapse, Offcanvas } from 'react-bootstrap';
 import {
   LayoutDashboard,
-  ShoppingBag,
-  Package,
   Warehouse,
   Tag,
   Sparkles,
@@ -15,6 +13,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   ADMIN_NAV_GROUPS,
@@ -36,13 +35,17 @@ function getNavGroupIcon(groupId: string) {
     case 'staff-overview':
       return <LayoutDashboard size={18} className="admin-nav-icon" />;
     case 'business':
-      return <ShoppingBag size={18} className="admin-nav-icon" />;
     case 'staff-orders':
-      return <Package size={18} className="admin-nav-icon" />;
+      return null; // Xóa icon của đơn hàng theo yêu cầu
     case 'inventory':
     case 'staff-inventory':
+    case 'staff-inventory-view':
       return <Warehouse size={18} className="admin-nav-icon" />;
+    case 'staff-alerts-view':
+      return <AlertTriangle size={18} className="admin-nav-icon" />;
     case 'products':
+    case 'staff-products':
+    case 'staff-products-view':
       return <Tag size={18} className="admin-nav-icon" />;
     case 'ai-assistant':
       return <Sparkles size={18} className="admin-nav-icon" />;
@@ -65,58 +68,74 @@ export function SidebarContent({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const { logout } = useCurrentAdminUser();
+  const { user, logout } = useCurrentAdminUser();
 
   const isStaffVariant = variant === 'staff';
   const navGroups = isStaffVariant ? STAFF_NAV_GROUPS : ADMIN_NAV_GROUPS;
 
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    business: false,
-    inventory: false,
-    products: false,
-    'ai-assistant': false,
-    accounts: false,
-    'staff-inventory': false,
+  const isItemActive = useCallback(
+    (href: string) => {
+      if (href === '/admin/dashboard' || href === '/staff/dashboard') {
+        return pathname === href;
+      }
+      return pathname.startsWith(href);
+    },
+    [pathname]
+  );
+
+  // Chỉ mở nhóm accordion chứa route đang active, các nhóm khác mặc định đóng (svg hướng xuống)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    navGroups.forEach(g => {
+      initial[g.id] = !g.isSingle && g.items.some(it => isItemActive(it.href));
+    });
+    return initial;
   });
+
+  useEffect(() => {
+    navGroups.forEach(g => {
+      if (!g.isSingle && g.items.some(it => isItemActive(it.href))) {
+        setOpenGroups(prev => (prev[g.id] ? prev : { ...prev, [g.id]: true }));
+      }
+    });
+  }, [pathname, navGroups, isItemActive]);
 
   const toggleGroup = (groupId: string) => {
     setOpenGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
-  const isItemActive = (href: string) => {
-    if (href === '/admin/dashboard' || href === '/staff/dashboard') {
-      return pathname === href;
-    }
-    return pathname.startsWith(href);
-  };
-
   const renderNavGroup = (group: AdminNavGroup) => {
-    // Chỉ các phần chính mới có icon
     const groupIcon = getNavGroupIcon(group.id);
 
     // Mục phẳng (Single item)
     if (group.isSingle || group.items.length === 1) {
       const item = group.items[0];
       const active = isItemActive(item.href);
+
       return (
         <div key={group.id} className="mb-1">
           <Link
             href={item.href}
             onClick={onNavigate}
-            aria-current={active ? 'page' : undefined}
             className={`admin-nav-item-btn ${active ? 'active' : ''}`}
+            aria-current={active ? 'page' : undefined}
           >
-            <div className="d-flex align-items-center min-w-0">
+            <div className="d-flex align-items-center gap-2">
               {groupIcon}
-              <span className="text-truncate">{item.label}</span>
+              <span>{item.label}</span>
             </div>
+            {item.badge && (
+              <span className="badge rounded-pill bg-danger" style={{ fontSize: '0.65rem' }}>
+                {item.badge}
+              </span>
+            )}
             {!item.ready && (
               <span
                 className="badge rounded-pill"
                 style={{
+                  fontSize: '0.625rem',
                   backgroundColor: '#f5f3ff',
                   color: '#7c3aed',
-                  fontSize: '0.675rem',
                   border: '1px solid #ddd6fe',
                 }}
               >
@@ -129,72 +148,78 @@ export function SidebarContent({
     }
 
     // Nhóm có menu con (Accordion)
-    const isOpen = openGroups[group.id] ?? false;
+    const isExpanded = openGroups[group.id] ?? false;
     const hasActiveChild = group.items.some(it => isItemActive(it.href));
 
     return (
       <div key={group.id} className="mb-1">
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={() => toggleGroup(group.id)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleGroup(group.id);
-            }
-          }}
-          className={`admin-nav-item-btn ${hasActiveChild ? 'fw-semibold text-primary' : ''}`}
-          aria-expanded={isOpen}
+          className={`admin-nav-item-btn w-100 ${hasActiveChild ? 'active' : ''}`}
+          aria-expanded={isExpanded}
         >
-          <div className="d-flex align-items-center min-w-0">
+          <div className="d-flex align-items-center gap-2">
             {groupIcon}
-            <span className="text-truncate">{group.title}</span>
+            <span>{group.title}</span>
           </div>
-          <span className={`admin-nav-chevron ${isOpen ? 'open' : ''}`}>
-            ▶
-          </span>
-        </div>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            style={{
+              transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              color: '#9ca3af',
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
 
-        {/* Các mục con bên trong KHÔNG CÓ ICON (đúng yêu cầu: chỉ các phần chính có icon) */}
-        <Collapse in={isOpen}>
-          <div className="pt-1">
-            {group.items.map(item => {
-              const active = isItemActive(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  aria-current={active ? 'page' : undefined}
-                  className={`admin-subnav-link ${active ? 'active' : ''}`}
-                >
-                  <span className="text-truncate">{item.label}</span>
-                  {!item.ready && (
-                    <span
-                      className="badge rounded-pill ms-2"
-                      style={{
-                        backgroundColor: '#f5f3ff',
-                        color: '#7c3aed',
-                        fontSize: '0.65rem',
-                        border: '1px solid #ddd6fe',
-                      }}
-                    >
-                      Sắp có
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
+        <Collapse in={isExpanded}>
+          <div>
+            <div className="admin-nav-sub-menu">
+              {group.items.map(subItem => {
+                const subActive = isItemActive(subItem.href);
+                return (
+                  <Link
+                    key={subItem.href}
+                    href={subItem.href}
+                    onClick={onNavigate}
+                    className={`admin-nav-sub-item ${subActive ? 'active' : ''}`}
+                    aria-current={subActive ? 'page' : undefined}
+                  >
+                    <span className="text-truncate me-2">{subItem.label}</span>
+                    {!subItem.ready && (
+                      <span
+                        className="badge rounded-pill ms-auto flex-shrink-0"
+                        style={{
+                          fontSize: '0.625rem',
+                          backgroundColor: '#f5f3ff',
+                          color: '#7c3aed',
+                          border: '1px solid #ddd6fe',
+                        }}
+                      >
+                        Sắp có
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </Collapse>
       </div>
     );
   };
 
-  const displayName = isStaffVariant ? 'Nguyễn Minh Anh' : 'Quản trị viên';
-  const displaySubtitle = isStaffVariant ? 'Nhân viên kho · WH-HCM' : 'Admin · toàn quyền';
-  const displayAvatarText = isStaffVariant ? 'MA' : 'tv';
+  const displayName = user.name || (isStaffVariant ? 'Nhân viên kho' : 'Quản trị viên');
+  const displaySubtitle = user.subtitle;
+  const displayAvatarText = user.avatarText;
 
   return (
     <div className="d-flex flex-column h-100 bg-white">
@@ -234,7 +259,7 @@ export function SidebarContent({
 
       {/* Khối tài khoản & Nút đăng xuất ở góc dưới bên trái */}
       <div
-        className="admin-sidebar-footer p-3 border-top d-flex align-items-center justify-content-between"
+        className="admin-sidebar-footer p-3 border-top d-flex align-items-center justify-content-between mt-auto"
         style={{ borderColor: '#ede9fe' }}
       >
         <div className="d-flex align-items-center gap-2 min-w-0">

@@ -3,12 +3,14 @@
 import React from 'react';
 import { RefreshCw, Download, Layers } from 'lucide-react';
 import { useAdminInventory } from '../../../hooks/useAdminInventory';
+import { useCurrentAdminUser } from '../../../hooks/useCurrentAdminUser';
 import { WarehouseStockChart } from '../../../components/admin/WarehouseStockChart';
 import { InventoryFilterBar } from '../../../components/admin/InventoryFilterBar';
 import { InventoryTable } from '../../../components/admin/InventoryTable';
 import { StockAdjustModal } from '../../../components/admin/StockAdjustModal';
 
 export default function AdminInventoryPage() {
+  const { isAdmin } = useCurrentAdminUser();
   const {
     products,
     paginatedProducts,
@@ -137,21 +139,25 @@ export default function AdminInventoryPage() {
       <InventoryTable
         products={paginatedProducts}
         warehouses={warehouses}
+        selectedWarehouseId={warehouseId}
         page={page}
         pageSize={pageSize}
         totalPages={totalPages}
         totalFilteredCount={totalFilteredCount}
+        isAdmin={isAdmin}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         onOpenAdjust={openAdjustModal}
       />
 
-      {/* Modal Điều chỉnh Tồn kho (Optimistic Lock & Audit) */}
-      <StockAdjustModal
-        target={editingTarget}
-        onClose={closeAdjustModal}
-        onSubmit={submitStockAdjustment}
-      />
+      {/* Modal Điều chỉnh Tồn kho (Chỉ hiển thị cho ADMIN - T10) */}
+      {isAdmin && (
+        <StockAdjustModal
+          target={editingTarget}
+          onClose={closeAdjustModal}
+          onSubmit={submitStockAdjustment}
+        />
+      )}
     </div>
   );
 }

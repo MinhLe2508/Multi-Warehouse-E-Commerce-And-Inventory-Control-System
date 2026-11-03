@@ -123,7 +123,15 @@ export function filterInventoryProducts(
       }
     }
 
-    // 3. Lọc theo trạng thái và kho
+    // 3. Lọc theo kho hàng cụ thể (nếu đã chọn kho, sản phẩm phải có bản ghi ở kho đó)
+    if (warehouseId && warehouseId !== 'ALL') {
+      const whDetail = item.warehouses[warehouseId] as WarehouseStockDetail | undefined;
+      if (!whDetail) {
+        return false;
+      }
+    }
+
+    // 4. Lọc theo trạng thái và kho
     if (status && status !== 'ALL') {
       let resolvedStatus: StockStatus;
 

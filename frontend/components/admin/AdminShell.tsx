@@ -6,6 +6,7 @@ import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { RoleGate } from './RoleGate';
 import { ScrollTopButton } from './ScrollTopButton';
+import { useCurrentAdminUser } from '../../hooks/useCurrentAdminUser';
 
 export interface AdminShellProps {
   children: ReactNode;
@@ -19,11 +20,13 @@ export function AdminShell({
   variant = 'admin',
 }: AdminShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const { user } = useCurrentAdminUser();
 
   return (
-    <AdminProvider>
-      <div className={`admin-root ${fontClass}`}>
-        <RoleGate variant={variant}>
+    <RoleGate variant={variant}>
+      {/* Remount provider khi đổi người dùng qua key={user?.id} để xóa toàn bộ context/state cũ (T2) */}
+      <AdminProvider key={user?.id || 'anonymous'}>
+        <div className={`admin-root ${fontClass}`}>
           <div className="admin-layout-wrapper">
             {/* Sidebar (Desktop cố định & Mobile Offcanvas) */}
             <Sidebar
@@ -43,11 +46,11 @@ export function AdminShell({
               </main>
             </div>
           </div>
-        </RoleGate>
 
-        {/* Nút cuộn lên đầu trang */}
-        <ScrollTopButton />
-      </div>
-    </AdminProvider>
+          {/* Nút cuộn lên đầu trang */}
+          <ScrollTopButton />
+        </div>
+      </AdminProvider>
+    </RoleGate>
   );
 }

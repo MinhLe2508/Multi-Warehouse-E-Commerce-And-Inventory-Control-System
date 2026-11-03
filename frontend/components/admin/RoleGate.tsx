@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, notFound } from 'next/navigation';
 import { useCurrentAdminUser } from '../../hooks/useCurrentAdminUser';
 
 export interface RoleGateProps {
@@ -17,43 +17,52 @@ export function RoleGate({
   const router = useRouter();
   const pathname = usePathname();
 
-  const isBypassPage =
-    pathname === '/admin/dev-login' ||
-    pathname === '/admin/forbidden';
-
   useEffect(() => {
-    if (isBypassPage || !ready) return;
-    if (!authenticated) { router.replace('/login'); return; }
-    if (mustChangePassword) { router.replace('/change-password'); return; }
+    if (!ready) return;
 
-    // CUSTOMER vào khu vực quản trị -> điều hướng sang trang 403 Forbidden
-    if (isCustomer) {
-      router.replace('/admin/forbidden');
+    // Chưa đăng nhập -> Chuyển /login?next=..., không hiển thị gì của admin/staff (T3)
+    if (!authenticated) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
 
-    // Nếu đang ở khu vực /admin mà user là STAFF -> điều hướng sang /staff/dashboard
+    if (mustChangePassword) {
+      router.replace('/change-password');
+      return;
+    }
+
+    // STAFF vào route chỉ dành cho ADMIN -> Chuyển về /staff/dashboard kèm thông báo ngắn (T3)
     if (variant === 'admin' && isStaff && !isAdmin) {
-      router.replace('/staff/dashboard');
+      router.replace('/staff/dashboard?notice=' + encodeURIComponent('Bạn không có quyền truy cập mục này.'));
       return;
     }
 
-    // Nếu đang ở khu vực /staff mà user không phải STAFF hoặc ADMIN
-    if (variant === 'staff' && !isStaff && !isAdmin) {
-      router.replace('/admin/forbidden');
+    // ADMIN vào route chỉ dành cho STAFF -> Chuyển /admin/dashboard (T3)
+    if (variant === 'staff' && !isStaff && isAdmin) {
+      router.replace('/admin/dashboard');
       return;
     }
-  }, [isBypassPage, ready, authenticated, mustChangePassword, isCustomer, isStaff, isAdmin, variant, router]);
+  }, [ready, authenticated, mustChangePassword, isStaff, isAdmin, variant, router, pathname]);
 
-  if (isBypassPage) {
-    return <>{children}</>;
+  // Chưa tải xong phiên -> hiển thị spinner, không render bất kỳ menu/layout nào tránh nháy giao diện (T2)
+  if (!ready) {
+    return (
+      <div className="d-flex flex-column align-items-center justify-content-center min-vh-100 bg-light">
+        <div className="spinner-border text-primary" role="status" style={{ width: '2.5rem', height: '2.5rem' }}>
+          <span className="visually-hidden">Đang xác thực tài khoản…</span>
+        </div>
+        <p className="mt-3 text-secondary small">Đang xác thực phiên làm việc…</p>
+      </div>
+    );
   }
 
-  if (!ready) return <p className="p-4">Đang xác thực tài khoản…</p>;
-  if (!authenticated || mustChangePassword) return null;
+  // CUSTOMER vào /admin/** hoặc /staff/** -> Báo 404 chung, không tiết lộ khu vực này tồn tại (T3)
+  if (isCustomer) {
+    notFound();
+  }
 
-  // Chặn render nếu vi phạm quyền để chờ redirect
-  if (isCustomer) return null;
+  // Chặn render giao diện khi chưa đạt quyền để chờ redirect
+  if (!authenticated || mustChangePassword) return null;
   if (variant === 'admin' && isStaff && !isAdmin) return null;
   if (variant === 'staff' && !isStaff && !isAdmin) return null;
 

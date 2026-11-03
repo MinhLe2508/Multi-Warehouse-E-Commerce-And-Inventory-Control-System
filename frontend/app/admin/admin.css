@@ -29,7 +29,7 @@
   color: var(--bs-body-color);
   font-family: inherit;
   scroll-behavior: smooth;
-  overflow-x: hidden;
+  overflow-x: clip;
   width: 100%;
 }
 
@@ -42,16 +42,18 @@
   min-height: 100vh;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
-/* Sidebar Desktop */
+/* Sidebar Desktop Cố định hoàn toàn bên trái */
 .admin-root .admin-sidebar-desktop {
   width: var(--admin-sidebar-w);
   min-width: var(--admin-sidebar-w);
   height: 100vh;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  bottom: 0;
   background: #ffffff;
   border-right: 1px solid var(--bs-border-color);
   display: flex;
@@ -103,11 +105,13 @@
   display: flex;
   flex-direction: column;
   width: calc(100% - var(--admin-sidebar-w));
+  margin-left: var(--admin-sidebar-w);
 }
 
 @media (max-width: 991.98px) {
   .admin-root .admin-main-container {
     width: 100%;
+    margin-left: 0;
   }
 }
 
@@ -245,31 +249,58 @@
   color: var(--bs-primary);
 }
 
-/* Menu con KHÔNG CÓ ICON — chỉ text thụt lề sạch sẽ */
-.admin-root .admin-subnav-link {
+/* Đảm bảo trạng thái đóng của Accordion Bootstrap luôn ẩn tuyệt đối */
+.admin-root .collapse:not(.show) {
+  display: none !important;
+}
+
+/* Menu con (Sub-menu) — Dạng danh sách khối, thụt lề sạch sẽ có viền dọc phân cấp */
+.admin-root .admin-nav-sub-menu {
   display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0.25rem 0 0.25rem 0.65rem;
+  margin: 0.15rem 0 0.35rem 0.85rem;
+  border-left: 2px solid #ede9fe;
+}
+
+.admin-root .admin-nav-sub-item,
+.admin-root .admin-subnav-link {
+  display: flex !important;
   align-items: center;
   justify-content: space-between;
-  padding: 0.45rem 0.65rem 0.45rem 2.1rem;
-  margin-bottom: 0.15rem;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
   border-radius: 6px;
-  color: #4b5563;
-  text-decoration: none;
+  color: #4b5563 !important;
+  text-decoration: none !important;
   font-size: 0.835rem;
+  font-weight: 500;
   transition: all 0.18s var(--admin-ease);
-  position: relative;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
 }
 
+.admin-root .admin-nav-sub-item:hover,
 .admin-root .admin-subnav-link:hover {
   background-color: var(--bs-primary-ultra-light);
-  color: var(--bs-primary);
-  transform: translateX(3px);
+  color: var(--bs-primary) !important;
+  text-decoration: none !important;
+  transform: translateX(2px);
 }
 
-.admin-root .admin-subnav-link.active {
-  background-color: #f5f3ff;
-  color: var(--bs-primary);
+/* Trạng thái Active đồng bộ, nhẹ nhàng, không bị đóng khung hộp thô */
+.admin-root .admin-nav-sub-item.active,
+.admin-root .admin-subnav-link.active,
+.admin-root .admin-nav-sub-item[aria-current="page"],
+.admin-root .admin-subnav-link[aria-current="page"] {
+  background-color: var(--bs-primary-ultra-light);
+  color: var(--bs-primary) !important;
   font-weight: 600;
+  box-shadow: none;
+  border: 1px solid transparent;
+  text-decoration: none !important;
 }
 
 /* ==========================================================================
@@ -542,4 +573,26 @@
 .admin-root html {
   max-width: 100vw;
   overflow-x: hidden;
+}
+
+
+/* ==========================================================================
+   OFFCANVAS ORDER DETAIL & BACKDROP Z-INDEX (T4)
+   Phủ cả sidebar (1020) và header (1010), trên mobile chiếm 100% chiều ngang
+   ========================================================================== */
+
+.offcanvas.order-detail-offcanvas {
+  width: 480px;
+  max-width: 100vw;
+  z-index: 1060 !important;
+}
+
+@media (max-width: 576px) {
+  .offcanvas.order-detail-offcanvas {
+    width: 100vw !important;
+  }
+}
+
+.offcanvas-backdrop {
+  z-index: 1050 !important;
 }

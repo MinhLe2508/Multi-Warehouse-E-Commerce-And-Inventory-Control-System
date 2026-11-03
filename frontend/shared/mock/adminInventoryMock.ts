@@ -403,11 +403,7 @@ export function resetMockInventory(): void {
  * Thực hiện điều chỉnh tồn kho theo quy tắc Optimistic Locking và Validate
  */
 export function adjustMockStock(payload: StockAdjustPayload): WarehouseStockDetail {
-  const { inventoryId, newStock, expectedVersion, note } = payload;
-
-  if (newStock < 0) {
-    throw new Error('Số lượng tồn kho không được là số âm (NFR-05.2)');
-  }
+  const { inventoryId, mode, newStock, quantity, note } = payload;
 
   if (!note || note.trim().length < 5 || note.trim().length > 500) {
     throw new Error('Lý do điều chỉnh (note) bắt buộc từ 5 đến 500 ký tự (FR-INV-01)');
@@ -432,35 +428,37 @@ export function adjustMockStock(payload: StockAdjustPayload): WarehouseStockDeta
     throw new Error(`Không tìm thấy bản ghi tồn kho với ID ${inventoryId}`);
   }
 
-  // 1. Kiểm tra Optimistic Locking
-  if (targetDetail.version !== expectedVersion) {
-    const err = new Error(
-      `Xung đột dữ liệu (409 Conflict): Tồn kho đã được thay đổi bởi người khác (version hiện tại: ${targetDetail.version}, bạn đang sửa: ${expectedVersion}). Vui lòng tải lại trang!`
-    ) as Error & { status?: number };
-    err.status = 409;
-    throw err;
+  const finalStock =
+    mode === 'RESTOCK'
+      ? targetDetail.stock + (quantity || 0)
+      : newStock !== undefined
+      ? newStock
+      : targetDetail.stock;
+
+  if (finalStock < 0) {
+    throw new Error('Số lượng tồn kho không được là số âm (NFR-05.2)');
   }
 
-  // 2. Kiểm tra không được nhỏ hơn reservedStock
-  if (newStock < targetDetail.reservedStock) {
+  // Kiểm tra không được nhỏ hơn reservedStock
+  if (finalStock < targetDetail.reservedStock) {
     const err = new Error(
-      `Không thể điều chỉnh tồn kho (${newStock}) nhỏ hơn số lượng đang giữ chỗ đơn hàng (${targetDetail.reservedStock})!`
+      `Không thể điều chỉnh tồn kho (${finalStock}) nhỏ hơn số lượng đang giữ chỗ đơn hàng (${targetDetail.reservedStock})!`
     ) as Error & { status?: number };
     err.status = 422;
     throw err;
   }
 
-  // 3. Tiến hành cập nhật
-  const newAvailable = calculateAvailableStock(newStock, targetDetail.reservedStock);
+  // Tiến hành cập nhật
+  const newAvailable = calculateAvailableStock(finalStock, targetDetail.reservedStock);
   const isNowLow = isLowStock(newAvailable, targetDetail.effectiveThreshold);
 
-  targetDetail.stock = newStock;
+  targetDetail.stock = finalStock;
   targetDetail.availableStock = newAvailable;
   targetDetail.isLowStock = isNowLow;
   targetDetail.version += 1;
   targetDetail.updatedAt = new Date().toISOString();
 
-  // 4. Tính toán lại tổng thể sản phẩm
+  // Tính toán lại tổng thể sản phẩm
   let newTotalStock = 0;
   let newTotalReserved = 0;
   let newTotalAvailable = 0;

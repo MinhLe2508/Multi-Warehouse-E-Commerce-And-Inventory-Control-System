@@ -98,7 +98,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/categories',
         label: 'Danh mục',
         roles: ['ADMIN'],
-        ready: false,
+        ready: true,
       },
     ],
   },
@@ -166,9 +166,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
 ];
 
-// Menu dành cho Nhân viên kho (Staff - Khớp Ảnh 3)
+// Menu dành cho Nhân viên kho (Staff - Khớp T6 và SRS FR-AUTH-02)
 export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
-  { id: 'staff-products', title: 'Sản phẩm', isSingle: true, items: [{ href: '/staff/products', label: 'Sản phẩm', roles: ['WAREHOUSE_STAFF'], ready: true }] },
   {
     id: 'staff-overview',
     title: 'Dashboard',
@@ -184,20 +183,21 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     id: 'staff-orders',
-    title: 'Quản lý đơn hàng',
+    title: 'Đơn hàng',
     isSingle: true,
     items: [
       {
         href: '/staff/orders',
-        label: 'Quản lý đơn hàng',
+        label: 'Đơn hàng',
         roles: ['WAREHOUSE_STAFF'],
         ready: true,
       },
     ],
   },
   {
-    id: 'staff-inventory',
-    title: 'Kho & tồn kho',
+    id: 'staff-inventory-view',
+    title: 'Tồn kho',
+    isSingle: true,
     items: [
       {
         href: '/staff/inventory',
@@ -205,9 +205,29 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
         roles: ['WAREHOUSE_STAFF'],
         ready: true,
       },
+    ],
+  },
+  {
+    id: 'staff-alerts-view',
+    title: 'Cảnh báo',
+    isSingle: true,
+    items: [
       {
         href: '/staff/inventory/alerts',
-        label: 'Cảnh báo tồn kho',
+        label: 'Cảnh báo',
+        roles: ['WAREHOUSE_STAFF'],
+        ready: true,
+      },
+    ],
+  },
+  {
+    id: 'staff-products-view',
+    title: 'Sản phẩm',
+    isSingle: true,
+    items: [
+      {
+        href: '/staff/products',
+        label: 'Sản phẩm',
         roles: ['WAREHOUSE_STAFF'],
         ready: true,
       },
