@@ -284,8 +284,7 @@ export default function CartView() {
               </div>
             </dl>
 
-            {!MOCK_CATALOG && <p className="mt-4 text-sm text-slate-500">{vi ? "Đặt hàng sẽ được kết nối ở giai đoạn tiếp theo." : "Ordering will be connected in the next stage."}</p>}
-            {(!MOCK_CATALOG || hasProblem) ? (
+            {hasProblem ? (
               <span
                 aria-disabled="true"
                 className="mt-6 block cursor-not-allowed rounded-xl bg-slate-100 px-6 py-3.5 text-center text-sm font-medium text-slate-400"
