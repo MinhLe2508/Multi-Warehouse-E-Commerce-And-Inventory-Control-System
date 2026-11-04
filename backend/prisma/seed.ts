@@ -297,7 +297,7 @@ const PRODUCT_NAME_PREFIXES = [
 async function main(): Promise<void> {
   console.log('===== Bắt đầu Seed dữ liệu mẫu =====');
 
-  if (process.env.ALLOW_DEMO_SEED !== 'true') {
+  if (process.env.ALLOW_DEMO_SEED?.toLowerCase() !== 'true') {
     throw new Error(
       'Demo Seed bị từ chối. Chỉ bật ALLOW_DEMO_SEED = True trong môi trường kiểm thử.',
     );

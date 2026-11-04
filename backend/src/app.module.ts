@@ -16,6 +16,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { InventoryModule } from './inventory/inventory.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { CategoriesModule } from './categories/categories.module';
+import { ChatbotModule } from './chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { CategoriesModule } from './categories/categories.module';
     PaymentsModule,
     WarehousesModule,
     CategoriesModule,
+    ChatbotModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, HealthService],
