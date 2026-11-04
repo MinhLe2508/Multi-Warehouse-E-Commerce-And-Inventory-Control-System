@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Header from "@/components/storefront/Header";
 import Footer from "@/components/storefront/Footer";
+import ChatWidget from "@/components/storefront/ChatWidget";
 
 export const metadata: Metadata = {
   title: {
@@ -16,6 +17,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
+      <ChatWidget />
     </div>
   );
 }
