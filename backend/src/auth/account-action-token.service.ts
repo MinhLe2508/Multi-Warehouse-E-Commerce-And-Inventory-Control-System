@@ -87,9 +87,16 @@ export class AccountActionTokenService {
     4. Tính thời gian hết hạn theo cấu hình TTL.
     5. Lưu tokenHash và expiresAt vào PostgreSQL.
     6. Trả rawToken cho AuthService để gửi email.
-   */
-  // Tạo token mới cho một User và một purpose cụ thể.
-  // Transaction thứ hai chỉ tiếp tục sau khi transaction thứ nhất hoàn thành.
+
+   Tạo token mới cho một User và một purpose cụ thể.
+   Khi AuthService truyền tx:
+   - Sử dụng chính transaction đang thực hiện.
+   - Khóa User, vô hiệu hóa token cũ và tạo token mới trong cùng transaction.
+   Khi không truyền tx:
+   - Tự tạo transaction mới thông qua PrismaService.
+   - Các transaction cùng khóa một User phải chờ nhau theo thứ tự.
+   Việc khóa lại cùng dòng User trong một transaction là hợp lệ.
+  */
   async createToken(
     userId: string,
     purpose: AccountActionPurpose,
@@ -315,7 +322,15 @@ export class AccountActionTokenService {
     return rows.length === 1;
   }
 
-  // Đọc thời hạn token theo từng AccountActionPurpose.
+  /**
+   * Đọc thời hạn hiệu lực của token theo từng mục đích
+   *
+   * - Nếu chưa khai báo hoặc giá trị rỗng: dùng thời hạn mặc định
+   * - Nếu đã khai báo: bắt buộc là số nguyên dương an toàn
+   * - Không chấp nhận 0, số âm, số thập phân hoặc giá trị không hợp lệ
+   *
+   * Giữ cách xử lý tương thích với readTtlSeconds() của MailService
+   */
   private getTtlSeconds(purpose: AccountActionPurpose): number {
     const config = TOKEN_TTL_CONFIG[purpose];
 
@@ -325,10 +340,13 @@ export class AccountActionTokenService {
 
     const rawValue = process.env[config.envName];
 
-    // Chỉ dùng mặc định nếu biến thực sự chưa khai báo.
+    // Biến không tồn tại hoặc chỉ chứa khoảng trắng thì dùng mặc định.
     const ttlSeconds =
-      rawValue === undefined ? config.defaultSeconds : Number(rawValue);
+      rawValue === undefined || rawValue.trim() === ''
+        ? config.defaultSeconds
+        : Number(rawValue);
 
+    // Kiểm tra để tránh thời hạn không hợp lệ.
     if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds <= 0) {
       throw new Error(
         `Cấu hình ${config.envName} phải là số nguyên dương hợp lệ.`,

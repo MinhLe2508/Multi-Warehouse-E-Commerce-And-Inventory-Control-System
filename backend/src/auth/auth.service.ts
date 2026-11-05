@@ -596,34 +596,74 @@ export class AuthService {
     }
   }
 
+  // =========================================================================
+  // GỬI LẠI THƯ MỜI KÍCH HOẠT STAFF (chỉ gọi từ AdminApi đã xác thực ADMIN)
+  // =========================================================================
+
   async resendStaffInvitation(email: string): Promise<void> {
     const normalizedEmail = this.normalizeEmail(email);
-    const user = await this.prisma.user.findUnique({
+    const invalidStaffMessage = 'Staff không tồn tại hoặc không cần kích hoạt.';
+
+    // Bước tra cứu này quyền không quyết định tài khoản có được gửi thư hay không
+    // Mọi kiểm tra quyền/trạng thái đều thực hiện lại SAU KHI khóa dòng User
+    const reference = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        username: true,
-        role: true,
-        isActive: true,
-        emailVerifiedAt: true,
-      },
+      select: { id: true },
     });
-    if (
-      !user ||
-      user.role !== UserRole.WAREHOUSE_STAFF ||
-      !user.isActive ||
-      user.emailVerifiedAt !== null
-    ) {
-      throw new BadRequestException(
-        'Staff không tồn tại hoặc không cần kích hoạt.',
-      );
+
+    if (!reference) {
+      throw new BadRequestException(invalidStaffMessage);
     }
-    const action = await this.accountActionTokenService.createToken(
-      user.id,
-      AccountActionPurpose.STAFF_INVITATION,
-    );
+
+    // Không thực hiện SMTP bên trong transaction để tránh giữ khóa CSDL lâu
+    const { user, action } = await this.prisma.$transaction(async (tx) => {
+      // StaffService.setStatus() cũng khóa dòng User bằng FOR UPDATE trước khi sửa isActive hoặc thu hồi token; hai nghiệp vụ sẽ được tuần tự hóa.
+      const lockedRows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+        FROM "users"
+        WHERE "id" = ${reference.id}::uuid
+        FOR UPDATE
+      `;
+
+      if (lockedRows.length !== 1) {
+        throw new BadRequestException(invalidStaffMessage);
+      }
+
+      // Quan trọng: đọc lại User sau khi lấy khóa, không dùng bản đọc cũ
+      const current = await tx.user.findUnique({
+        where: { id: reference.id },
+        select: {
+          email: true,
+          fullName: true,
+          username: true,
+          role: true,
+          isActive: true,
+          emailVerifiedAt: true,
+        },
+      });
+
+      // Chỉ Staff chưa kích hoạt, còn mở khóa và đúng email mới được mời lại
+      if (
+        !current ||
+        current.email !== normalizedEmail ||
+        current.role !== UserRole.WAREHOUSE_STAFF ||
+        !current.isActive ||
+        current.emailVerifiedAt !== null
+      ) {
+        throw new BadRequestException(invalidStaffMessage);
+      }
+
+      const action = await this.accountActionTokenService.createToken(
+        reference.id,
+        AccountActionPurpose.STAFF_INVITATION,
+        tx,
+      );
+
+      return { user: current, action };
+    });
+
+    // Gửi email sau commit: lỗi SMTP không làm rollback token đã tạo.
+    // Lỗi gửi thư được MailService báo về để AdminApi trả HTTP 503.
     await this.mailService.sendStaffInvitation({
       to: user.email,
       fullName: user.fullName,
