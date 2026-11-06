@@ -56,7 +56,8 @@ export class RetrievalService {
 
     try {
       // 1. Sinh embedding vector cho câu truy vấn (input_type: query)
-      const queryEmbedding = await this.embeddingService.embedQuery(trimmedQuery);
+      const queryEmbedding =
+        await this.embeddingService.embedQuery(trimmedQuery);
       const vectorLiteral = toVectorLiteral(queryEmbedding);
 
       // 2. Truy vấn pgvector với cosine distance operator (<=>)
@@ -159,4 +160,3 @@ export class RetrievalService {
       .join('\n\n---\n\n');
   }
 }
-

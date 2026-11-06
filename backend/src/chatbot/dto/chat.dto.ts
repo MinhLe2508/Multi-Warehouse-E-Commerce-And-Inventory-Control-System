@@ -34,4 +34,3 @@ export class IngestKbDocumentDto {
   @IsString()
   sourceUrl?: string;
 }
-

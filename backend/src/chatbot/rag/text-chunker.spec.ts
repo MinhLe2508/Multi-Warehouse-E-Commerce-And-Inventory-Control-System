@@ -18,7 +18,8 @@ describe('text-chunker', () => {
   });
 
   it('chia nhỏ văn bản dài thành các chunk không vượt quá maxChars', () => {
-    const sentence = 'Hệ thống hỗ trợ giao hàng toàn quốc từ 3 kho lớn tại Hà Nội, Đà Nẵng và TP.HCM. ';
+    const sentence =
+      'Hệ thống hỗ trợ giao hàng toàn quốc từ 3 kho lớn tại Hà Nội, Đà Nẵng và TP.HCM. ';
     const longText = sentence.repeat(20); // ~1600 ký tự
 
     const chunks = chunkText(longText, { maxChars: 300, overlapChars: 50 });
@@ -50,9 +51,8 @@ describe('text-chunker', () => {
   });
 
   it('ném lỗi nếu overlapChars >= maxChars', () => {
-    expect(() => chunkText('test', { maxChars: 100, overlapChars: 100 })).toThrow(
-      'overlapChars phải là số nguyên trong [0, maxChars).',
-    );
+    expect(() =>
+      chunkText('test', { maxChars: 100, overlapChars: 100 }),
+    ).toThrow('overlapChars phải là số nguyên trong [0, maxChars).');
   });
 });
-

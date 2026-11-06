@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
+import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RetrievalService, RetrievedDocument } from './rag/retrieval.service';
 import {
@@ -8,13 +9,27 @@ import {
   checkHumanEscalationIntent,
   isFallbackResponse,
 } from './rag/prompt-templates';
+import { CHATBOT_TOOLS } from './tools/chatbot-tools.definition';
+import {
+  ChatbotToolsService,
+  ToolExecutionContext,
+} from './tools/chatbot-tools.service';
 import { randomUUID } from 'crypto';
 
 export interface SendMessageOptions {
   sessionToken?: string;
   message: string;
   userId?: string;
+  role?: UserRole;
   dynamicContext?: string; // Tích hợp với dữ liệu động từ Internal API khi cần
+}
+
+// Bản ghi truy vết 1 lần gọi tool, lưu vào chat_messages.tool_calls
+export interface ToolCallRecord {
+  name: string;
+  input: unknown;
+  ok: boolean;
+  error?: string;
 }
 
 export interface SendMessageResult {
@@ -24,9 +39,19 @@ export interface SendMessageResult {
   isFallback: boolean;
   escalatedToHuman: boolean;
   retrievedDocuments: RetrievedDocument[];
+  toolCalls: ToolCallRecord[];
   latencyMs: number;
   tokenUsage?: number;
 }
+
+interface GenerationResult {
+  replyText: string;
+  tokenUsage: number;
+  toolCalls: ToolCallRecord[];
+}
+
+// Giới hạn số vòng tool-use mỗi câu hỏi để chống vòng lặp vô hạn / tốn token (CON-07)
+const MAX_TOOL_ROUNDS = 3;
 
 @Injectable()
 export class ChatbotService {
@@ -37,6 +62,7 @@ export class ChatbotService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly retrievalService: RetrievalService,
+    private readonly toolsService: ChatbotToolsService,
   ) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     this.defaultModel =
@@ -44,7 +70,9 @@ export class ChatbotService {
 
     if (apiKey && apiKey !== 'dummy_key' && !apiKey.startsWith('mock_')) {
       this.anthropicClient = new Anthropic({ apiKey });
-      this.logger.log(`Khởi tạo Anthropic Claude SDK thành công (Model: ${this.defaultModel})`);
+      this.logger.log(
+        `Khởi tạo Anthropic Claude SDK thành công (Model: ${this.defaultModel})`,
+      );
     } else {
       this.logger.warn(
         'ANTHROPIC_API_KEY chưa được cấu hình. Chatbot sẽ chạy ở chế độ mô phỏng/fallback dự phòng.',
@@ -53,7 +81,9 @@ export class ChatbotService {
   }
 
   /**
-   * Khởi tạo hoặc tìm kiếm phiên hội thoại
+   * Khởi tạo hoặc tìm kiếm phiên hội thoại.
+   * Phân quyền: chỉ được dùng lại session của chính mình. Session đã gắn với user khác
+   * (hoặc gắn với user nhưng request là khách vãng lai) -> tạo session mới, không tái sử dụng.
    */
   async getOrCreateSession(sessionToken?: string, userId?: string) {
     if (sessionToken) {
@@ -61,22 +91,29 @@ export class ChatbotService {
         where: { sessionToken },
       });
       if (existing) {
-        // Nếu user vừa đăng nhập mà session chưa gán userId thì cập nhật
-        if (userId && !existing.userId) {
-          return await this.prisma.chatSession.update({
-            where: { id: existing.id },
-            data: { userId },
-          });
+        if (!existing.userId) {
+          // Khách vãng lai vừa đăng nhập -> gắn session vào tài khoản
+          if (userId) {
+            return await this.prisma.chatSession.update({
+              where: { id: existing.id },
+              data: { userId },
+            });
+          }
+          return existing;
         }
-        return existing;
+        if (existing.userId === userId) {
+          return existing;
+        }
+        this.logger.warn(
+          'Bỏ qua sessionToken không thuộc người dùng hiện tại, tạo phiên mới.',
+        );
       }
     }
 
-    // Tạo phiên chat mới
-    const token = sessionToken || `sess_${randomUUID()}`;
+    // Không nhận lại token do client gửi nếu token đó đã thuộc người khác
     return await this.prisma.chatSession.create({
       data: {
-        sessionToken: token,
+        sessionToken: `sess_${randomUUID()}`,
         userId: userId || null,
         messageCount: 0,
         escalatedToHuman: false,
@@ -85,11 +122,16 @@ export class ChatbotService {
   }
 
   /**
-   * Xử lý luồng Chatbot hoàn chỉnh (Retrieval → Augmentation → Generation)
+   * Xử lý luồng Chatbot hoàn chỉnh (Retrieval → Augmentation → Generation + Function Calling)
    */
-  async processUserMessage(options: SendMessageOptions): Promise<SendMessageResult> {
+  async processUserMessage(
+    options: SendMessageOptions,
+  ): Promise<SendMessageResult> {
     const startTime = Date.now();
-    const session = await this.getOrCreateSession(options.sessionToken, options.userId);
+    const session = await this.getOrCreateSession(
+      options.sessionToken,
+      options.userId,
+    );
     const userMessage = options.message.trim();
 
     // 1. Lưu tin nhắn của USER vào CSDL
@@ -133,6 +175,7 @@ export class ChatbotService {
         isFallback: false,
         escalatedToHuman: true,
         retrievedDocuments: [],
+        toolCalls: [],
         latencyMs,
       };
     }
@@ -152,7 +195,10 @@ export class ChatbotService {
     });
     recentMessages.reverse();
 
-    const formattedHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    const formattedHistory: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+    }> = [];
     for (const msg of recentMessages) {
       if (msg.role === 'USER') {
         formattedHistory.push({ role: 'user', content: msg.content });
@@ -162,47 +208,50 @@ export class ChatbotService {
     }
 
     // 5. Bước AUGMENTATION: Định dạng context & xây dựng Prompt
-    const formattedContext = this.retrievalService.formatContextForPrompt(retrievedDocs);
+    const formattedContext =
+      this.retrievalService.formatContextForPrompt(retrievedDocs);
     const augmentedUserPrompt = buildAugmentedUserMessage({
       userQuery: userMessage,
       retrievedContext: formattedContext,
       dynamicContext: options.dynamicContext,
     });
 
-    // 6. Bước GENERATION: Gọi LLM (Claude Haiku API)
+    // Ngữ cảnh phân quyền cho tool: lấy từ JWT đã xác minh, KHÔNG từ nội dung chat
+    const toolCtx: ToolExecutionContext = {
+      userId: session.userId ?? undefined,
+      role: session.userId ? options.role : undefined,
+    };
+
+    // 6. Bước GENERATION: Gọi LLM (Claude Haiku API) kèm function calling
     let replyText = '';
     let isFallback = false;
     let tokenUsage = 0;
+    let toolCalls: ToolCallRecord[] = [];
 
     if (this.anthropicClient) {
       try {
-        // Chuẩn bị tin nhắn cho Claude
-        const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-        // Thêm history cũ ngoại trừ tin nhắn cuối cùng (vì tin nhắn cuối cùng sẽ thay bằng augmented prompt)
-        for (let i = 0; i < formattedHistory.length - 1; i++) {
-          claudeMessages.push(formattedHistory[i]);
-        }
+        // Thêm history cũ ngoại trừ tin nhắn cuối (sẽ thay bằng augmented prompt)
+        const claudeMessages: Anthropic.MessageParam[] = formattedHistory
+          .slice(0, -1)
+          .map((m) => ({ role: m.role, content: m.content }));
         claudeMessages.push({ role: 'user', content: augmentedUserPrompt });
 
-        const response = await this.anthropicClient.messages.create({
-          model: this.defaultModel,
-          max_tokens: 1024,
-          temperature: 0.1, // Nhiệt độ thấp hạn chế bịa đặt (NFR-04.4)
-          system: CHATBOT_SYSTEM_PROMPT,
-          messages: claudeMessages,
-        });
+        const generation = await this.generateWithTools(
+          this.anthropicClient,
+          claudeMessages,
+          toolCtx,
+        );
+        replyText = generation.replyText;
+        tokenUsage = generation.tokenUsage;
+        toolCalls = generation.toolCalls;
 
-        const firstBlock = response.content[0];
-        replyText = firstBlock.type === 'text' ? firstBlock.text : '';
-        tokenUsage =
-          (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0);
-
-        // Kiểm tra xem LLM có báo không có dữ liệu / fallback không
-        isFallback =
-          retrievedDocs.length === 0 ||
-          !retrievalResult.hasHighConfidence ||
-          isFallbackResponse(replyText);
+        // Có dữ liệu động hợp lệ từ tool thì không coi là thiếu context
+        const hasToolData = toolCalls.some((t) => t.ok);
+        isFallback = hasToolData
+          ? isFallbackResponse(replyText)
+          : retrievedDocs.length === 0 ||
+            !retrievalResult.hasHighConfidence ||
+            isFallbackResponse(replyText);
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Lỗi khi gọi Anthropic Claude API: ${errorMsg}`);
@@ -222,15 +271,28 @@ export class ChatbotService {
       }
     }
 
+    if (!replyText.trim()) {
+      replyText =
+        'Dạ, em chưa có đủ thông tin để trả lời chính xác. Tôi sẽ kết nối bạn với chuyên viên tư vấn để được hỗ trợ chính xác nhất.';
+      isFallback = true;
+    }
+
     const latencyMs = Date.now() - startTime;
 
-    // 7. Lưu tin nhắn của ASSISTANT vào CSDL kèm theo thông tin truy vết RAG
+    // 7. Lưu tin nhắn của ASSISTANT vào CSDL kèm thông tin truy vết RAG + tool calls
     const savedAssistantMsg = await this.prisma.chatMessage.create({
       data: {
         sessionId: session.id,
         role: 'ASSISTANT',
         content: replyText,
-        retrievedContext: retrievedDocs.length > 0 ? (retrievedDocs as unknown as object) : undefined,
+        retrievedContext:
+          retrievedDocs.length > 0
+            ? (retrievedDocs as unknown as Prisma.InputJsonValue)
+            : undefined,
+        toolCalls:
+          toolCalls.length > 0
+            ? (toolCalls as unknown as Prisma.InputJsonValue)
+            : undefined,
         isFallback,
         latencyMs,
         tokenUsage: tokenUsage > 0 ? tokenUsage : null,
@@ -238,7 +300,10 @@ export class ChatbotService {
     });
 
     // Cập nhật session messageCount
-    const shouldEscalate = isFallback && session.escalatedToHuman === false && isFallbackResponse(replyText);
+    const shouldEscalate =
+      isFallback &&
+      session.escalatedToHuman === false &&
+      isFallbackResponse(replyText);
     await this.prisma.chatSession.update({
       where: { id: session.id },
       data: {
@@ -254,15 +319,86 @@ export class ChatbotService {
       isFallback,
       escalatedToHuman: shouldEscalate || session.escalatedToHuman,
       retrievedDocuments: retrievedDocs,
+      toolCalls,
       latencyMs,
       tokenUsage: tokenUsage > 0 ? tokenUsage : undefined,
     };
   }
 
   /**
-   * Lấy lịch sử tin nhắn của một phiên chat
+   * Vòng lặp function calling với Claude:
+   * gọi model -> nếu stop_reason = tool_use thì chạy tool (đã kiểm quyền) -> gửi tool_result -> lặp lại.
    */
-  async getSessionHistory(sessionToken: string) {
+  private async generateWithTools(
+    client: Anthropic,
+    messages: Anthropic.MessageParam[],
+    ctx: ToolExecutionContext,
+  ): Promise<GenerationResult> {
+    const toolCalls: ToolCallRecord[] = [];
+    let tokenUsage = 0;
+
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      // Vòng cuối không cho gọi tool nữa, buộc model trả lời bằng dữ liệu đã có
+      const allowTools = round < MAX_TOOL_ROUNDS;
+      const response = await client.messages.create({
+        model: this.defaultModel,
+        max_tokens: 1024,
+        temperature: 0.1, // Nhiệt độ thấp hạn chế bịa đặt (NFR-04.4)
+        system: CHATBOT_SYSTEM_PROMPT,
+        messages,
+        ...(allowTools ? { tools: CHATBOT_TOOLS } : {}),
+      });
+
+      tokenUsage +=
+        (response.usage?.input_tokens ?? 0) +
+        (response.usage?.output_tokens ?? 0);
+
+      const toolUses = response.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+      );
+
+      if (response.stop_reason !== 'tool_use' || toolUses.length === 0) {
+        const replyText = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+          .map((b) => b.text)
+          .join('\n')
+          .trim();
+        return { replyText, tokenUsage, toolCalls };
+      }
+
+      messages.push({ role: 'assistant', content: response.content });
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      for (const use of toolUses) {
+        const result = await this.toolsService.execute(
+          use.name,
+          use.input,
+          ctx,
+        );
+        toolCalls.push({
+          name: use.name,
+          input: use.input,
+          ok: result.ok,
+          ...(result.ok ? {} : { error: result.error }),
+        });
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: use.id,
+          content: JSON.stringify(result),
+          ...(result.ok ? {} : { is_error: true }),
+        });
+      }
+      messages.push({ role: 'user', content: toolResults });
+    }
+
+    return { replyText: '', tokenUsage, toolCalls };
+  }
+
+  /**
+   * Lấy lịch sử tin nhắn của một phiên chat — chỉ chủ phiên mới xem được.
+   * Phiên của khách vãng lai (userId = null) chỉ cần biết sessionToken.
+   */
+  async getSessionHistory(sessionToken: string, userId?: string) {
     const session = await this.prisma.chatSession.findUnique({
       where: { sessionToken },
       include: {
@@ -272,7 +408,7 @@ export class ChatbotService {
       },
     });
 
-    if (!session) {
+    if (!session || !this.canAccessSession(session.userId, userId)) {
       return null;
     }
 
@@ -292,13 +428,27 @@ export class ChatbotService {
   }
 
   /**
-   * Đánh dấu chuyển phiên chat cho người thật thủ công
+   * Đánh dấu chuyển phiên chat cho người thật thủ công — chỉ chủ phiên.
    */
-  async escalateSession(sessionToken: string) {
-    return await this.prisma.chatSession.update({
+  async escalateSession(
+    sessionToken: string,
+    userId?: string,
+  ): Promise<boolean> {
+    const session = await this.prisma.chatSession.findUnique({
       where: { sessionToken },
+      select: { id: true, userId: true },
+    });
+    if (!session || !this.canAccessSession(session.userId, userId)) {
+      return false;
+    }
+    await this.prisma.chatSession.update({
+      where: { id: session.id },
       data: { escalatedToHuman: true },
     });
+    return true;
+  }
+
+  private canAccessSession(ownerId: string | null, userId?: string): boolean {
+    return ownerId === null || ownerId === userId;
   }
 }
-

@@ -60,7 +60,9 @@ describe('RetrievalService', () => {
 
     const result = await service.searchKnowledgeBase('Làm sao để hoàn tiền?');
 
-    expect(embeddingService.embedQuery).toHaveBeenCalledWith('Làm sao để hoàn tiền?');
+    expect(embeddingService.embedQuery).toHaveBeenCalledWith(
+      'Làm sao để hoàn tiền?',
+    );
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(result.documents).toHaveLength(2);
     expect(result.documents[0].title).toBe('Chính sách hoàn tiền');
@@ -81,8 +83,9 @@ describe('RetrievalService', () => {
     ];
 
     const context = service.formatContextForPrompt(docs);
-    expect(context).toContain('[Tài liệu 1: Vận chuyển (SHIPPING) | Độ phù hợp: 82.5%]');
+    expect(context).toContain(
+      '[Tài liệu 1: Vận chuyển (SHIPPING) | Độ phù hợp: 82.5%]',
+    );
     expect(context).toContain('Giao hàng trong 24h đối với nội thành.');
   });
 });
-

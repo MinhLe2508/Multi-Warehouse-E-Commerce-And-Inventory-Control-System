@@ -68,7 +68,11 @@ export function chunkText(text: string, options: ChunkOptions = {}): string[] {
   if (!Number.isInteger(maxChars) || maxChars < 50) {
     throw new Error('maxChars phải là số nguyên >= 50.');
   }
-  if (!Number.isInteger(overlapChars) || overlapChars < 0 || overlapChars >= maxChars) {
+  if (
+    !Number.isInteger(overlapChars) ||
+    overlapChars < 0 ||
+    overlapChars >= maxChars
+  ) {
     throw new Error('overlapChars phải là số nguyên trong [0, maxChars).');
   }
 
@@ -86,19 +90,21 @@ export function chunkText(text: string, options: ChunkOptions = {}): string[] {
   let currentSize = 0;
 
   for (const sentence of sentences) {
-    const added = currentSize === 0 ? sentence.length : currentSize + 1 + sentence.length;
+    const added =
+      currentSize === 0 ? sentence.length : currentSize + 1 + sentence.length;
     if (added > maxChars && current.length > 0) {
       chunks.push(current.join(' '));
       const overlap = tailForOverlap(current, overlapChars);
       // Overlap + câu mới vẫn phải vừa maxChars, nếu không thì bỏ overlap.
       const overlapSize = overlap.join(' ').length;
-      current = overlapSize + 1 + sentence.length <= maxChars ? [...overlap] : [];
+      current =
+        overlapSize + 1 + sentence.length <= maxChars ? [...overlap] : [];
       currentSize = current.length > 0 ? overlapSize : 0;
     }
     current.push(sentence);
-    currentSize = currentSize === 0 ? sentence.length : currentSize + 1 + sentence.length;
+    currentSize =
+      currentSize === 0 ? sentence.length : currentSize + 1 + sentence.length;
   }
   if (current.length > 0) chunks.push(current.join(' '));
   return chunks;
 }
-

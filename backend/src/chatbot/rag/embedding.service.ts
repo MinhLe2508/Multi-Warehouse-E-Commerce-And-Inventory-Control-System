@@ -88,12 +88,16 @@ export class EmbeddingService {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
       } catch {
-        throw new EmbeddingError('Không kết nối được Voyage AI (timeout/mạng).');
+        throw new EmbeddingError(
+          'Không kết nối được Voyage AI (timeout/mạng).',
+        );
       }
 
       const retryable = response.status === 429 || response.status >= 500;
       if (retryable && attempt === 1) {
-        this.logger.warn(`Voyage trả ${response.status}, thử lại sau ${RETRY_DELAY_MS}ms`);
+        this.logger.warn(
+          `Voyage trả ${response.status}, thử lại sau ${RETRY_DELAY_MS}ms`,
+        );
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
         continue;
       }
@@ -101,7 +105,10 @@ export class EmbeddingService {
         // Không ghi body vào log: có thể chứa lại nội dung tài liệu.
         throw new EmbeddingError(`Voyage AI trả lỗi HTTP ${response.status}.`);
       }
-      return this.parse((await response.json()) as VoyageResponse, texts.length);
+      return this.parse(
+        (await response.json()) as VoyageResponse,
+        texts.length,
+      );
     }
   }
 
@@ -126,10 +133,11 @@ export class EmbeddingService {
       vectors[index] = embedding as number[];
     });
     if (vectors.some((v) => v === undefined)) {
-      throw new EmbeddingError('Voyage AI trả về index embedding không hợp lệ.');
+      throw new EmbeddingError(
+        'Voyage AI trả về index embedding không hợp lệ.',
+      );
     }
     const tokens = body.usage?.total_tokens;
     return { vectors, totalTokens: typeof tokens === 'number' ? tokens : 0 };
   }
 }
-

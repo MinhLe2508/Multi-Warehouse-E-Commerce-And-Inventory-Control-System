@@ -46,7 +46,9 @@ async function bootstrap() {
     );
 
     if (statsBefore.pendingChunks === 0) {
-      console.log('Tất cả các tài liệu đã có embedding đầy đủ. Không cần sync thêm.');
+      console.log(
+        'Tất cả các tài liệu đã có embedding đầy đủ. Không cần sync thêm.',
+      );
       return;
     }
 
@@ -55,7 +57,9 @@ async function bootstrap() {
       const res = await kbService.syncMissingEmbeddings(20);
       if (res.processed === 0) break;
       remaining = res.remaining;
-      console.log(`Đã xử lý đợt ${res.processed} chunks, còn lại: ${remaining}`);
+      console.log(
+        `Đã xử lý đợt ${res.processed} chunks, còn lại: ${remaining}`,
+      );
     }
 
     const statsAfter = await kbService.getStats();

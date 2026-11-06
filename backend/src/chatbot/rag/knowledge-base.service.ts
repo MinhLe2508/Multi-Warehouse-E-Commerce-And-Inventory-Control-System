@@ -43,7 +43,8 @@ export class KnowledgeBaseService {
     );
 
     // Sinh embedding đồng loạt cho các chunk bằng Voyage AI (voyage-3)
-    const { vectors, totalTokens } = await this.embeddingService.embedDocuments(chunks);
+    const { vectors, totalTokens } =
+      await this.embeddingService.embedDocuments(chunks);
 
     for (let i = 0; i < chunks.length; i++) {
       const text = chunks[i];
@@ -97,9 +98,13 @@ export class KnowledgeBaseService {
    * Đồng bộ embedding cho các bản ghi kb_documents chưa có vector (embedding IS NULL)
    * Phù hợp cho việc sync các bản ghi đã seed từ trước
    */
-  async syncMissingEmbeddings(batchSize = 20): Promise<{ processed: number; remaining: number }> {
+  async syncMissingEmbeddings(
+    batchSize = 20,
+  ): Promise<{ processed: number; remaining: number }> {
     // 1. Lấy danh sách các dòng chưa có embedding
-    const unindexedRows = await this.prisma.$queryRaw<Array<{ id: string; content: string }>>`
+    const unindexedRows = await this.prisma.$queryRaw<
+      Array<{ id: string; content: string }>
+    >`
       SELECT id, content
       FROM "kb_documents"
       WHERE "embedding" IS NULL AND "is_active" = true
@@ -134,7 +139,9 @@ export class KnowledgeBaseService {
     }
 
     // Đếm số lượng còn lại
-    const remainingCountResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+    const remainingCountResult = await this.prisma.$queryRaw<
+      Array<{ count: bigint }>
+    >`
       SELECT COUNT(*)::bigint as count
       FROM "kb_documents"
       WHERE "embedding" IS NULL AND "is_active" = true;
@@ -163,10 +170,14 @@ export class KnowledgeBaseService {
     const totalResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint as count FROM "kb_documents" WHERE "is_active" = true;
     `;
-    const embeddedResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+    const embeddedResult = await this.prisma.$queryRaw<
+      Array<{ count: bigint }>
+    >`
       SELECT COUNT(*)::bigint as count FROM "kb_documents" WHERE "is_active" = true AND "embedding" IS NOT NULL;
     `;
-    const docTypesResult = await this.prisma.$queryRaw<Array<{ doc_type: string; count: bigint }>>`
+    const docTypesResult = await this.prisma.$queryRaw<
+      Array<{ doc_type: string; count: bigint }>
+    >`
       SELECT "doc_type", COUNT(*)::bigint as count
       FROM "kb_documents"
       WHERE "is_active" = true

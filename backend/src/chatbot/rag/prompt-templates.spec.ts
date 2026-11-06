@@ -8,17 +8,33 @@ import {
 describe('prompt-templates', () => {
   describe('checkHumanEscalationIntent (FR-BOT-04)', () => {
     it('nhận diện đúng các câu hỏi yêu cầu gặp người thật / tư vấn viên', () => {
-      expect(checkHumanEscalationIntent('Tôi muốn gặp nhân viên tư vấn')).toBe(true);
-      expect(checkHumanEscalationIntent('cho tôi gặp người thật đi')).toBe(true);
+      expect(checkHumanEscalationIntent('Tôi muốn gặp nhân viên tư vấn')).toBe(
+        true,
+      );
+      expect(checkHumanEscalationIntent('cho tôi gặp người thật đi')).toBe(
+        true,
+      );
       expect(checkHumanEscalationIntent('Chuyển máy cho cskh')).toBe(true);
-      expect(checkHumanEscalationIntent('i want human support please')).toBe(true);
-      expect(checkHumanEscalationIntent('cần người hỗ trợ giải quyết')).toBe(true);
+      expect(checkHumanEscalationIntent('i want human support please')).toBe(
+        true,
+      );
+      expect(checkHumanEscalationIntent('cần người hỗ trợ giải quyết')).toBe(
+        true,
+      );
     });
 
     it('không nhận nhầm các câu hỏi thông thường', () => {
-      expect(checkHumanEscalationIntent('Chính sách đổi trả sản phẩm thế nào?')).toBe(false);
-      expect(checkHumanEscalationIntent('Phí ship từ kho Hà Nội vào Sài Gòn là bao nhiêu?')).toBe(false);
-      expect(checkHumanEscalationIntent('Sản phẩm này còn hàng không?')).toBe(false);
+      expect(
+        checkHumanEscalationIntent('Chính sách đổi trả sản phẩm thế nào?'),
+      ).toBe(false);
+      expect(
+        checkHumanEscalationIntent(
+          'Phí ship từ kho Hà Nội vào Sài Gòn là bao nhiêu?',
+        ),
+      ).toBe(false);
+      expect(checkHumanEscalationIntent('Sản phẩm này còn hàng không?')).toBe(
+        false,
+      );
     });
   });
 
@@ -50,10 +66,13 @@ describe('prompt-templates', () => {
     it('tổng hợp đúng cấu trúc bao gồm ngữ cảnh tri thức và câu hỏi người dùng', () => {
       const prompt = buildAugmentedUserMessage({
         userQuery: 'Chính sách bảo hành ra sao?',
-        retrievedContext: '[Tài liệu 1: Chính sách bảo hành]\nBảo hành 12 tháng.',
+        retrievedContext:
+          '[Tài liệu 1: Chính sách bảo hành]\nBảo hành 12 tháng.',
       });
 
-      expect(prompt).toContain('=== [NGỮ CẢNH TRI THỨC TRUY XUẤT TỪ HỆ THỐNG] ===');
+      expect(prompt).toContain(
+        '=== [NGỮ CẢNH TRI THỨC TRUY XUẤT TỪ HỆ THỐNG] ===',
+      );
       expect(prompt).toContain('Bảo hành 12 tháng.');
       expect(prompt).toContain('=== [CÂU HỎI CỦA KHÁCH HÀNG] ===');
       expect(prompt).toContain('Chính sách bảo hành ra sao?');
@@ -70,4 +89,3 @@ describe('prompt-templates', () => {
     });
   });
 });
-
