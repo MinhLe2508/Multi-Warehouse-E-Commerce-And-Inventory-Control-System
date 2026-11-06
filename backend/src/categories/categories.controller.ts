@@ -10,8 +10,8 @@
 //   DELETE /categories/:id          Xóa danh mục (khi trống)           (chỉ ADMIN)
 //
 // PHÂN QUYỀN:
-// - Hai endpoint GET công khai gắn @Public() để Storefront (khách chưa đăng nhập) dựng menu danh mục. 
-// - Chúng chỉ trả id, name, slug, parentId 
+// - Hai endpoint GET công khai gắn @Public() để Storefront (khách chưa đăng nhập) dựng menu danh mục.
+// - Chúng chỉ trả id, name, slug, parentId
 // — Không lộ thông tin quản trị — và chỉ gồm danh mục đang hiển thị.
 // - Mọi endpoint còn lại chỉ ADMIN (Nhân viên kho và Khách hàng nhận HTTP 403).
 // - Guard gắn ở mức CLASS: JwtAuthGuard chạy trước RolesGuard. Endpoint có
@@ -19,20 +19,37 @@
 //   nên cũng cho qua.
 //
 // VÌ SAO ĐƯỜNG DẪN QUẢN TRỊ LÀ "manage":
-// - Nếu dùng "GET /categories/:id" thì "tree" sẽ bị hiểu nhầm là một :id. 
+// - Nếu dùng "GET /categories/:id" thì "tree" sẽ bị hiểu nhầm là một :id.
 // - Tách "manage/:id" và khai báo "tree" trước giúp định tuyến không nhập nhằng.
 //
-// CONTROLLER KHÔNG chứa nghiệp vụ: mọi kiểm tra và truy vấn CSDL nằm trong CategoriesService. 
+// CONTROLLER KHÔNG chứa nghiệp vụ: mọi kiểm tra và truy vấn CSDL nằm trong CategoriesService.
 // DTO được import dạng GIÁ TRỊ (không dùng "import type") vì ValidationPipe cần class thật lúc chạy để đọc decorator validate.
 // =============================================================================
 
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, UseGuards,} from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole, type Category } from '@prisma/client';
 import { Public } from '../core/decorators/public.decorator';
 import { Roles } from '../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
-import { CategoriesService, type AdminCategory, type PublicCategory, type PublicCategoryNode, } from './categories.service';
+import {
+  CategoriesService,
+  type AdminCategory,
+  type PublicCategory,
+  type PublicCategoryNode,
+} from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
@@ -91,7 +108,7 @@ export class CategoriesController {
     return this.categoriesService.create(input);
   }
 
-  // Cập nhật từng phần (đổi tên, slug, chuyển nhánh, ẩn/hiện). 
+  // Cập nhật từng phần (đổi tên, slug, chuyển nhánh, ẩn/hiện).
   // Dùng PUT theo hợp đồng API nhóm đã thống nhất. Chuyển vào chính nó -> 400; vào con cháu của nó (tạo vòng lặp) hoặc trùng tên / slug -> 409.
   @Put(':id')
   @Roles(UserRole.ADMIN)
@@ -102,7 +119,7 @@ export class CategoriesController {
     return this.categoriesService.update(id, input);
   }
 
-  // Xóa CỨNG danh mục. 
+  // Xóa CỨNG danh mục.
   // Trả HTTP 204. Còn sản phẩm hoặc còn danh mục con -> 409 (muốn gỡ khỏi Storefront mà giữ dữ liệu: PUT với { "isActive": false }).
   @Delete(':id')
   @Roles(UserRole.ADMIN)

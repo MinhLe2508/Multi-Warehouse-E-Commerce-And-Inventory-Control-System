@@ -16,7 +16,15 @@
 // =============================================================================
 
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsString, Max, MaxLength, Min, ValidateIf, } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 // Các giới hạn phân trang. Có thể điều chỉnh khi yêu cầu hệ thống thay đổi.
 export const STAFF_DEFAULT_LIMIT = 20;
@@ -79,7 +87,9 @@ export class QueryStaffDto {
   @Transform(({ value }: { value: unknown }) => normalizeOptionalText(value))
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString({ message: 'Từ khóa tìm kiếm phải là chuỗi ký tự.' })
-  @MaxLength(100, { message: 'Từ khóa tìm kiếm không được vượt quá 100 ký tự.' })
+  @MaxLength(100, {
+    message: 'Từ khóa tìm kiếm không được vượt quá 100 ký tự.',
+  })
   search?: string;
 
   // ===========================================================================

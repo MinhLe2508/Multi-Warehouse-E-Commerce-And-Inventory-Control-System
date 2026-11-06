@@ -24,12 +24,27 @@
     @UseGuards(JwtAuthGuard) trùng để tránh xác thực hai lần.
  */
 
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards,} from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AccountActionPurpose } from '@prisma/client';
 import { Public } from '../core/decorators/public.decorator';
-import { CurrentUser, type AuthenticatedUser, } from '../core/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  type AuthenticatedUser,
+} from '../core/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
-import { AuthService, type PublicUserProfile, type AuthTokenPair, } from './auth.service';
+import {
+  AuthService,
+  type PublicUserProfile,
+  type AuthTokenPair,
+} from './auth.service';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { CompleteActivationDto } from './dto/complete-activation.dto';
 import { LoginDto } from './dto/login.dto';
@@ -100,9 +115,7 @@ export class AuthController {
   @Public()
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
-  async resendVerification(
-    @Body() input: EmailDto,
-  ): Promise<MessageResponse> {
+  async resendVerification(@Body() input: EmailDto): Promise<MessageResponse> {
     await this.authService.resendEmailVerification(input.email);
 
     return {
@@ -146,7 +159,9 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() input: RefreshTokenDto): Promise<AuthenticationResponse> {
+  async refresh(
+    @Body() input: RefreshTokenDto,
+  ): Promise<AuthenticationResponse> {
     return this.authService.refresh(input);
   }
 
@@ -192,9 +207,7 @@ export class AuthController {
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  async forgotPassword(
-    @Body() input: EmailDto,
-  ): Promise<MessageResponse> {
+  async forgotPassword(@Body() input: EmailDto): Promise<MessageResponse> {
     await this.authService.forgotPassword(input);
 
     return {

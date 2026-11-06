@@ -3,7 +3,11 @@ import { AdminInventoryController } from './admin-inventory.controller';
 import { AdminInventoryService } from './admin-inventory.service';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
-import { ConflictException, UnprocessableEntityException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  UnprocessableEntityException,
+  NotFoundException,
+} from '@nestjs/common';
 
 describe('AdminInventoryController', () => {
   const actorId = '11111111-1111-4111-8111-111111111111';
@@ -76,7 +80,7 @@ describe('AdminInventoryController', () => {
           expectedVersion: initialVersion,
           note: 'Điều chỉnh kiểm kê định kỳ',
         },
-        actorId
+        actorId,
       );
 
       expect(res.success).toBe(true);
@@ -98,14 +102,15 @@ describe('AdminInventoryController', () => {
             expectedVersion: 9999, // Stale version!
             note: 'Cố tình gửi version cũ',
           },
-          actorId
+          actorId,
         );
       }).toThrow(ConflictException);
     });
 
     it('should throw UnprocessableEntityException (422) when newStock < reservedStock', () => {
       const list = controller.findAll({ page: 1, limit: 5 });
-      const targetItem = list.items.find((i) => i.totalReserved > 0) || list.items[1];
+      const targetItem =
+        list.items.find((i) => i.totalReserved > 0) || list.items[1];
       const whKey = Object.keys(targetItem.warehouses)[0];
       const whDetail = targetItem.warehouses[whKey];
 
@@ -120,13 +125,12 @@ describe('AdminInventoryController', () => {
             expectedVersion: whDetail.version,
             note: 'Số lượng mới nhỏ hơn reserved',
           },
-          actorId
+          actorId,
         );
       }).toThrow(UnprocessableEntityException);
     });
 
     it('should throw NotFoundException (404) when inventory ID does not exist', () => {
-
       expect(() => {
         controller.adjustStock(
           'non-existent-id',
@@ -135,7 +139,7 @@ describe('AdminInventoryController', () => {
             expectedVersion: 1,
             note: 'Điều chỉnh id không có',
           },
-          actorId
+          actorId,
         );
       }).toThrow(NotFoundException);
     });

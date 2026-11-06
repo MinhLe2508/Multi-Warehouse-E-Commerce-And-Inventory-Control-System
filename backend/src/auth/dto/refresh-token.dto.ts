@@ -14,7 +14,6 @@
 import { IsNotEmpty, IsString } from 'class-validator';
 
 export class RefreshTokenDto {
-
   // Refresh Token (chuỗi "opaque" ngẫu nhiên, không phải JWT) mà Client đang lưu giữ từ lần đăng nhập/làm mới token gần nhất
   @IsString({ message: 'Refresh Token phải là chuỗi ký tự.' })
   @IsNotEmpty({ message: 'Refresh Token không được để trống.' })

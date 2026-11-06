@@ -1,8 +1,4 @@
-import {
-  chunkText,
-  DEFAULT_CHUNK_MAX_CHARS,
-  DEFAULT_CHUNK_OVERLAP_CHARS,
-} from './text-chunker';
+import { chunkText } from './text-chunker';
 
 describe('text-chunker', () => {
   it('trả về mảng rỗng nếu chuỗi rỗng hoặc chỉ có khoảng trắng', () => {

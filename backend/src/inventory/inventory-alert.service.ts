@@ -1,5 +1,5 @@
 // =============================================================================
-// Quản lý cảnh báo tồn kho thấp (bảng "stock_alerts"). 
+// Quản lý cảnh báo tồn kho thấp (bảng "stock_alerts").
 // Service này chỉ có MỘT hàm công khai là evaluate(): đánh giá lại một số dòng tồn kho rồi
 //   (a) TẠO cảnh báo OPEN cho dòng có hàng khả dụng <= ngưỡng,
 //   (b) NÂNG cảnh báo OPEN từ WARNING lên CRITICAL khi hàng khả dụng về 0,
@@ -61,7 +61,7 @@ export class InventoryAlertService {
 
     // — TẠO / NÂNG cảnh báo cho dòng có hàng khả dụng <= ngưỡng.
     // - Chưa có cảnh báo OPEN: INSERT mới (mức CRITICAL nếu hết hàng, ngược lại WARNING).
-    // - Đã có cảnh báo OPEN: chỉ NÂNG từ WARNING lên CRITICAL (cập nhật số liệu chụp tại thời điểm cảnh báo), còn lại giữ nguyên để không làm job thông báo của P5 coi đây là cảnh báo mới. 
+    // - Đã có cảnh báo OPEN: chỉ NÂNG từ WARNING lên CRITICAL (cập nhật số liệu chụp tại thời điểm cảnh báo), còn lại giữ nguyên để không làm job thông báo của P5 coi đây là cảnh báo mới.
     // "triggered_at" luôn giữ nguyên.
     // - Điều kiện sau ON CONFLICT phải khớp đúng điều kiện của chỉ mục có điều kiện "uq_alerts_one_open_per_inventory" (status = 'OPEN').
     const raised = await tx.$executeRaw`
@@ -90,7 +90,7 @@ export class InventoryAlertService {
         AND EXCLUDED."alert_level" = 'CRITICAL'::"AlertLevel"
     `;
 
-    // Đóng cảnh báo OPEN của dòng đã có đủ hàng khả dụng trở lại (available_stock > ngưỡng). 
+    // Đóng cảnh báo OPEN của dòng đã có đủ hàng khả dụng trở lại (available_stock > ngưỡng).
     // Hai câu loại trừ nhau trên cùng một dòng: mỗi dòng chỉ thỏa đúng một trong hai điều kiện (<= ngưỡng hoặc > ngưỡng).
     const resolved = await tx.$executeRaw`
       UPDATE "stock_alerts" AS a
@@ -115,9 +115,13 @@ export class InventoryAlertService {
 
     for (const id of inventoryIds) {
       if (typeof id !== 'bigint' || id <= 0n || id > MAX_BIGINT) {
-        throw new Error('Mỗi InventoryId phải là Bigint dương trong khoảng BIGINT.');
+        throw new Error(
+          'Mỗi InventoryId phải là Bigint dương trong khoảng BIGINT.',
+        );
       }
     }
-    return [...new Set(inventoryIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return [...new Set(inventoryIds)].sort((a, b) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
   }
 }

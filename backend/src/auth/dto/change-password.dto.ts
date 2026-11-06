@@ -1,6 +1,6 @@
 // =============================================================================
-// Mục đích: DTO cho Endpoint "POST /auth/change-password" 
-// Người dùng đã đăng nhập tự đổi mật khẩu, phải cung cấp đúng mật khẩu hiện tại để xác minh chính chủ. 
+// Mục đích: DTO cho Endpoint "POST /auth/change-password"
+// Người dùng đã đăng nhập tự đổi mật khẩu, phải cung cấp đúng mật khẩu hiện tại để xác minh chính chủ.
 // Khớp chính xác với interface "ChangePasswordInput" trong auth.service.ts
 // =============================================================================
 
@@ -8,7 +8,6 @@ import { IsNotEmpty, IsString } from 'class-validator';
 import { IsPasswordByteLength } from './password-byte-length.validator';
 
 export class ChangePasswordDto {
-
   // Mật khẩu hiện tại, dùng để xác minh chính chủ trước khi cho phép đổi sang mật khẩu mới
   // Khớp giá trị này với "passwordHash" đã lưu bằng bcrypt.compare())
   @IsString({ message: 'Mật khẩu hiện tại phải là chuỗi ký tự.' })

@@ -9,9 +9,17 @@ describe('OrdersService status history - week 4', () => {
     order: { findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
     orderStatusHistory: { create: jest.fn() },
   };
-  const prisma = { $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)) };
+  const prisma = {
+    $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) =>
+      fn(tx),
+    ),
+  };
   const stock = { releaseForOrder: jest.fn() };
-  const service = new OrdersService(prisma as never, {} as never, stock as never);
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    stock as never,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -23,42 +31,81 @@ describe('OrdersService status history - week 4', () => {
   it.each([
     ['CONFIRMED', 'SHIPPING'],
     ['SHIPPING', 'DELIVERED'],
-  ] as const)('changes %s to %s and records audit in same transaction', async (from, to) => {
-    tx.order.findUniqueOrThrow.mockResolvedValue({ id: orderId, status: from });
-    await expect(service.changeStatus(orderId, to, actorId)).resolves.toMatchObject({ status: to });
-    expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: orderId, status: from } }));
-    expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      orderId, fromStatus: from, toStatus: to, actorId,
-    }) });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-  });
+  ] as const)(
+    'changes %s to %s and records audit in same transaction',
+    async (from, to) => {
+      tx.order.findUniqueOrThrow.mockResolvedValue({
+        id: orderId,
+        status: from,
+      });
+      await expect(
+        service.changeStatus(orderId, to, actorId),
+      ).resolves.toMatchObject({ status: to });
+      expect(tx.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: orderId, status: from } }),
+      );
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId,
+          fromStatus: from,
+          toStatus: to,
+          actorId,
+        }),
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('rejects illegal transitions without changing order/history', async () => {
-    tx.order.findUniqueOrThrow.mockResolvedValue({ id: orderId, status: 'PENDING_PAYMENT' });
-    await expect(service.changeStatus(orderId, 'DELIVERED', actorId)).rejects.toBeInstanceOf(ConflictException);
+    tx.order.findUniqueOrThrow.mockResolvedValue({
+      id: orderId,
+      status: 'PENDING_PAYMENT',
+    });
+    await expect(
+      service.changeStatus(orderId, 'DELIVERED', actorId),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.order.updateMany).not.toHaveBeenCalled();
     expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
   });
 
   it('cancels a pending order only after releasing reservations in the transaction', async () => {
-    tx.order.findUniqueOrThrow.mockResolvedValue({ id: orderId, status: 'PENDING_PAYMENT' });
+    tx.order.findUniqueOrThrow.mockResolvedValue({
+      id: orderId,
+      status: 'PENDING_PAYMENT',
+    });
     await service.changeStatus(orderId, 'CANCELLED', actorId, 'Khách yêu cầu');
     expect(stock.releaseForOrder).toHaveBeenCalledWith(tx, orderId, actorId);
-    expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      fromStatus: 'PENDING_PAYMENT', toStatus: 'CANCELLED', reason: 'Khách yêu cầu',
-    }) });
+    expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        fromStatus: 'PENDING_PAYMENT',
+        toStatus: 'CANCELLED',
+        reason: 'Khách yêu cầu',
+      }),
+    });
   });
 
   it('propagates history-write errors so database transaction can roll back', async () => {
-    tx.order.findUniqueOrThrow.mockResolvedValue({ id: orderId, status: 'CONFIRMED' });
-    tx.orderStatusHistory.create.mockRejectedValueOnce(new Error('audit insert failed'));
-    await expect(service.changeStatus(orderId, 'SHIPPING', actorId)).rejects.toThrow('audit insert failed');
+    tx.order.findUniqueOrThrow.mockResolvedValue({
+      id: orderId,
+      status: 'CONFIRMED',
+    });
+    tx.orderStatusHistory.create.mockRejectedValueOnce(
+      new Error('audit insert failed'),
+    );
+    await expect(
+      service.changeStatus(orderId, 'SHIPPING', actorId),
+    ).rejects.toThrow('audit insert failed');
   });
 
   it('does not log a status change when conditional update fails', async () => {
-    tx.order.findUniqueOrThrow.mockResolvedValue({ id: orderId, status: 'CONFIRMED' });
+    tx.order.findUniqueOrThrow.mockResolvedValue({
+      id: orderId,
+      status: 'CONFIRMED',
+    });
     tx.order.updateMany.mockResolvedValueOnce({ count: 0 });
-    await expect(service.changeStatus(orderId, 'SHIPPING', actorId)).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.changeStatus(orderId, 'SHIPPING', actorId),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
   });
 });

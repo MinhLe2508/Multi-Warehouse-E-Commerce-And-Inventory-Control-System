@@ -13,7 +13,14 @@
 // 5. Không xóa cứng tài khoản để giữ lịch sử đơn hàng/nhật ký tồn kho.
 // =============================================================================
 
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException, } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -138,10 +145,12 @@ export class StaffService {
   // 2. TẠO NHÂN VIÊN VÀ GỬI EMAIL KÍCH HOẠT
   // ==========================================================================
 
-
-  // Khi chỉ gửi mail lỗi, tài khoản vẫn tồn tại. 
+  // Khi chỉ gửi mail lỗi, tài khoản vẫn tồn tại.
   // Vì vậy API vẫn trả thông tin Staff kèm invitationSent=false để Admin có thể gửi lại thư mời.
-  async create(input: CreateStaffInput, actorId: string): Promise<CreateStaffResult> {
+  async create(
+    input: CreateStaffInput,
+    actorId: string,
+  ): Promise<CreateStaffResult> {
     let createdId: string | null = null;
     let mailError: ServiceUnavailableException | null = null;
 
@@ -193,7 +202,8 @@ export class StaffService {
       return {
         staff,
         invitationSent: false,
-        message: 'Đã tạo nhân viên nhưng chưa gửi được thư mời. Hãy dùng chức năng gửi lại.',
+        message:
+          'Đã tạo nhân viên nhưng chưa gửi được thư mời. Hãy dùng chức năng gửi lại.',
       };
     }
 
@@ -209,11 +219,14 @@ export class StaffService {
   // 3. CẬP NHẬT THÔNG TIN LIÊN HỆ
   // ==========================================================================
 
-
   // Chỉ cho sửa họ tên và/hoặc SĐT; phone=null nghĩa là xóa số.
   // Ràng buộc role NGAY TRONG WHERE của UPDATE để không gặp TOCTOU:
   // Staff bị đổi vai trò giữa lúc kiểm tra và ghi sẽ không bị cập nhật nhầm.
-  async update(id: string, dto: UpdateStaffDto, actorId: string): Promise<StaffView> {
+  async update(
+    id: string,
+    dto: UpdateStaffDto,
+    actorId: string,
+  ): Promise<StaffView> {
     this.assertStaffId(id);
 
     if (dto.fullName === undefined && dto.phone === undefined) {
@@ -353,9 +366,7 @@ export class StaffService {
     if (changed || revokedCount > 0 || invalidatedCount > 0) {
       const action = dto.isActive ? 'MỞ KHÓA' : 'KHÓA';
       const reason =
-        typeof dto.reason === 'string'
-          ? this.sanitizeForLog(dto.reason)
-          : '';
+        typeof dto.reason === 'string' ? this.sanitizeForLog(dto.reason) : '';
       this.logger.log(
         `Admin ${actorId} ${action} Staff ${id}` +
           (reason ? `; lý do: ${reason}` : '') +
@@ -390,7 +401,9 @@ export class StaffService {
     // Không tạo hoặc log token tại StaffService.
     await this.authService.resendStaffInvitation(row.email);
 
-    this.logger.log(`Admin ${actorId} đã yêu cầu gửi lại thư mời cho Staff ${id}.`);
+    this.logger.log(
+      `Admin ${actorId} đã yêu cầu gửi lại thư mời cho Staff ${id}.`,
+    );
     return {
       invitationSent: true,
       message: 'Đã gửi lại thư mời kích hoạt.',
@@ -499,6 +512,9 @@ export class StaffService {
 
   // Bỏ ký tự điều khiển để người dùng không thể giả dòng trong log
   private sanitizeForLog(value: string): string {
-    return value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, MAX_REASON_LOG_LENGTH);
+    return value
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .trim()
+      .slice(0, MAX_REASON_LOG_LENGTH);
   }
 }

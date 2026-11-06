@@ -31,12 +31,20 @@
 //   cuối cùng; Service kiểm tra trước để trả thông báo tiếng Việt rõ ràng.
 // =============================================================================
 
-import { BadRequestException, ConflictException, Injectable, NotFoundException, } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryAlertService } from './inventory-alert.service';
 import { type CreateInventoryDto } from './dto/create-inventory.dto';
-import { type QueryInventoryDto, type QueryStockAlertsDto, } from './dto/query-inventory.dto';
+import {
+  type QueryInventoryDto,
+  type QueryStockAlertsDto,
+} from './dto/query-inventory.dto';
 import { type RestockInventoryDto } from './dto/restock-inventory.dto';
 import { type UpdateStockDto } from './dto/update-stock.dto';
 
@@ -500,7 +508,7 @@ export class InventoryService {
    *
    * - Phải có ít nhất một trong hai trường stock / threshold (400).
    * - Không được đặt stock thấp hơn số đang giữ chỗ (409): hàng đang giữ cho đơn chưa thanh toán xong không thể "biến mất".
-   * - TĂNG tồn: kho phải đang hoạt động và không vượt sức chứa (409). 
+   * - TĂNG tồn: kho phải đang hoạt động và không vượt sức chứa (409).
    * - GIẢM tồn luôn được phép kể cả khi kho đã ngừng hoạt động (để ghi nhận xuất / chuyển hết hàng khỏi kho đã đóng).
    * - Gửi lại đúng giá trị hiện tại thì không ghi gì và trả dòng hiện có.
    * - Có thay đổi stock thì ghi nhật ký (lý do MANUAL_ADJUST, quantityDelta là mức thay đổi thật, có thể âm). Đổi ngưỡng hoặc stock đều đánh giá lại cảnh báo.
@@ -592,7 +600,7 @@ export class InventoryService {
   // ==========================================================================
 
   /**
-   * Kiểm tra id dòng tồn kho lấy từ đường dẫn: chỉ nhận số nguyên dương trong miền BIGINT, không số 0 đứng đầu. 
+   * Kiểm tra id dòng tồn kho lấy từ đường dẫn: chỉ nhận số nguyên dương trong miền BIGINT, không số 0 đứng đầu.
    * Trả về chính chuỗi đó (chuỗi an toàn để truyền vào ::bigint, không mất độ chính xác như number).
    */
   private parseInventoryId(raw: string): string {
@@ -608,7 +616,7 @@ export class InventoryService {
   }
 
   /**
-   * Khóa dòng kho bằng FOR NO KEY UPDATE (cùng cách module warehouses): chặn transaction ghi khác đồng thời trên cùng kho nhưng không chặn việc kiểm tra khóa ngoại của luồng đặt hàng. 
+   * Khóa dòng kho bằng FOR NO KEY UPDATE (cùng cách module warehouses): chặn transaction ghi khác đồng thời trên cùng kho nhưng không chặn việc kiểm tra khóa ngoại của luồng đặt hàng.
    * Trả về null nếu kho không tồn tại.
    */
   private async lockWarehouse(
@@ -629,10 +637,10 @@ export class InventoryService {
   }
 
   /**
-   * Khóa theo đúng thứ tự: 
-   * - (1) xem nhanh dòng inventory để biết kho, 
+   * Khóa theo đúng thứ tự:
+   * - (1) xem nhanh dòng inventory để biết kho,
    * - (2) khóa kho,
-   * - (3) khóa dòng inventory FOR UPDATE và đọc số liệu mới nhất. 
+   * - (3) khóa dòng inventory FOR UPDATE và đọc số liệu mới nhất.
    * Cột warehouse_id của dòng inventory không bao giờ thay đổi nên bước (1) không bị lỗi thời.
    */
   private async lockWarehouseAndRow(
@@ -671,8 +679,8 @@ export class InventoryService {
   }
 
   /**
-   * Kiểm tra SỨC CHỨA: tổng "stock" của mọi dòng trong kho + phần tăng thêm không được vượt capacity. 
-   * Kho không khai báo capacity (null) hoặc phần tăng <= 0 thì bỏ qua. 
+   * Kiểm tra SỨC CHỨA: tổng "stock" của mọi dòng trong kho + phần tăng thêm không được vượt capacity.
+   * Kho không khai báo capacity (null) hoặc phần tăng <= 0 thì bỏ qua.
    * Phải gọi KHI ĐANG GIỮ khóa dòng kho (xem lockWarehouse) để kết quả không bị các giao dịch song song làm sai lệch.
    */
   private async assertCapacity(
@@ -744,8 +752,8 @@ export class InventoryService {
   }
 
   /**
-   * Chuyển lỗi CSDL còn sót (lớp chặn cuối cùng) thành lỗi HTTP dễ hiểu. 
-   * Lỗi HTTP của chính Service (404/409/400...) được giữ nguyên. 
+   * Chuyển lỗi CSDL còn sót (lớp chặn cuối cùng) thành lỗi HTTP dễ hiểu.
+   * Lỗi HTTP của chính Service (404/409/400...) được giữ nguyên.
    * Mã SQLSTATE nằm ở "code" (driver trực tiếp) hoặc "meta.code" (PrismaClientKnownRequestError P2010).
    */
   private translateDbError(error: unknown): unknown {
@@ -786,7 +794,7 @@ export class InventoryService {
   // ==========================================================================
 
   /**
-   * Truy vấn danh sách dòng tồn kho kèm sản phẩm và kho. 
+   * Truy vấn danh sách dòng tồn kho kèm sản phẩm và kho.
    * Mọi bộ lọc dùng dạng "(tham số IS NULL OR cột = tham số)" nên chỉ một câu SQL tĩnh, vẫn tham số hóa hoàn toàn (không nối chuỗi). Giá vốn chỉ được đọc khi người xem là Admin.
    */
   private async queryInventoryRows(

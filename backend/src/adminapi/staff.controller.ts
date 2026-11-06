@@ -20,7 +20,20 @@
 // 6. StaffService luôn lọc role = WAREHOUSE_STAFF trong truy vấn CSDL.
 // =============================================================================
 
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards, } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
 // Các decorator/guard sử dụng chung cho toàn bộ backend.
@@ -37,7 +50,12 @@ import { UpdateStaffDto } from './dto/update-staff.dto';
 import { UpdateStaffStatusDto } from './dto/update-staff-status.dto';
 
 import { StaffService } from './staff.service';
-import type { CreateStaffResult, PagedResult, ResendInvitationResult, StaffView, } from './staff.service';
+import type {
+  CreateStaffResult,
+  PagedResult,
+  ResendInvitationResult,
+  StaffView,
+} from './staff.service';
 
 // Kiểm tra ID theo UUID v4 (phù hợp gen_random_uuid() trong schema PostgreSQL).
 // Dùng thông báo tiếng Việt để Frontend hiển thị dễ hiểu.

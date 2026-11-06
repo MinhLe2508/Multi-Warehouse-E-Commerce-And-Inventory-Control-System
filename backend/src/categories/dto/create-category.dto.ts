@@ -1,5 +1,5 @@
 // =============================================================================
-// DTO cho Endpoint "POST /categories" 
+// DTO cho Endpoint "POST /categories"
 // Admin tạo một danh mục sản phẩm mới. Khớp với model "Category" trong schema.prisma (bảng "categories").
 //
 // QUY TẮC CHUNG:
@@ -14,7 +14,14 @@
 //   @Transform, có hiệu lực nhờ "transform: true" của ValidationPipe toàn cục.
 // =============================================================================
 
-import { IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MaxLength, } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 
 // Định dạng slug: chữ thường và số, các nhóm ngăn cách bằng dấu gạch ngang.
@@ -48,7 +55,7 @@ export class CreateCategoryDto {
   })
   slug?: string;
 
-  // Id của danh mục CHA. Không gửi (hoặc gửi null) nghĩa là danh mục GỐC (cấp cao nhất). 
+  // Id của danh mục CHA. Không gửi (hoặc gửi null) nghĩa là danh mục GỐC (cấp cao nhất).
   // Danh mục cha phải tồn tại
   @IsOptional()
   @IsUUID(undefined, { message: 'ID danh mục cha không đúng định dạng UUID.' })

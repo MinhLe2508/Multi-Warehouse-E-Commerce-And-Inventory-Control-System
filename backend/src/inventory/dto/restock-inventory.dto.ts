@@ -1,5 +1,5 @@
 // =============================================================================
-// DTO cho Endpoint "POST /inventory/:id/restock" 
+// DTO cho Endpoint "POST /inventory/:id/restock"
 // Admin NHẬP THÊM hàng vào một dòng tồn kho. Đây là thao tác TĂNG: số lượng gửi lên được cộng thêm vào
 // "stock" hiện có (khác với PUT /inventory/:id dùng UpdateStockDto để đặt lại "stock" về một con số cụ thể sau kiểm kê).
 //
@@ -11,7 +11,14 @@
 // =============================================================================
 
 import { Transform } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 // Giá trị lớn nhất của cột INTEGER trong PostgreSQL.
 const INT4_MAX = 2147483647;

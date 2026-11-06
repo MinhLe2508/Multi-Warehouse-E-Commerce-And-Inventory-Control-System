@@ -1,7 +1,7 @@
 // =============================================================================
-// DTO cho Endpoint "PUT /categories/:id" 
+// DTO cho Endpoint "PUT /categories/:id"
 // Admin cập nhật danh mục.
-// Endpoint dùng ngữ nghĩa cập nhật từng phần: Chỉ những trường được gửi lên mới bị thay đổi, trường không gửi giữ nguyên giá trị cũ. 
+// Endpoint dùng ngữ nghĩa cập nhật từng phần: Chỉ những trường được gửi lên mới bị thay đổi, trường không gửi giữ nguyên giá trị cũ.
 // Yêu cầu có ít nhất một trường (kiểm tra trong CategoriesService.update())
 //
 // PHÂN BIỆT 3 TRẠNG THÁI CỦA MỘT TRƯỜNG:
@@ -13,7 +13,16 @@
 // CSDL gây lỗi HTTP 500.
 // =============================================================================
 
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateIf, } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -27,7 +36,7 @@ export class UpdateCategoryDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   name?: string;
 
-  // Slug mới. Phải duy nhất toàn hệ thống (trùng trả HTTP 409). 
+  // Slug mới. Phải duy nhất toàn hệ thống (trùng trả HTTP 409).
   // Không cho phép null hay chuỗi rỗng vì mọi danh mục đều phải có slug.
   @ValidateIf((_object, value) => value !== undefined)
   @IsString({ message: 'Slug phải là chuỗi ký tự.' })

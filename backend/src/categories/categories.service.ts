@@ -27,7 +27,12 @@
 //    trong các danh mục của hệ thống" khi Admin tạo/sửa sản phẩm.
 // =============================================================================
 
-import { BadRequestException, ConflictException, Injectable, NotFoundException, } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, type Category } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { type CreateCategoryDto } from './dto/create-category.dto';
@@ -72,7 +77,7 @@ export interface AdminCategory {
 // Hằng số
 // ----------------------------------------------------------------------------
 
-// Khóa tư vấn (advisory lock) dùng chung cho mọi thao tác thay đổi cấu trúc cây danh mục. 
+// Khóa tư vấn (advisory lock) dùng chung cho mọi thao tác thay đổi cấu trúc cây danh mục.
 // Số nguyên bất kỳ nhưng PHẢI cố định và không trùng khóa tư vấn khác trong dự án.
 const CATEGORY_TREE_LOCK_KEY = 7300201;
 
@@ -88,7 +93,6 @@ const MAX_SLUG_ATTEMPTS = 100;
 // ----------------------------------------------------------------------------
 // Hàm tiện ích thuần (không phụ thuộc CSDL)
 // ----------------------------------------------------------------------------
-
 
 // Chuyển một chuỗi (thường là tên danh mục tiếng Việt) thành slug.
 export function slugify(text: string): string {
@@ -111,7 +115,7 @@ export class CategoriesService {
   // 1. Truy vấn công khai (Storefront — không cần đăng nhập)
   // ==========================================================================
 
-  // Danh sách PHẲNG các danh mục đang hiển thị, sắp xếp theo tên 
+  // Danh sách PHẲNG các danh mục đang hiển thị, sắp xếp theo tên
   async findAllPublic(): Promise<PublicCategory[]> {
     const all = await this.prisma.category.findMany({
       select: {
@@ -143,7 +147,9 @@ export class CategoriesService {
     const roots: PublicCategoryNode[] = [];
     for (const category of visible) {
       const node = nodes.get(category.id)!;
-      const parent = category.parentId ? nodes.get(category.parentId) : undefined;
+      const parent = category.parentId
+        ? nodes.get(category.parentId)
+        : undefined;
 
       // Danh mục hiển thị thì tổ tiên của nó chắc chắn hiển thị (xem visibleCategories), nên "parent" luôn tìm thấy khi parentId khác null.
       if (parent) {
@@ -193,9 +199,7 @@ export class CategoriesService {
     const category = await client.category.findUnique({ where: { id } });
 
     if (!category || !category.isActive) {
-      throw new NotFoundException(
-        'Danh mục không tồn tại hoặc đang bị ẩn.',
-      );
+      throw new NotFoundException('Danh mục không tồn tại hoặc đang bị ẩn.');
     }
 
     return category;
@@ -284,7 +288,11 @@ export class CategoriesService {
         const isMoving =
           input.parentId !== undefined && input.parentId !== current.parentId;
 
-        if (isMoving && input.parentId !== null && input.parentId !== undefined) {
+        if (
+          isMoving &&
+          input.parentId !== null &&
+          input.parentId !== undefined
+        ) {
           await this.assertValidNewParent(tx, id, input.parentId);
         }
 
@@ -292,7 +300,8 @@ export class CategoriesService {
           await this.assertSlugAvailable(tx, input.slug, id);
         }
 
-        const isRenaming = input.name !== undefined && input.name !== current.name;
+        const isRenaming =
+          input.name !== undefined && input.name !== current.name;
         if (isRenaming || isMoving) {
           const targetParentId =
             input.parentId !== undefined ? input.parentId : current.parentId;
@@ -328,7 +337,9 @@ export class CategoriesService {
       await this.lockTree(tx);
       await this.lockCategoryRow(tx, id);
 
-      const productCount = await tx.product.count({ where: { categoryId: id } });
+      const productCount = await tx.product.count({
+        where: { categoryId: id },
+      });
       if (productCount > 0) {
         throw new ConflictException(
           `Không thể xóa danh mục vì còn ${productCount} sản phẩm thuộc danh mục này. Hãy chuyển các sản phẩm sang danh mục khác, hoặc ẩn danh mục thay vì xóa.`,
@@ -518,13 +529,15 @@ export class CategoriesService {
     const all = await tx.category.findMany({
       select: { id: true, parentId: true },
     });
-    const parentOf = new Map(all.map((category) => [category.id, category.parentId]));
+    const parentOf = new Map(
+      all.map((category) => [category.id, category.parentId]),
+    );
 
     if (!parentOf.has(newParentId)) {
       throw new BadRequestException('Danh mục cha không tồn tại.');
     }
 
-    // Đi ngược từ cha mới lên gốc; nếu gặp chính danh mục đang sửa nghĩa là cha mới nằm trong nhánh con cháu của nó. 
+    // Đi ngược từ cha mới lên gốc; nếu gặp chính danh mục đang sửa nghĩa là cha mới nằm trong nhánh con cháu của nó.
     // "visited" chặn vòng lặp vô hạn nếu dữ liệu đã hỏng từ trước.
     const visited = new Set<string>();
     let cursorId: string | null = newParentId;
@@ -541,7 +554,7 @@ export class CategoriesService {
   }
 
   /**
-   * Kiểm tra tên chưa bị danh mục ANH EM (cùng danh mục cha, hoặc cùng là danh mục gốc khi parentId = null) dùng — không phân biệt hoa thường. 
+   * Kiểm tra tên chưa bị danh mục ANH EM (cùng danh mục cha, hoặc cùng là danh mục gốc khi parentId = null) dùng — không phân biệt hoa thường.
    * Dùng excludeId để bỏ qua chính danh mục đang sửa.
    */
   private async assertSiblingNameAvailable(
@@ -585,7 +598,7 @@ export class CategoriesService {
   }
 
   /**
-   * Tự sinh slug duy nhất từ tên: thử "slug", rồi "slug-2", "slug-3"... cho tới khi chưa tồn tại. 
+   * Tự sinh slug duy nhất từ tên: thử "slug", rồi "slug-2", "slug-3"... cho tới khi chưa tồn tại.
    * Hậu tố được tính vào giới hạn 160 ký tự của cột.
    */
   private async generateUniqueSlug(

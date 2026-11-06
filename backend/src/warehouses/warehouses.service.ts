@@ -15,7 +15,12 @@
 //    khác (Inventory, Orders) dùng lại, ví dụ getActiveWarehouseOrThrow().
 // =============================================================================
 
-import { BadRequestException, ConflictException, Injectable, NotFoundException, } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, type Warehouse } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { type CreateWarehouseDto } from './dto/create-warehouse.dto';
@@ -191,7 +196,9 @@ export class WarehousesService {
    * Phân biệt undefined (không đổi) với null (xóa giá trị) — xem chú thích
    * đầu file update-warehouse.dto.ts.
    */
-  private buildUpdateData(input: UpdateWarehouseDto): Prisma.WarehouseUpdateInput {
+  private buildUpdateData(
+    input: UpdateWarehouseDto,
+  ): Prisma.WarehouseUpdateInput {
     const data: Prisma.WarehouseUpdateInput = {};
 
     if (input.name !== undefined) data.name = input.name;

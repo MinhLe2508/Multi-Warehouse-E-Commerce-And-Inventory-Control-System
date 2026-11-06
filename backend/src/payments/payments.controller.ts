@@ -1,4 +1,11 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../core/decorators/current-user.decorator';
@@ -15,7 +22,17 @@ import { PaymentsService } from './payments.service';
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
   @Post('mock/:orderId')
-  process(@CurrentUser() user: AuthenticatedUser, @Param('orderId', ParseUUIDPipe) orderId: string, @Body() dto: MockPaymentDto) {
-    return this.payments.process(user.userId, orderId, dto.transactionRef, dto.method, dto.approved);
+  process(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: MockPaymentDto,
+  ) {
+    return this.payments.process(
+      user.userId,
+      orderId,
+      dto.transactionRef,
+      dto.method,
+      dto.approved,
+    );
   }
 }

@@ -52,7 +52,13 @@ export class AdminInventoryService {
   }
 
   private initMockData() {
-    const categories = ['Điện tử', 'Điện gia dụng', 'Thời trang', 'Phụ kiện', 'Sức khỏe'];
+    const categories = [
+      'Điện tử',
+      'Điện gia dụng',
+      'Thời trang',
+      'Phụ kiện',
+      'Sức khỏe',
+    ];
 
     for (let i = 1; i <= 50; i++) {
       const pad = String(i).padStart(3, '0');
@@ -144,7 +150,8 @@ export class AdminInventoryService {
     if (query.search) {
       const q = query.search.toLowerCase();
       filtered = filtered.filter(
-        (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+        (p) =>
+          p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
       );
     }
 
@@ -154,7 +161,8 @@ export class AdminInventoryService {
           const wh = p.warehouses[query.warehouseId!];
           if (!wh) return query.status === 'OUT_OF_STOCK';
           if (wh.availableStock <= 0) return query.status === 'OUT_OF_STOCK';
-          if (wh.availableStock <= wh.effectiveThreshold) return query.status === 'LOW_STOCK';
+          if (wh.availableStock <= wh.effectiveThreshold)
+            return query.status === 'LOW_STOCK';
           return query.status === 'IN_STOCK';
         });
       } else {
@@ -182,7 +190,10 @@ export class AdminInventoryService {
     let lowStockCount = 0;
     let outOfStockCount = 0;
 
-    const whMap: Record<string, { stock: number; reserved: number; available: number }> = {};
+    const whMap: Record<
+      string,
+      { stock: number; reserved: number; available: number }
+    > = {};
     this.warehouses.forEach((w) => {
       whMap[w.id] = { stock: 0, reserved: 0, available: 0 };
     });
@@ -206,7 +217,10 @@ export class AdminInventoryService {
 
     const warehouseDistribution = this.warehouses.map((w) => {
       const stat = whMap[w.id];
-      const capacityRate = Math.min(100, Math.round((stat.stock / 10000) * 100));
+      const capacityRate = Math.min(
+        100,
+        Math.round((stat.stock / 10000) * 100),
+      );
       return {
         warehouseId: w.id,
         warehouseCode: w.code,
@@ -247,20 +261,22 @@ export class AdminInventoryService {
     }
 
     if (!targetProduct || !targetDetail) {
-      throw new NotFoundException(`Không tìm thấy bản ghi tồn kho với ID ${inventoryId}`);
+      throw new NotFoundException(
+        `Không tìm thấy bản ghi tồn kho với ID ${inventoryId}`,
+      );
     }
 
     // 1. Kiểm tra Optimistic locking
     if (targetDetail.version !== dto.expectedVersion) {
       throw new ConflictException(
-        `Xung đột dữ liệu (409 Conflict): Phiên bản tồn kho đã bị thay đổi (hiện tại: ${targetDetail.version}, kỳ vọng: ${dto.expectedVersion}). Vui lòng tải lại trang!`
+        `Xung đột dữ liệu (409 Conflict): Phiên bản tồn kho đã bị thay đổi (hiện tại: ${targetDetail.version}, kỳ vọng: ${dto.expectedVersion}). Vui lòng tải lại trang!`,
       );
     }
 
     // 2. Kiểm tra không nhỏ hơn reservedStock
     if (dto.newStock < targetDetail.reservedStock) {
       throw new UnprocessableEntityException(
-        `Số lượng tồn kho mới (${dto.newStock}) không được nhỏ hơn số lượng đang giữ chỗ (${targetDetail.reservedStock})!`
+        `Số lượng tồn kho mới (${dto.newStock}) không được nhỏ hơn số lượng đang giữ chỗ (${targetDetail.reservedStock})!`,
       );
     }
 

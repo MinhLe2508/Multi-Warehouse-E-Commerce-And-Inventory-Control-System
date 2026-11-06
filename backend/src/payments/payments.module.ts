@@ -3,5 +3,10 @@ import { StockReservationModule } from '../stock-reservation/stock-reservation.m
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { MockPaymentGatewayService } from './mock-payment-gateway.service';
-@Module({ imports: [StockReservationModule], controllers: [PaymentsController], providers: [PaymentsService, MockPaymentGatewayService], exports: [PaymentsService] })
+@Module({
+  imports: [StockReservationModule],
+  controllers: [PaymentsController],
+  providers: [PaymentsService, MockPaymentGatewayService],
+  exports: [PaymentsService],
+})
 export class PaymentsModule {}

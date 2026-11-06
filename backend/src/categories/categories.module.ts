@@ -1,5 +1,5 @@
 // =============================================================================
-// Khai báo CategoriesModule của NestJS 
+// Khai báo CategoriesModule của NestJS
 // Đóng gói Controller và Service quản lý danh mục sản phẩm thành một module
 // Export CategoriesService để module Products inject và dùng lại
 // Ví dụ "categoriesService.getActiveCategoryOrThrow(id, tx)" khi Admin gán danh mục cho sản phẩm.

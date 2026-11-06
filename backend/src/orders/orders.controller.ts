@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../core/decorators/current-user.decorator';
@@ -24,7 +33,10 @@ export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
   @Get(':id')
-  getOwn(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+  getOwn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.orders.getOwn(user.userId, id);
   }
   @Post()

@@ -14,7 +14,15 @@
 // =============================================================================
 
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsUUID, Max, Min, } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 // Giá trị mặc định và trần của phân trang.
 const DEFAULT_LIMIT = 20;

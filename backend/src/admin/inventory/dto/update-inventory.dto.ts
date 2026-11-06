@@ -10,7 +10,9 @@ export class UpdateInventoryDto {
   expectedVersion!: number;
 
   @IsString({ message: 'Lý do điều chỉnh (note) phải là chuỗi ký tự' })
-  @MinLength(5, { message: 'Lý do điều chỉnh bắt buộc tối thiểu 5 ký tự (FR-INV-01)' })
+  @MinLength(5, {
+    message: 'Lý do điều chỉnh bắt buộc tối thiểu 5 ký tự (FR-INV-01)',
+  })
   @MaxLength(500, { message: 'Lý do điều chỉnh tối đa 500 ký tự' })
   note!: string;
 }

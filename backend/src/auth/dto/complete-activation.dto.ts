@@ -1,5 +1,5 @@
 // =============================================================================
-// DTO dùng chung cho 2 Endpoint có cùng hình dạng dữ liệu đầu vào và cùng cơ chế xử lý (tiêu thụ Token 1 lần dùng + tự đặt mật khẩu) 
+// DTO dùng chung cho 2 Endpoint có cùng hình dạng dữ liệu đầu vào và cùng cơ chế xử lý (tiêu thụ Token 1 lần dùng + tự đặt mật khẩu)
 // Khớp chính xác với interface "CompleteActivationInput" trong auth.service.ts
 // =============================================================================
 
@@ -10,7 +10,6 @@ import { IsPasswordByteLength } from './password-byte-length.validator';
 const ACCOUNT_ACTION_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 
 export class CompleteActivationDto {
-
   // Token gốc (plain text, 64 ký tự hex) lấy từ đường link Email xác thực/mời kích hoạt.
   // Do Frontend đọc từ query string URL rồi gửi lên trong body request này
   @IsString({ message: 'Token phải là chuỗi ký tự.' })

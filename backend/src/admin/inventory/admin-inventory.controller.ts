@@ -18,15 +18,6 @@ import { AdminInventoryService } from './admin-inventory.service';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { QueryInventoryDto } from './dto/query-inventory.dto';
 
-interface RequestWithUser {
-  user?: {
-    id: string;
-    role: string;
-    email: string;
-  };
-  headers?: Record<string, string | undefined>;
-}
-
 @Controller('admin/inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AdminInventoryController {

@@ -11,18 +11,33 @@
 // - Không có endpoint công khai: khách hàng (CUSTOMER) không cần xem danh sách kho
 // - Việc chọn kho giao hàng do hệ thống đặt hàng tự quyết định
 // - Guard gắn ở mức CLASS: JwtAuthGuard (xác thực) chạy trước RolesGuard (kiểm tra vai trò)
-// - Gắn trực tiếp nên đúng cả khi chưa đăng ký Guard toàn cục. 
+// - Gắn trực tiếp nên đúng cả khi chưa đăng ký Guard toàn cục.
 // - Nếu sau này đăng ký APP_GUARD toàn cục, có thể bỏ @UseGuards ở đây để tránh xác thực hai lần
-// - Kho ĐÃ NGỪNG HOẠT ĐỘNG chỉ Admin được xem (?includeInactive=true). 
+// - Kho ĐÃ NGỪNG HOẠT ĐỘNG chỉ Admin được xem (?includeInactive=true).
 // - Nhân viên kho yêu cầu xem kho đã ngừng sẽ nhận HTTP 403 (danh sách) hoặc 404 (chi tiết).
 //
-// CONTROLLER KHÔNG chứa nghiệp vụ, mọi kiểm tra và truy vấn CSDL nằm trong WarehousesService 
+// CONTROLLER KHÔNG chứa nghiệp vụ, mọi kiểm tra và truy vấn CSDL nằm trong WarehousesService
 // DTO được import dạng GIÁ TRỊ (không dùng "import type") vì ValidationPipe cần class thật lúc chạy để đọc decorator validate
 // =============================================================================
 
-import { BadRequestException, Body, Controller, DefaultValuePipe, Delete,
-     ForbiddenException, Get, HttpCode, HttpStatus, Param, ParseBoolPipe, ParseUUIDPipe,  
-     Post, Put, Query, UseGuards, } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Delete,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseBoolPipe,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole, type Warehouse } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import { Roles } from '../core/decorators/roles.decorator';
@@ -70,7 +85,7 @@ export class WarehousesController {
     });
   }
 
-  // Chi tiết 1 kho. Nhân viên kho chỉ xem được kho đang hoạt động 
+  // Chi tiết 1 kho. Nhân viên kho chỉ xem được kho đang hoạt động
   // Kho đã ngừng hoạt động trả 404, như thể không tồn tại).
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_STAFF)
@@ -85,7 +100,7 @@ export class WarehousesController {
   // 2. GHI (CHỈ ADMIN)
   // ==========================================================================
 
-  // Tạo kho mới. 
+  // Tạo kho mới.
   // Trả HTTP 201 cùng thông tin kho vừa tạo.
   // Trùng mã kho -> HTTP 409.
   @Post()

@@ -1,9 +1,13 @@
 // =============================================================================
-// Mục đích: Custom Validator cho class-validator 
+// Mục đích: Custom Validator cho class-validator
 // Kiểm tra độ dài theo số BYTE UTF-8 của mật khẩu, không phải số ký tự
 // =============================================================================
 
-import { registerDecorator, ValidationOptions, ValidationArguments,} from 'class-validator';
+import {
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
+} from 'class-validator';
 
 // Giới hạn số BYTE UTF-8 tối đa cho mật khẩu
 // Khớp chính xác với hằng số ngầm định trong "AuthService.validateNewPassword()" (bcrypt chỉ dùng tối đa 72 byte đầu)
@@ -31,7 +35,8 @@ export function IsPasswordByteLength(validationOptions?: ValidationOptions) {
           }
 
           const isLongEnough = value.length >= PASSWORD_MIN_LENGTH;
-          const isWithinByteLimit = Buffer.byteLength(value, 'utf8') <= PASSWORD_MAX_BYTES;
+          const isWithinByteLimit =
+            Buffer.byteLength(value, 'utf8') <= PASSWORD_MAX_BYTES;
 
           return isLongEnough && isWithinByteLimit;
         },
@@ -39,8 +44,12 @@ export function IsPasswordByteLength(validationOptions?: ValidationOptions) {
         defaultMessage(args: ValidationArguments): string {
           const value = args.value;
 
-          if (typeof value !== 'string') { return 'Mật khẩu phải là chuỗi ký tự.'; }
-          if (value.length < PASSWORD_MIN_LENGTH) { return `Mật khẩu phải có ít nhất ${PASSWORD_MIN_LENGTH} ký tự.`; }
+          if (typeof value !== 'string') {
+            return 'Mật khẩu phải là chuỗi ký tự.';
+          }
+          if (value.length < PASSWORD_MIN_LENGTH) {
+            return `Mật khẩu phải có ít nhất ${PASSWORD_MIN_LENGTH} ký tự.`;
+          }
 
           return `Mật khẩu không được vượt quá ${PASSWORD_MAX_BYTES} Byte khi mã hóa UTF-8.`;
         },

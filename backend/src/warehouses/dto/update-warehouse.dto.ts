@@ -2,7 +2,7 @@
 // DTO cho Endpoint "PUT /warehouses/:id"
 // Admin cập nhật thông tin kho
 // Endpoint dùng ngữ nghĩa CẬP NHẬT TỪNG PHẦN: chỉ những trường được gửi lên mới bị thay đổi, trường không gửi giữ nguyên giá trị cũ
-// Yêu cầu phải có ít nhất một trường 
+// Yêu cầu phải có ít nhất một trường
 //
 // PHÂN BIỆT 3 TRẠNG THÁI CỦA MỘT TRƯỜNG:
 //   - Không gửi (undefined): Giữ nguyên giá trị hiện tại.
@@ -10,10 +10,20 @@
 //   - Gửi giá trị: Ghi đè bằng giá trị mới sau khi validate.
 // =============================================================================
 
-import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateIf,} from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 
-// Giá trị lớn nhất của kiểu INTEGER trong PostgreSQL 
+// Giá trị lớn nhất của kiểu INTEGER trong PostgreSQL
 const INT4_MAX = 2147483647;
 
 export class UpdateWarehouseDto {

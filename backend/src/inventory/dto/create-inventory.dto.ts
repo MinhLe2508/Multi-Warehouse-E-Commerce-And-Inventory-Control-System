@@ -1,6 +1,6 @@
 // =============================================================================
 // DTO cho Endpoint "POST /inventory"
-// Admin tạo MỘT DÒNG TỒN KHO mới, tức khai báo "sản phẩm X được bán/lưu ở kho Y" (bảng "inventory", mỗi cặp sản phẩm–kho tối đa một dòng). 
+// Admin tạo MỘT DÒNG TỒN KHO mới, tức khai báo "sản phẩm X được bán/lưu ở kho Y" (bảng "inventory", mỗi cặp sản phẩm–kho tối đa một dòng).
 // Sản phẩm mới tạo chưa có dòng tồn kho nào cho tới khi Admin gọi Endpoint này.
 //
 // Quy tắc chung:
@@ -11,7 +11,15 @@
 // =============================================================================
 
 import { Transform } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 // Giá trị lớn nhất của cột INTEGER trong PostgreSQL (2^31 - 1).
 const INT4_MAX = 2147483647;
@@ -56,4 +64,4 @@ export class CreateInventoryDto {
     return trimmed === '' ? undefined : trimmed;
   })
   note?: string;
-}   
+}

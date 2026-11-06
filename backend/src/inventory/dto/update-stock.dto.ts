@@ -1,11 +1,11 @@
 // =============================================================================
-// DTO cho Endpoint "PUT /inventory/:id" 
+// DTO cho Endpoint "PUT /inventory/:id"
 // Admin KIỂM KÊ / ĐIỀU CHỈNH một dòng tồn kho: đặt lại số lượng tồn vật lý ("stock") về con số đếm thực tế và/hoặc đổi ngưỡng cảnh báo tồn thấp RIÊNG của dòng đó.
 //
-// KHÁC VỚI NHẬP HÀNG: "stock" ở đây là GIÁ TRỊ TUYỆT ĐỐI MỚI (không phải số lượng cộng thêm). 
+// KHÁC VỚI NHẬP HÀNG: "stock" ở đây là GIÁ TRỊ TUYỆT ĐỐI MỚI (không phải số lượng cộng thêm).
 // Muốn cộng thêm hàng mới nhập, dùng POST /inventory/:id/restock (RestockInventoryDto).
 //
-// Endpoint dùng ngữ nghĩa CẬP NHẬT TỪNG PHẦN: trường không gửi giữ nguyên. 
+// Endpoint dùng ngữ nghĩa CẬP NHẬT TỪNG PHẦN: trường không gửi giữ nguyên.
 // Yêu cầu có ít nhất một trong hai trường "stock" / "threshold" (kiểm tra trong InventoryService.updateStock()).
 //
 // PHÂN BIỆT 3 TRẠNG THÁI CỦA MỘT TRƯỜNG:
@@ -21,7 +21,15 @@
 // =============================================================================
 
 import { Transform } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max,MaxLength, Min, ValidateIf, } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 // Giá trị lớn nhất của cột INTEGER trong PostgreSQL.
 const INT4_MAX = 2147483647;
@@ -41,7 +49,7 @@ export class UpdateStockDto {
   @Max(INT4_MAX, { message: `Ngưỡng cảnh báo tối đa là ${INT4_MAX}.` })
   threshold?: number | null;
 
-  // Ghi chú / lý do điều chỉnh, ghi vào nhật ký tồn kho (inventory_audit_log), ví dụ "Kiểm kê cuối quý". 
+  // Ghi chú / lý do điều chỉnh, ghi vào nhật ký tồn kho (inventory_audit_log), ví dụ "Kiểm kê cuối quý".
   // Chuỗi rỗng coi như không có ghi chú.
   @IsOptional()
   @IsString({ message: 'Ghi chú phải là chuỗi ký tự.' })

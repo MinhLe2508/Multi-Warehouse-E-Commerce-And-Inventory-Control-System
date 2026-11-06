@@ -12,7 +12,7 @@
 // - Việc hiển thị "còn hàng / hết hàng" cho khách thuộc module sản phẩm / đặt hàng.
 // - Nhân viên kho chỉ được XEM; nhập hàng và điều chỉnh tồn là quyền riêng của Admin (quyết định thiết kế của nhóm).
 // - Giá vốn (costPrice) chỉ Admin nhìn thấy, việc ẩn nằm trong InventoryService.
-// - Guard gắn ở mức CLASS: JwtAuthGuard (xác thực) chạy trước RolesGuard (kiểm tra vai trò). Gắn trực tiếp nên đúng cả khi chưa đăng ký Guard toàn cục. 
+// - Guard gắn ở mức CLASS: JwtAuthGuard (xác thực) chạy trước RolesGuard (kiểm tra vai trò). Gắn trực tiếp nên đúng cả khi chưa đăng ký Guard toàn cục.
 // - Nếu sau này đăng ký APP_GUARD toàn cục, có thể bỏ @UseGuards ở đây để tránh xác thực hai lần.
 //
 // THỨ TỰ ROUTE: "alerts" PHẢI khai báo TRƯỚC ":id", nếu không "alerts" bị hiểu là một id và trả về lỗi 400 (id không hợp lệ).
@@ -20,17 +20,36 @@
 // Không bao giờ nhận từ body hay query để không ai mạo danh người khác trong nhật ký tồn kho.
 // =============================================================================
 
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, UseGuards, } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import { Roles } from '../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
-import { QueryInventoryDto, QueryStockAlertsDto, } from './dto/query-inventory.dto';
+import {
+  QueryInventoryDto,
+  QueryStockAlertsDto,
+} from './dto/query-inventory.dto';
 import { RestockInventoryDto } from './dto/restock-inventory.dto';
 import { UpdateStockDto } from './dto/update-stock.dto';
-import { InventoryService, type InventoryView, type PagedResult, type StockAlertView, } from './inventory.service';
+import {
+  InventoryService,
+  type InventoryView,
+  type PagedResult,
+  type StockAlertView,
+} from './inventory.service';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)

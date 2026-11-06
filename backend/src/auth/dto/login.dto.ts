@@ -1,13 +1,12 @@
 // =============================================================================
-// Mục đích: DTO cho Endpoint "POST /auth/login" 
-// Đăng nhập bằng username + password, dùng chung cho cả 3 vai trò (CUSTOMER / WAREHOUSE_STAFF / ADMIN). 
+// Mục đích: DTO cho Endpoint "POST /auth/login"
+// Đăng nhập bằng username + password, dùng chung cho cả 3 vai trò (CUSTOMER / WAREHOUSE_STAFF / ADMIN).
 // Khớp CHÍNH XÁC với interface "LoginInput" trong auth.service.ts
 // =============================================================================
 
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class LoginDto {
-
   // Tên đăng nhập do hệ thống tự sinh từ phần local-part của Email
   // lúc đăng ký hoặc tạo tài khoản; đây không phải địa chỉ email.
   @IsString({ message: 'Tên đăng nhập phải là chuỗi ký tự.' })

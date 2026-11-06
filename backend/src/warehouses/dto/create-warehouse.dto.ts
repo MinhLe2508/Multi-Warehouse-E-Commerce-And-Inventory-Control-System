@@ -1,17 +1,27 @@
 // =============================================================================
-// DTO cho Endpoint "POST /warehouses" 
+// DTO cho Endpoint "POST /warehouses"
 // Admin tạo một kho hàng mới
 // Khớp với model "Warehouse" trong schema.prisma (bảng "warehouses").
 //
 // Quy tắc chung:
-// - Không có trường "isActive": Kho mới tạo luôn ở trạng thái hoạt động (mặc định của CSDL) 
+// - Không có trường "isActive": Kho mới tạo luôn ở trạng thái hoạt động (mặc định của CSDL)
 // - Việc ngừng hoạt động / kích hoạt lại kho đi qua UpdateWarehouseDto và endpoint DELETE, có kiểm tra nghiệp vụ riêng
 // - Không có "id", "createdAt", "updatedAt": do CSDL tự sinh
 // - Nếu Client gửi thừa các trường này, ValidationPipe (forbidNonWhitelisted: true trong main.ts) sẽ từ chối request với HTTP 400
 // - Các thao tác chuẩn hóa dữ liệu (trim, in hoa mã kho...) dùng @Transform, có hiệu lực nhờ "transform: true" của ValidationPipe toàn cục.
 // =============================================================================
 
-import { IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf, } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 
 const INT4_MAX = 2147483647;
@@ -41,7 +51,7 @@ export class CreateWarehouseDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   name!: string;
 
-  // Khu vực địa lý của kho 
+  // Khu vực địa lý của kho
   // Hệ thống đặt hàng dùng giá trị này để ưu tiên chọn kho gần địa chỉ nhận hàng của khách
   @IsString({ message: 'Khu vực phải là chuỗi ký tự.' })
   @IsNotEmpty({ message: 'Khu vực không được để trống.' })
@@ -72,8 +82,8 @@ export class CreateWarehouseDto {
   @Max(INT4_MAX, { message: `Sức chứa không được vượt quá ${INT4_MAX}.` })
   capacity?: number | null;
 
-  // Ngưỡng cảnh báo tồn kho thấp mặc định cho mọi sản phẩm trong kho này 
-  // Không gửi thì CSDL dùng mặc định 10. 
+  // Ngưỡng cảnh báo tồn kho thấp mặc định cho mọi sản phẩm trong kho này
+  // Không gửi thì CSDL dùng mặc định 10.
   // Dùng ValidateIf (không dùng IsOptional) để giá trị null bị từ chối: cột này không cho phép NULL
   @ValidateIf((_object, value) => value !== undefined)
   @IsInt({ message: 'Ngưỡng cảnh báo tồn kho thấp phải là số nguyên.' })
