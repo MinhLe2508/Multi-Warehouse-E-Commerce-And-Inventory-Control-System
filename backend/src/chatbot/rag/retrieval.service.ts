@@ -29,10 +29,10 @@ export interface RetrievalResult {
 export class RetrievalService {
   private readonly logger = new Logger(RetrievalService.name);
 
-  // Ngưỡng tương đồng cosine mặc định cho kết quả RAG hữu ích
-  private readonly DEFAULT_MIN_SIMILARITY = 0.65;
+  // Ngưỡng tương đồng cosine mặc định cho kết quả RAG hữu ích (Voyage-3 với tiếng Việt dao động 0.40 - 0.70)
+  private readonly DEFAULT_MIN_SIMILARITY = 0.45;
   // Ngưỡng tự tin cao (High Confidence)
-  private readonly HIGH_CONFIDENCE_THRESHOLD = 0.75;
+  private readonly HIGH_CONFIDENCE_THRESHOLD = 0.58;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -86,7 +86,6 @@ export class RetrievalService {
           WHERE "is_active" = true
             AND "embedding" IS NOT NULL
             AND "doc_type" = ${options.docType}
-            AND (1 - ("embedding" <=> ${vectorLiteral}::vector)) >= ${minSimilarity}
           ORDER BY "embedding" <=> ${vectorLiteral}::vector ASC
           LIMIT ${limit};
         `;
@@ -103,13 +102,12 @@ export class RetrievalService {
           FROM "kb_documents"
           WHERE "is_active" = true
             AND "embedding" IS NOT NULL
-            AND (1 - ("embedding" <=> ${vectorLiteral}::vector)) >= ${minSimilarity}
           ORDER BY "embedding" <=> ${vectorLiteral}::vector ASC
           LIMIT ${limit};
         `;
       }
 
-      const documents: RetrievedDocument[] = (rows || []).map((r) => ({
+      const allDocs: RetrievedDocument[] = (rows || []).map((r) => ({
         id: r.id,
         title: r.title,
         docType: r.docType,
@@ -119,12 +117,16 @@ export class RetrievalService {
         similarity: Number(r.similarity),
       }));
 
+      const topSimilarity = allDocs[0]?.similarity;
+      // Lọc các document đạt ngưỡng tối thiểu
+      const documents = allDocs.filter((d) => d.similarity >= minSimilarity);
+
       const hasHighConfidence = documents.some(
         (d) => d.similarity >= this.HIGH_CONFIDENCE_THRESHOLD,
       );
 
       this.logger.debug(
-        `RAG Search "${trimmedQuery.substring(0, 40)}...": tìm thấy ${documents.length} docs (max similarity: ${documents[0]?.similarity?.toFixed(3) ?? 'N/A'})`,
+        `RAG Search "${trimmedQuery.substring(0, 40)}...": top similarity: ${topSimilarity?.toFixed(3) ?? 'N/A'}, giữ lại ${documents.length}/${allDocs.length} docs (ngưỡng: ${minSimilarity})`,
       );
 
       return {
@@ -135,12 +137,84 @@ export class RetrievalService {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Lỗi khi tìm kiếm tri thức RAG: ${msg}`);
+
+      // Nếu Voyage AI bị giới hạn tần suất (429 Free Tier) hoặc mất mạng tạm thời,
+      // fallback sang tìm kiếm toàn văn (keyword) trên bảng kb_documents trong < 20ms
+      const keywordDocs = await this.fallbackKeywordSearch(trimmedQuery, limit);
+      if (keywordDocs.length > 0) {
+        return {
+          query: trimmedQuery,
+          documents: keywordDocs,
+          hasHighConfidence: true,
+        };
+      }
+
       // Fallback mềm: không crash ứng dụng nếu vector DB có sự cố
       return {
         query: trimmedQuery,
         documents: [],
         hasHighConfidence: false,
       };
+    }
+  }
+
+  /**
+   * Tìm kiếm dự phòng siêu tốc trên PostgreSQL khi dịch vụ tạo vector gặp giới hạn rate-limit
+   */
+  private async fallbackKeywordSearch(
+    query: string,
+    limit: number,
+  ): Promise<RetrievedDocument[]> {
+    if (
+      !this.prisma.kbDocument ||
+      typeof this.prisma.kbDocument.findMany !== 'function'
+    ) {
+      return [];
+    }
+
+    const lower = query.toLowerCase();
+    const policyPhrases = [
+      'đổi trả',
+      'hoàn tiền',
+      'bảo hành',
+      'vận chuyển',
+      'giao hàng',
+      'phí ship',
+      'thanh toán',
+      'hủy đơn',
+      'tích điểm',
+      'khuyến mãi',
+      'chính sách',
+    ].filter((kw) => lower.includes(kw));
+
+    if (policyPhrases.length === 0) {
+      return [];
+    }
+
+    try {
+      const rows = await this.prisma.kbDocument.findMany({
+        where: {
+          isActive: true,
+          OR: policyPhrases.flatMap((kw) => [
+            { title: { contains: kw, mode: 'insensitive' as const } },
+            { content: { contains: kw, mode: 'insensitive' as const } },
+          ]),
+        },
+        take: limit,
+        orderBy: { chunkIndex: 'asc' },
+      });
+
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        docType: r.docType,
+        chunkIndex: r.chunkIndex,
+        content: r.content,
+        sourceUrl: r.sourceUrl,
+        similarity: 0.62,
+      }));
+    } catch {
+      return [];
     }
   }
 

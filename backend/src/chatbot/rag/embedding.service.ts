@@ -19,8 +19,8 @@ const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
 const DEFAULT_MODEL = 'voyage-3';
 // Số văn bản tối đa mỗi request (Voyage cho phép nhiều hơn, giữ nhỏ cho an toàn token).
 export const EMBEDDING_BATCH_SIZE = 64;
-const REQUEST_TIMEOUT_MS = 15_000;
-const RETRY_DELAY_MS = 1_500;
+const REQUEST_TIMEOUT_MS = 5_000;
+const RETRY_DELAY_MS = 500;
 
 interface VoyageResponse {
   data?: Array<{ embedding?: unknown; index?: unknown }>;
@@ -37,6 +37,7 @@ export class EmbeddingError extends Error {}
 @Injectable()
 export class EmbeddingService {
   private readonly logger = new Logger(EmbeddingService.name);
+  private readonly queryCache = new Map<string, number[]>();
 
   get model(): string {
     return process.env.VOYAGE_MODEL?.trim() || DEFAULT_MODEL;
@@ -55,8 +56,20 @@ export class EmbeddingService {
   }
 
   async embedQuery(text: string): Promise<number[]> {
+    const cacheKey = text.trim().toLowerCase();
+    const cached = this.queryCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
     const result = await this.request([text], 'query');
-    return result.vectors[0];
+    const vec = result.vectors[0];
+    if (vec) {
+      if (this.queryCache.size >= 200) {
+        this.queryCache.clear();
+      }
+      this.queryCache.set(cacheKey, vec);
+    }
+    return vec;
   }
 
   private async request(
