@@ -173,21 +173,52 @@ export class RetrievalService {
     }
 
     const lower = query.toLowerCase();
-    const policyPhrases = [
+
+    // Các cụm từ chủ đề cụ thể (không dùng từ quá chung như "chính sách", "quy định")
+    const specificTopics = [
       'đổi trả',
       'hoàn tiền',
       'bảo hành',
       'vận chuyển',
       'giao hàng',
       'phí ship',
+      'miễn phí vận chuyển',
       'thanh toán',
       'hủy đơn',
       'tích điểm',
       'khuyến mãi',
-      'chính sách',
-    ].filter((kw) => lower.includes(kw));
+      'tài khoản',
+      'hotline',
+      'chăm sóc khách hàng',
+      'liên hệ',
+      'giờ làm việc',
+      'hóa đơn',
+      'giao nhầm',
+      'không người nhận',
+      'giao chậm',
+      'giá',
+      'đánh giá',
+    ];
 
-    if (policyPhrases.length === 0) {
+    const matchedTopics = specificTopics.filter((topic) =>
+      lower.includes(topic),
+    );
+
+    // Nếu query hỏi về các chủ đề chắc chắn không có trong hệ thống (như "trả góp", "lãi suất", "xe máy", "thời tiết")
+    // thì không trả về tài liệu ngẫu nhiên
+    const outOfScopePhrases = [
+      'trả góp',
+      'lãi suất',
+      'xe máy',
+      'thời tiết',
+      'giàu nhất',
+      'honda',
+    ];
+    if (outOfScopePhrases.some((phrase) => lower.includes(phrase))) {
+      return [];
+    }
+
+    if (matchedTopics.length === 0) {
       return [];
     }
 
@@ -195,23 +226,41 @@ export class RetrievalService {
       const rows = await this.prisma.kbDocument.findMany({
         where: {
           isActive: true,
-          OR: policyPhrases.flatMap((kw) => [
-            { title: { contains: kw, mode: 'insensitive' as const } },
-            { content: { contains: kw, mode: 'insensitive' as const } },
+          OR: matchedTopics.flatMap((topic) => [
+            { title: { contains: topic, mode: 'insensitive' as const } },
+            { content: { contains: topic, mode: 'insensitive' as const } },
           ]),
         },
-        take: limit,
-        orderBy: { chunkIndex: 'asc' },
+        take: 10,
       });
 
-      return rows.map((r) => ({
-        id: r.id,
-        title: r.title,
-        docType: r.docType,
-        chunkIndex: r.chunkIndex,
-        content: r.content,
-        sourceUrl: r.sourceUrl,
-        similarity: 0.62,
+      if (rows.length === 0) {
+        return [];
+      }
+
+      // Xếp hạng đơn giản dựa trên số topic xuất hiện trong title & content
+      const scored = rows.map((r) => {
+        let matchCount = 0;
+        for (const topic of matchedTopics) {
+          if (r.title.toLowerCase().includes(topic)) matchCount += 3;
+          if (r.content.toLowerCase().includes(topic)) matchCount += 1;
+        }
+        return {
+          row: r,
+          score: matchCount,
+        };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+
+      return scored.slice(0, limit).map((s) => ({
+        id: s.row.id,
+        title: s.row.title,
+        docType: s.row.docType,
+        chunkIndex: s.row.chunkIndex,
+        content: s.row.content,
+        sourceUrl: s.row.sourceUrl,
+        similarity: Math.min(0.75, 0.55 + s.score * 0.05),
       }));
     } catch {
       return [];

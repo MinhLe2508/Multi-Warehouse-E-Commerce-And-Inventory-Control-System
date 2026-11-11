@@ -584,10 +584,15 @@ export class ChatbotService {
     const normalized = userMessage.trim();
 
     // 1. Kiểm tra ý định tra cứu đơn hàng (STT 27 - lookupOrder)
-    const isOrderQuery =
-      /(đơn\s*hàng|mã\s*đơn|\bord-[a-z0-9]{4,28}\b|trạng\s*thái\s*đơn|tra\s*cứu\s*đơn|kiểm\s*tra\s*đơn|đơn\s*của\s*(tôi|mình|em|bạn)|lịch\s*sử\s*mua)/i.test(
+    const hasOrderCode = /\b(ORD-[A-Z0-9]{4,28})\b/i.test(normalized);
+    const isPersonalOrderLookup =
+      /(tra\s*cứu.*đơn|kiểm\s*tra.*đơn|xem.*đơn|đơn\s*(?:hàng)?\s*của\s*(?:tôi|mình|em|bạn)|đơn\s*(?:hàng)?\s*(?:gần\s*đây|mới\s*nhất|vừa\s*đặt)|lịch\s*sử\s*mua|tình\s*trạng\s*đơn)/i.test(
+        normalized,
+      ) &&
+      !/(làm\s*sao|cách\s*(?:nào|để)|hướng\s*dẫn|chính\s*sách|quy\s*định|bao\s*nhiêu|miễn\s*phí|điều\s*kiện)/i.test(
         normalized,
       );
+    const isOrderQuery = hasOrderCode || isPersonalOrderLookup;
 
     if (isOrderQuery) {
       const codeMatch = normalized.match(/\b(ORD-[A-Z0-9]{4,28})\b/i);
