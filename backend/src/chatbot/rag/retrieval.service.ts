@@ -174,49 +174,41 @@ export class RetrievalService {
 
     const lower = query.toLowerCase();
 
-    // Các cụm từ chủ đề cụ thể (không dùng từ quá chung như "chính sách", "quy định")
+    // Danh mục chủ đề tri thức đặc trưng của hệ thống (dùng từ khóa/cụm từ cụ thể theo domain)
     const specificTopics = [
       'đổi trả',
       'hoàn tiền',
       'bảo hành',
       'vận chuyển',
+      'thời gian giao hàng',
       'giao hàng',
       'phí ship',
       'miễn phí vận chuyển',
+      'miễn phí giao hàng',
       'thanh toán',
       'hủy đơn',
       'tích điểm',
+      'khách hàng thân thiết',
+      'chính sách giá',
       'khuyến mãi',
-      'tài khoản',
+      'tạo tài khoản',
+      'khóa tài khoản',
       'hotline',
       'chăm sóc khách hàng',
       'liên hệ',
-      'giờ làm việc',
+      'hóa đơn điện tử',
       'hóa đơn',
       'giao nhầm',
       'không người nhận',
       'giao chậm',
-      'giá',
-      'đánh giá',
+      'đánh giá sản phẩm',
+      'địa chỉ giao hàng',
+      'bảo mật',
     ];
 
     const matchedTopics = specificTopics.filter((topic) =>
       lower.includes(topic),
     );
-
-    // Nếu query hỏi về các chủ đề chắc chắn không có trong hệ thống (như "trả góp", "lãi suất", "xe máy", "thời tiết")
-    // thì không trả về tài liệu ngẫu nhiên
-    const outOfScopePhrases = [
-      'trả góp',
-      'lãi suất',
-      'xe máy',
-      'thời tiết',
-      'giàu nhất',
-      'honda',
-    ];
-    if (outOfScopePhrases.some((phrase) => lower.includes(phrase))) {
-      return [];
-    }
 
     if (matchedTopics.length === 0) {
       return [];
