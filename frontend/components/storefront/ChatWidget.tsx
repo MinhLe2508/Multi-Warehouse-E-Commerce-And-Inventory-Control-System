@@ -63,10 +63,25 @@ export default function ChatWidget() {
             <div className="flex-1"><h2 id="chat-title" className="font-semibold">Trợ lý MultiMart</h2><p className="text-xs text-brand-100">Hỏi về sản phẩm và chính sách mua hàng</p></div>
             <button type="button" onClick={close} aria-label="Đóng chat" className="rounded-lg p-2 hover:bg-white/15"><X size={20} /></button>
           </header>
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
-            <p className="text-xs text-slate-500">Lịch sử lưu trong phiên trình duyệt này</p>
-            <button type="button" disabled={!chat.ready} onClick={() => { chat.clear(); setComposerVersion(value => value + 1); }}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md p-1 text-xs font-medium text-brand-700 disabled:opacity-50"><Plus size={14} />Chat mới</button>
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
+            <button
+              type="button"
+              disabled={!chat.ready || chat.sending}
+              onClick={() => void chat.send("Tôi muốn gặp nhân viên CSKH hỗ trợ")}
+              title="Chuyển phiên chat sang chuyên viên tư vấn hỗ trợ"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Headphones size={13} className="text-amber-700" />
+              Gặp nhân viên
+            </button>
+            <button
+              type="button"
+              disabled={!chat.ready}
+              onClick={() => { chat.clear(); setComposerVersion(value => value + 1); }}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md p-1 text-xs font-medium text-slate-600 hover:text-brand-700 disabled:opacity-50"
+            >
+              <Plus size={14} />Chat mới
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4">
             {chat.messages.length === 0 && <div className="space-y-3 py-5 text-sm text-slate-600">
@@ -87,7 +102,7 @@ export default function ChatWidget() {
                   <FormattedChatMessage content={message.text} isUser={message.role === "user"} />
                 </div>
                 {message.delivery === "failed" && <p className="mt-1 text-xs text-red-700">Chưa nhận được phản hồi</p>}
-                {message.role === "assistant" && message.isFallback && (
+                {message.role === "assistant" && message.isFallback && !message.escalateToSupport && (
                   <p className="mt-1.5 text-[11.5px] font-medium text-amber-700">
                     Phản hồi dự phòng — cần nhân viên xác nhận thêm.
                   </p>

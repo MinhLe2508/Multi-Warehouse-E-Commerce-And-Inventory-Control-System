@@ -390,7 +390,7 @@ export class ChatbotService {
       reply: savedAssistantMsg.content,
       role: 'ASSISTANT',
       isFallback,
-      escalatedToHuman: shouldEscalate || session.escalatedToHuman,
+      escalatedToHuman: shouldEscalate,
       retrievedDocuments: retrievedDocs,
       toolCalls,
       latencyMs,
