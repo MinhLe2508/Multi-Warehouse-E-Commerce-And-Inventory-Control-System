@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent, type RefObject } from "rea
 import { MessageCircle, Send, X, RotateCcw, LoaderCircle, Headphones, Plus } from "lucide-react";
 import { useChatbot } from "@/hooks/useChatbot";
 import { MAX_CHAT_LENGTH } from "@/shared/lib/chatSession";
+import FormattedChatMessage from "./FormattedChatMessage";
 
 function ChatComposer({ ready, sending, onSend, inputRef }: {
   ready: boolean; sending: boolean; onSend: (text: string) => Promise<boolean>;
@@ -76,14 +77,35 @@ export default function ChatWidget() {
             <div role="log" aria-label="Lịch sử hội thoại" aria-live="polite" aria-relevant="additions" className="space-y-3">
               {chat.messages.map(message => <div key={message.id} className={message.role === "user" ? "ml-6" : "mr-6"}>
                 <p className="mb-1 text-xs font-medium text-slate-500">{message.role === "user" ? "Bạn" : "Trợ lý MultiMart"}</p>
-                <div className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2.5 text-sm ${message.role === "user" ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-800"}`}>{message.text}</div>
+                <div
+                  className={`rounded-2xl px-3.5 py-2.5 text-sm transition-all ${
+                    message.role === "user"
+                      ? "rounded-tr-xs bg-brand-600 text-white shadow-xs"
+                      : "rounded-tl-xs border border-slate-200/90 bg-white shadow-xs"
+                  }`}
+                >
+                  <FormattedChatMessage content={message.text} isUser={message.role === "user"} />
+                </div>
                 {message.delivery === "failed" && <p className="mt-1 text-xs text-red-700">Chưa nhận được phản hồi</p>}
-                {message.role === "assistant" && message.isFallback && <p className="mt-1 text-xs text-amber-800">Phản hồi dự phòng — cần nhân viên xác nhận thêm.</p>}
-                {message.escalateToSupport && <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-                  <p className="flex items-center gap-1 font-semibold"><Headphones size={16} />Đã ghi nhận nhu cầu CSKH</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words">{message.escalationMessage || "Phiên chat đã được đánh dấu cần nhân viên hỗ trợ."}</p>
-                  <p className="mt-1 text-xs">Chưa xác nhận có nhân viên trực tuyến hoặc tiếp nhận xử lý.</p>
-                </div>}
+                {message.role === "assistant" && message.isFallback && (
+                  <p className="mt-1.5 text-[11.5px] font-medium text-amber-700">
+                    Phản hồi dự phòng — cần nhân viên xác nhận thêm.
+                  </p>
+                )}
+                {message.escalateToSupport && (
+                  <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-950 shadow-xs">
+                    <p className="flex items-center gap-1.5 font-semibold text-amber-900">
+                      <Headphones size={15} className="text-amber-700" />
+                      Đã ghi nhận nhu cầu CSKH
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-amber-900">
+                      {message.escalationMessage || "Phiên chat đã được đánh dấu cần nhân viên hỗ trợ."}
+                    </p>
+                    <p className="mt-1.5 text-[11px] text-amber-700/80">
+                      Chưa xác nhận có nhân viên trực tuyến hoặc tiếp nhận xử lý.
+                    </p>
+                  </div>
+                )}
               </div>)}
             </div>
             {chat.sending && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-slate-500"><LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" />Đang chờ phản hồi…</p>}
