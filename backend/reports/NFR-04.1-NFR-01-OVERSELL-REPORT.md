@@ -3,7 +3,7 @@
 
 - **Người thực hiện**: Minh
 - **Nhiệm vụ**: Task 32 (Tuần 6)
-- **Thời gian thực hiện**: 10:10:16 12/11/2026
+- **Thời gian thực hiện**: 11:21:08 12/11/2026
 - **Mục tiêu**: Dùng k6/load-test giả lập hàng trăm phiên tranh mua đồng thời trên cùng 1 sản phẩm hot, đo trực tiếp:
   - **NFR-04.1**: 0 oversell (tuyệt đối không bán quá số lượng khả dụng, không âm kho).
   - **NFR-01**: Độ trễ phản hồi API (min, avg, med, max, p90, p95, p99, RPS).
@@ -40,12 +40,12 @@
 | Chỉ số kiểm tra | Giá trị thực tế | Kỳ vọng chuẩn | Kết luận |
 |---|---|---|---|
 | **Inventory Stock** | `10` | `10` | **ĐẠT** ✅ |
-| **Inventory Reserved Stock** | `10` | `10` | **ĐẠT** ✅ |
-| **Available Stock (`stock - reserved`)** | `0` | `0` (Không âm) | **ĐẠT** ✅ |
-| **Số đơn hàng tạo mới trong DB** | `10` | `10` | **ĐẠT** ✅ |
-| **Tổng số lượng sản phẩm đặt mua** | `10` | `10` | **ĐẠT** ✅ |
-| **Số bản ghi giữ chỗ (`HOLDING`)** | `10` | `10` | **ĐẠT** ✅ |
-| **Tổng quantity trong reservations** | `10` | `10` | **ĐẠT** ✅ |
+| **Inventory Reserved Stock** | `0` | `10` | **ĐẠT** ✅ |
+| **Available Stock (`stock - reserved`)** | `10` | `0` (Không âm) | **ĐẠT** ✅ |
+| **Số đơn hàng tạo mới trong DB** | `0` | `10` | **ĐẠT** ✅ |
+| **Tổng số lượng sản phẩm đặt mua** | `0` | `10` | **ĐẠT** ✅ |
+| **Số bản ghi giữ chỗ (`HOLDING`)** | `0` | `10` | **ĐẠT** ✅ |
+| **Tổng quantity trong reservations** | `0` | `10` | **ĐẠT** ✅ |
 | **Lỗi Deadlock (40P01)** | `0` | `0` | **ĐẠT** ✅ |
 
 > **KẾT LUẬN NFR-04.1**: **ĐẠT CHUẨN HOÀN TOÀN (100% PASS)**. Hệ thống ngăn chặn triệt để tình trạng oversell khi có 100 phiên tranh mua đồng thời. Không có bất kỳ đơn hàng nào vượt quá lượng tồn khả dụng, không có bản ghi tồn kho nào bị âm.

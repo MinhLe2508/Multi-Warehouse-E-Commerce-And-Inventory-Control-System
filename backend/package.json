@@ -22,6 +22,7 @@
     "eval:chatbot": "ts-node src/chatbot/scripts/chatbot-eval.ts",
     "test:load:setup": "ts-node test/load-test/setup-test-data.ts",
     "test:load:run": "ts-node test/load-test/run-concurrency-test.ts",
+    "test:load:k6": "powershell -ExecutionPolicy Bypass -File ../load-tests/run-k6.ps1",
     "test:load:verify": "ts-node test/load-test/verify-oversell.ts",
     "test:load:all": "ts-node test/load-test/setup-test-data.ts && ts-node test/load-test/run-concurrency-test.ts && ts-node test/load-test/verify-oversell.ts"
   },
