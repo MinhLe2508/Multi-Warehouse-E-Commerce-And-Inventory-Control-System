@@ -1,30 +1,57 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeftRight, CheckCircle2, PlusCircle } from 'lucide-react';
-import { RestockDialog } from '../../../components/admin/RestockDialog';
+import Link from 'next/link';
+import { AlertCircle, ArrowRight, CheckCircle2, RefreshCw } from 'lucide-react';
 import { AlertBadge } from '../../../components/admin/StatusBadge';
-import { useAlerts } from '../../../hooks/useAdminAnalytics';
+import { useStockAlerts } from '../../../hooks/useStockAlerts';
 import { formatTime } from '../../../shared/lib/format';
-import type { AlertLevel, StockAlert } from '../../../shared/types/admin';
+import type { AlertLevel } from '../../../shared/types/admin';
 
 export default function AdminAlertsPage() {
-  const { alerts, resolve } = useAlerts();
+  const { alerts, loading, resolvingId, error, realtimeStatus, resolve, refresh } = useStockAlerts();
   const [level, setLevel] = useState<AlertLevel | 'ALL'>('ALL');
-  const [restock, setRestock] = useState<StockAlert | null>(null);
   const [notice, setNotice] = useState('');
-  const list = alerts.filter(a => a.status === 'OPEN' && (level === 'ALL' || a.alertLevel === level));
+
+  const list = alerts.filter(
+    (a) => a.status === 'OPEN' && (level === 'ALL' || a.alertLevel === level)
+  );
+
+  const handleResolve = async (id: string, sku: string) => {
+    const ok = await resolve(id);
+    if (ok) {
+      setNotice(`Đã đánh dấu xử lý cảnh báo cho ${sku}.`);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-5xl" style={{ maxWidth: '1000px' }}>
-      <h1 className="h4 fw-bold mb-4 text-dark" style={{ letterSpacing: '-0.02em' }}>
-        Cảnh báo tồn kho thấp
-      </h1>
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+        <h1 className="h4 fw-bold mb-0 text-dark" style={{ letterSpacing: '-0.02em' }}>
+          Cảnh báo tồn kho thấp
+        </h1>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading}
+          className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+        >
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          <span>Làm mới</span>
+        </button>
+      </div>
+
+      {realtimeStatus === 'reconnecting' && (
+        <div className="alert alert-warning d-flex align-items-center gap-2 small mb-3">
+          <RefreshCw size={14} className="spin" />
+          <span>Đang kết nối lại kênh cảnh báo realtime...</span>
+        </div>
+      )}
 
       <div className="mb-3">
         <select
           value={level}
-          onChange={e => setLevel(e.target.value as AlertLevel | 'ALL')}
+          onChange={(e) => setLevel(e.target.value as AlertLevel | 'ALL')}
           aria-label="Lọc theo mức cảnh báo"
           className="form-select form-select-sm"
           style={{
@@ -57,89 +84,83 @@ export default function AdminAlertsPage() {
         </div>
       )}
 
-      {list.length === 0 ? (
+      {error ? (
+        <div role="alert" className="alert alert-danger d-flex align-items-center justify-content-between gap-2 small">
+          <div className="d-flex align-items-center gap-2">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+          <button type="button" onClick={() => void refresh()} className="btn btn-danger btn-sm">
+            Tải lại
+          </button>
+        </div>
+      ) : loading ? (
+        <div className="p-5 text-center small text-secondary rounded-3 border bg-white">
+          Đang tải danh sách cảnh báo...
+        </div>
+      ) : list.length === 0 ? (
         <div
           className="p-5 text-center small text-secondary rounded-3 border"
           style={{ borderColor: '#ede9fe', backgroundColor: '#ffffff' }}
         >
-          ✅ Không có cảnh báo đang mở. Tồn kho tất cả các mặt hàng đang trên ngưỡng an toàn.
+          Không có cảnh báo đang mở. Tồn kho tất cả các mặt hàng đang trên ngưỡng an toàn.
         </div>
       ) : (
         <div className="d-flex flex-column gap-3">
-          {list.map(a => (
-            <div
-              key={a.id}
-              className="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3.5 bg-white border rounded-3 shadow-sm"
-              style={{
-                borderColor: '#ede9fe',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <div className="small">
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <AlertBadge level={a.alertLevel} />
-                  <span className="fw-bold text-dark">{a.sku}</span> · <span className="text-secondary">{a.productName}</span>
+          {list.map((a) => {
+            const levelValue: AlertLevel = a.alertLevel === 'CRITICAL' ? 'CRITICAL' : 'WARNING';
+            return (
+              <div
+                key={a.id}
+                className="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3.5 bg-white border rounded-3 shadow-sm"
+                style={{
+                  borderColor: '#ede9fe',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div className="small">
+                  <div className="d-flex align-items-center gap-2 mb-1">
+                    <AlertBadge level={levelValue} />
+                    <span className="fw-bold text-dark">{a.productSku}</span> ·{' '}
+                    <span className="text-secondary">{a.productName}</span>
+                  </div>
+                  <div className="text-muted" style={{ fontSize: '0.8rem' }}>
+                    Kho: <strong className="text-dark">{a.warehouseCode}</strong> · Khả dụng:{' '}
+                    <strong className="text-dark">
+                      {a.currentAvailable ?? a.availableAtTrigger}
+                    </strong>
+                    , Ngưỡng tối thiểu: {a.thresholdAtTrigger} · {formatTime(a.triggeredAt)}
+                  </div>
                 </div>
-                <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                  Kho: <strong className="text-dark">{a.warehouseCode}</strong> · Khả dụng: <strong className="text-dark">{a.availableAtTrigger}</strong>, Ngưỡng tối thiểu: {a.thresholdAtTrigger} · {formatTime(a.triggeredAt)}
+
+                <div className="d-flex flex-wrap gap-2">
+                  <Link
+                    href="/admin/inventory"
+                    className="btn btn-gradient-purple small d-inline-flex align-items-center gap-1"
+                    style={{
+                      minHeight: '40px',
+                      padding: '0.45rem 1.1rem',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <span>Nhập thêm hàng</span>
+                    <ArrowRight size={14} />
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={resolvingId === a.id}
+                    onClick={() => void handleResolve(a.id, a.productSku)}
+                    className="btn btn-outline-secondary small"
+                    style={{ minHeight: '40px', fontSize: '0.85rem' }}
+                  >
+                    {resolvingId === a.id ? 'Đang xử lý...' : 'Đã xử lý'}
+                  </button>
                 </div>
               </div>
-
-              {/* Toàn bộ các nút hành động — 100% Theme Tím Trắng Luxury */}
-              <div className="d-flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRestock(a)}
-                  className="btn btn-gradient-purple small"
-                  style={{
-                    minHeight: '40px',
-                    padding: '0.45rem 1.1rem',
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  <PlusCircle size={15} />
-                  <span>Tạo yêu cầu nhập kho</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled
-                  title="Điều chuyển kho chưa có trong đặc tả (SRS) — chờ backend"
-                  className="btn btn-disabled-purple small"
-                  style={{
-                    minHeight: '40px',
-                    padding: '0.45rem 0.95rem',
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  <ArrowLeftRight size={14} />
-                  <span>Điều chuyển kho</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => resolve(a.id)}
-                  className="btn btn-outline-purple small"
-                  style={{
-                    minHeight: '40px',
-                    padding: '0.45rem 1rem',
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  <CheckCircle2 size={15} />
-                  <span>Đánh dấu đã xử lý</span>
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-
-      <RestockDialog
-        alert={restock}
-        onClose={() => setRestock(null)}
-        onSubmit={(a, qty) => setNotice(`Đã tạo yêu cầu nhập ${qty} đơn vị ${a.sku} cho ${a.warehouseCode}.`)}
-      />
     </div>
   );
 }

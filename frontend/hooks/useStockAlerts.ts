@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { authenticatedRequest } from '@/store/useAuthStore';
-import { ALERTS as MOCK_ALERTS } from '@/shared/mock/adminMock';
+import { apiGet, apiPatch, extractErrorMessage } from '@/shared/lib/apiClient';
+import {
+  useInventoryRealtime,
+  type LowStockRealtimeEvent,
+  type RealtimeStatus,
+} from './useInventoryRealtime';
 
 export interface StockAlertItem {
   id: string;
@@ -35,6 +39,7 @@ export function useStockAlerts() {
   const [alerts, setAlerts] = useState<StockAlertItem[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
 
@@ -42,36 +47,12 @@ export function useStockAlerts() {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     try {
-      // Gọi endpoint thật của Khang: GET /inventory/alerts?status=OPEN
-      const data = await authenticatedRequest<AlertsApiResponse>(
-        '/inventory/alerts?status=OPEN&limit=10'
-      );
+      const data = await apiGet<AlertsApiResponse>('/admin/alerts?status=OPEN&limit=50');
       setAlerts(data.items || []);
-      setTotal(data.total || (data.items ? data.items.length : 0));
+      setTotal(data.total ?? (data.items ? data.items.length : 0));
       setError(null);
-    } catch {
-      // Fallback an toàn sang mock nếu backend chưa seed xong cảnh báo
-      const openMocks: StockAlertItem[] = MOCK_ALERTS.filter(a => a.status === 'OPEN').map(a => ({
-        id: String(a.id),
-        inventoryId: String(a.inventoryId),
-        alertLevel: a.alertLevel,
-        status: a.status,
-        stockAtTrigger: a.availableAtTrigger,
-        availableAtTrigger: a.availableAtTrigger,
-        thresholdAtTrigger: a.thresholdAtTrigger,
-        currentStock: a.availableAtTrigger,
-        currentAvailable: a.availableAtTrigger,
-        productId: a.sku,
-        productSku: a.sku,
-        productName: a.productName,
-        warehouseId: a.warehouseId,
-        warehouseCode: a.warehouseCode,
-        warehouseName: `Kho ${a.warehouseCode}`,
-        triggeredAt: a.triggeredAt,
-      }));
-      setAlerts(openMocks);
-      setTotal(openMocks.length);
-      setError(null);
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err, 'Không tải được danh sách cảnh báo tồn kho.'));
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
@@ -80,15 +61,15 @@ export function useStockAlerts() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchAlerts();
+      void fetchAlerts();
     }, 0);
 
-    // Chu kỳ 30 giây (T5)
-    const interval = setInterval(fetchAlerts, 30000);
+    const interval = setInterval(() => {
+      void fetchAlerts();
+    }, 30000);
 
-    // Cập nhật khi tab được focus lại (T5)
     const onFocus = () => {
-      fetchAlerts();
+      void fetchAlerts();
     };
     window.addEventListener('focus', onFocus);
 
@@ -99,5 +80,79 @@ export function useStockAlerts() {
     };
   }, [fetchAlerts]);
 
-  return { alerts, total, loading, error, refresh: fetchAlerts };
+  const handleRealtimeAlert = useCallback((event: LowStockRealtimeEvent) => {
+    setAlerts((prev) => {
+      const exists = prev.some(
+        (a) =>
+          (event.alertId && a.id === event.alertId) ||
+          (a.inventoryId === event.inventoryId && a.status === 'OPEN')
+      );
+      if (exists) {
+        return prev.map((a) =>
+          a.inventoryId === event.inventoryId && a.status === 'OPEN'
+            ? {
+                ...a,
+                alertLevel: event.alertLevel ?? (event.availableStock === 0 ? 'CRITICAL' : 'WARNING'),
+                currentAvailable: event.availableStock,
+              }
+            : a
+        );
+      }
+
+      const incoming: StockAlertItem = {
+        id: event.alertId ?? `rt-${event.inventoryId}-${Date.now()}`,
+        inventoryId: event.inventoryId,
+        alertLevel: event.alertLevel ?? (event.availableStock === 0 ? 'CRITICAL' : 'WARNING'),
+        status: 'OPEN',
+        stockAtTrigger: event.availableStock,
+        availableAtTrigger: event.availableStock,
+        thresholdAtTrigger: event.threshold,
+        currentAvailable: event.availableStock,
+        productId: event.productId,
+        productSku: event.sku ?? event.productId.slice(0, 8),
+        productName: event.productName ?? 'Sản phẩm dưới ngưỡng',
+        warehouseId: event.warehouseId,
+        warehouseCode: event.warehouseCode ?? 'WH',
+        warehouseName: event.warehouseCode ?? 'Kho hàng',
+        triggeredAt: event.triggeredAt ?? new Date().toISOString(),
+      };
+      setTotal((t) => t + 1);
+      return [incoming, ...prev];
+    });
+  }, []);
+
+  const { status: realtimeStatus } = useInventoryRealtime({
+    onLowStockAlert: handleRealtimeAlert,
+    onReconnectSync: fetchAlerts,
+  });
+
+  const resolve = useCallback(
+    async (id: string): Promise<boolean> => {
+      setResolvingId(id);
+      try {
+        await apiPatch(`/admin/alerts/${id}/resolve`, {});
+        setAlerts((prev) => prev.filter((a) => a.id !== id));
+        setTotal((t) => Math.max(0, t - 1));
+        setError(null);
+        return true;
+      } catch (err: unknown) {
+        setError(extractErrorMessage(err, 'Không thể đánh dấu đã xử lý cảnh báo.'));
+        return false;
+      } finally {
+        setResolvingId(null);
+      }
+    },
+    []
+  );
+
+  return {
+    alerts,
+    total,
+    loading,
+    resolvingId,
+    error,
+    realtimeStatus: realtimeStatus as RealtimeStatus,
+    resolve,
+    refresh: fetchAlerts,
+  };
 }

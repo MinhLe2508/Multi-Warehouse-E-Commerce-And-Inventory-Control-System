@@ -17,6 +17,7 @@ export default function AdminInventoryPage() {
     summary,
     loading,
     error,
+    realtimeStatus,
     search,
     category,
     warehouseId,
@@ -108,47 +109,70 @@ export default function AdminInventoryPage() {
         </div>
       </div>
 
-      {/* Thông báo lỗi nếu có */}
-      {error && (
-        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-800">
-          {error}
+      {/* Trạng thái realtime & Thông báo lỗi nếu có */}
+      {realtimeStatus === 'reconnecting' && (
+        <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-medium text-amber-800 flex items-center gap-2">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" />
+          <span>Đang kết nối lại kênh đồng bộ tồn kho realtime...</span>
         </div>
       )}
 
-      {/* Phân hệ Biểu đồ & 6 KPIs (FR-DASH-01) */}
-      <WarehouseStockChart summary={summary} />
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-800 flex flex-wrap items-center justify-between gap-3">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={refreshData}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Tải lại
+          </button>
+        </div>
+      )}
 
-      {/* Bộ lọc tìm kiếm & Kho hàng (FR-INV-01, FR-DASH-01) */}
-      <InventoryFilterBar
-        search={search}
-        onSearchChange={setSearch}
-        category={category}
-        onCategoryChange={setCategory}
-        categories={categories}
-        warehouseId={warehouseId}
-        onWarehouseChange={setWarehouseId}
-        warehouses={warehouses}
-        status={status}
-        onStatusChange={setStatus}
-        onReset={resetFilters}
-        totalFilteredCount={totalFilteredCount}
-        totalProductsCount={products.length}
-      />
+      {loading && products.length === 0 ? (
+        <div className="p-8 rounded-2xl bg-white border border-slate-200 text-center text-sm text-slate-500">
+          Đang tải dữ liệu tồn kho từ máy chủ...
+        </div>
+      ) : (
+        <>
+          {/* Phân hệ Biểu đồ & 6 KPIs (FR-DASH-01) */}
+          <WarehouseStockChart summary={summary} />
 
-      {/* Bảng Ma trận Tồn kho Sản phẩm x Kho hàng */}
-      <InventoryTable
-        products={paginatedProducts}
-        warehouses={warehouses}
-        selectedWarehouseId={warehouseId}
-        page={page}
-        pageSize={pageSize}
-        totalPages={totalPages}
-        totalFilteredCount={totalFilteredCount}
-        isAdmin={isAdmin}
-        onPageChange={setPage}
-        onPageSizeChange={setPageSize}
-        onOpenAdjust={openAdjustModal}
-      />
+          {/* Bộ lọc tìm kiếm & Kho hàng (FR-INV-01, FR-DASH-01) */}
+          <InventoryFilterBar
+            search={search}
+            onSearchChange={setSearch}
+            category={category}
+            onCategoryChange={setCategory}
+            categories={categories}
+            warehouseId={warehouseId}
+            onWarehouseChange={setWarehouseId}
+            warehouses={warehouses}
+            status={status}
+            onStatusChange={setStatus}
+            onReset={resetFilters}
+            totalFilteredCount={totalFilteredCount}
+            totalProductsCount={products.length}
+          />
+
+          {/* Bảng Ma trận Tồn kho Sản phẩm x Kho hàng */}
+          <InventoryTable
+            products={paginatedProducts}
+            warehouses={warehouses}
+            selectedWarehouseId={warehouseId}
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalFilteredCount={totalFilteredCount}
+            isAdmin={isAdmin}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            onOpenAdjust={openAdjustModal}
+          />
+        </>
+      )}
 
       {/* Modal Điều chỉnh Tồn kho (Chỉ hiển thị cho ADMIN - T10) */}
       {isAdmin && (

@@ -1,109 +1,264 @@
 'use client';
 
-import { useCallback, useEffect, useState, useRef } from 'react';
-import { ORDERS } from '../shared/mock/adminMock';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiGet, apiPatch, AuthError, extractErrorMessage } from '../shared/lib/apiClient';
 import { NEXT_STATUS } from '../shared/lib/format';
-import type { AdminOrder } from '../shared/types/admin';
+import type { AdminOrder, OrderStatus } from '../shared/types/admin';
 
-// TODO(API): Sẽ nối API thật khi Task 22 (AdminOrdersController) hoàn thành với OrdersService của Huy.
-// Hiện tại duy trì dữ liệu mẫu trong bộ nhớ (không lưu localStorage) kèm chiến lược polling và xử lý xung đột 409.
-export function useAdminOrders() {
-  const [orders, setOrders] = useState<AdminOrder[]>(ORDERS);
-  const [loading, setLoading] = useState(false);
+interface ApiAdminOrderItem {
+  id: string;
+  productId: string;
+  warehouseId: string;
+  productName: string;
+  sku: string;
+  unitPrice: string;
+  quantity: number;
+  lineTotal: string;
+}
+
+interface ApiAdminOrder {
+  id: string;
+  orderCode: string;
+  status: OrderStatus;
+  grandTotal: string;
+  shippingRecipient: string;
+  shippingPhone: string;
+  shippingAddress: string;
+  createdAt: string;
+  updatedAt: string;
+  customer?: {
+    id: string;
+    username: string;
+    fullName: string;
+  } | null;
+  items: ApiAdminOrderItem[];
+  payments: Array<{
+    method: 'MOCK_CARD' | 'MOCK_EWALLET' | 'COD';
+  }>;
+  statusHistory: Array<{
+    fromStatus: OrderStatus | null;
+    toStatus: OrderStatus;
+    actorName?: string;
+    createdAt: string;
+  }>;
+}
+
+interface ApiAdminOrdersResponse {
+  items: ApiAdminOrder[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface OrderFilters {
+  status?: OrderStatus | 'ALL';
+  from?: string;
+  to?: string;
+  q?: string;
+  page?: number;
+  limit?: number;
+}
+
+function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
+  const warehouseSet = new Set<string>();
+  const items = raw.items.map((item) => {
+    const whShort = item.warehouseId.slice(0, 8).toUpperCase();
+    warehouseSet.add(whShort);
+    return {
+      productName: item.productName,
+      sku: item.sku,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      lineTotal: Number(item.lineTotal),
+      warehouseCode: whShort,
+    };
+  });
+
+  return {
+    id: raw.id,
+    orderCode: raw.orderCode,
+    status: raw.status,
+    customerName: raw.customer?.fullName || raw.shippingRecipient,
+    grandTotal: Number(raw.grandTotal),
+    warehouseCodes: Array.from(warehouseSet),
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+    shipping: {
+      recipient: raw.shippingRecipient,
+      phone: raw.shippingPhone,
+      address: raw.shippingAddress,
+    },
+    paymentMethod: raw.payments[0]?.method ?? 'MOCK_CARD',
+    items,
+    history: raw.statusHistory.map((h) => ({
+      fromStatus: h.fromStatus,
+      toStatus: h.toStatus,
+      actor: h.actorName || 'Hệ thống',
+      createdAt: h.createdAt,
+    })),
+  };
+}
+
+export function useAdminOrders(initialFilters: OrderFilters = {}) {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [filters, setFilters] = useState<OrderFilters>({
+    status: initialFilters.status ?? 'ALL',
+    from: initialFilters.from ?? '',
+    to: initialFilters.to ?? '',
+    q: initialFilters.q ?? '',
+    page: initialFilters.page ?? 1,
+    limit: initialFilters.limit ?? 20,
+  });
+
+  const [loading, setLoading] = useState<boolean>(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>(() =>
-    new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
   );
   const [error, setError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (overrideFilters?: OrderFilters) => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
+    const active = overrideFilters ?? filters;
+
     try {
-      // Khi có API backend: const data = await authenticatedRequest<AdminOrder[]>('/admin/orders');
-      // Tạm thời refresh timestamp và giữ đồng bộ
+      const params = new URLSearchParams();
+      if (active.status && active.status !== 'ALL') {
+        params.set('status', active.status);
+      }
+      if (active.from) params.set('from', active.from);
+      if (active.to) params.set('to', active.to);
+      if (active.q?.trim()) params.set('q', active.q.trim());
+      params.set('page', String(active.page ?? 1));
+      params.set('limit', String(active.limit ?? 20));
+
+      const data = await apiGet<ApiAdminOrdersResponse>(
+        `/admin/orders?${params.toString()}`
+      );
+
+      setOrders((data.items || []).map(mapApiOrder));
+      setTotal(data.total ?? 0);
+      setTotalPages(data.totalPages ?? 1);
       setLastUpdated(
-        new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        new Date().toLocaleTimeString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
       );
       setError(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Lỗi tải đơn hàng';
-      setError(msg);
+      setError(extractErrorMessage(err, 'Không tải được danh sách đơn hàng từ máy chủ.'));
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, []);
+  }, [filters]);
 
   useEffect(() => {
-    // Chu kỳ 30 giây tự động làm mới
-    const interval = setInterval(fetchOrders, 30000);
+    const timer = setTimeout(() => {
+      void fetchOrders();
+    }, 0);
 
-    // Lấy lại dữ liệu khi tab được focus lại
+    const interval = setInterval(() => {
+      void fetchOrders();
+    }, 30000);
+
     const onFocus = () => {
-      fetchOrders();
+      void fetchOrders();
     };
     window.addEventListener('focus', onFocus);
 
     return () => {
+      clearTimeout(timer);
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
   }, [fetchOrders]);
 
-  const advanceStatus = useCallback(
-    async (orderId: string) => {
+  const updateFilters = useCallback((patch: Partial<OrderFilters>) => {
+    setFilters((prev) => ({
+      ...prev,
+      ...patch,
+      page: patch.page !== undefined ? patch.page : 1,
+    }));
+  }, []);
+
+  const updateStatus = useCallback(
+    async (
+      orderId: string,
+      targetStatus: 'SHIPPING' | 'DELIVERED',
+      note?: string
+    ): Promise<boolean> => {
       setConflictNotice(null);
+      setUpdatingId(orderId);
       try {
-        // Mô phỏng kiểm tra xung đột trạng thái (409)
-        const currentOrder = orders.find(o => o.id === orderId);
-        if (!currentOrder) {
-          throw new Error('Đơn hàng không tồn tại.');
-        }
-
-        const next = NEXT_STATUS[currentOrder.status];
-        if (!next) {
-          throw new Error('Đơn hàng không thể chuyển tiếp trạng thái.');
-        }
-
-        const now = new Date().toISOString();
-        setOrders(prev =>
-          prev.map(o => {
-            if (o.id !== orderId) return o;
-            return {
-              ...o,
-              status: next,
-              updatedAt: now,
-              history: [
-                ...o.history,
-                { fromStatus: o.status, toStatus: next, actor: 'Bạn', createdAt: now },
-              ],
-            };
+        const updatedRaw = await apiPatch<ApiAdminOrder>(`/admin/orders/${orderId}/status`, {
+          targetStatus,
+          ...(note ? { note } : {}),
+        });
+        const mapped = mapApiOrder(updatedRaw);
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? mapped : o)));
+        setLastUpdated(
+          new Date().toLocaleTimeString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
           })
         );
-
-        // Ngay sau khi cập nhật thành công, làm mới lại dữ liệu và timestamp
-        setLastUpdated(
-          new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        );
-      } catch {
-        // Xử lý xung đột 409
-        setConflictNotice('Đơn vừa được cập nhật bởi thao tác khác. Dữ liệu đã được làm mới.');
-        await fetchOrders();
+        return true;
+      } catch (err: unknown) {
+        if (err instanceof AuthError && err.status === 409) {
+          setConflictNotice(
+            'Trạng thái đã thay đổi bởi thao tác khác. Dữ liệu đã được tải lại.'
+          );
+          await fetchOrders();
+        } else {
+          setError(extractErrorMessage(err, 'Không thể cập nhật trạng thái đơn hàng.'));
+        }
+        return false;
+      } finally {
+        setUpdatingId(null);
       }
     },
-    [orders, fetchOrders]
+    [fetchOrders]
+  );
+
+  const advanceStatus = useCallback(
+    async (orderId: string) => {
+      const currentOrder = orders.find((o) => o.id === orderId);
+      if (!currentOrder) return;
+      const next = NEXT_STATUS[currentOrder.status];
+      if (next !== 'SHIPPING' && next !== 'DELIVERED') return;
+      await updateStatus(orderId, next);
+    },
+    [orders, updateStatus]
   );
 
   return {
     orders,
+    total,
+    totalPages,
+    filters,
     loading,
+    updatingId,
     error,
     lastUpdated,
     conflictNotice,
     setConflictNotice,
+    updateFilters,
+    updateStatus,
     advanceStatus,
-    refreshOrders: fetchOrders,
+    refreshOrders: () => fetchOrders(),
   };
 }

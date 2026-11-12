@@ -12,42 +12,32 @@ import { RefreshCw, AlertCircle, Info } from 'lucide-react';
 export default function AdminOrdersPage() {
   const {
     orders,
+    filters,
     loading,
     error,
     lastUpdated,
     conflictNotice,
     setConflictNotice,
+    updateFilters,
     advanceStatus,
     refreshOrders,
   } = useAdminOrders();
 
   const { warehouses, warehouseId } = useAdminCtx();
-  const [status, setStatus] = useState<OrderStatus | 'ALL'>('ALL');
-  const [q, setQ] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const whCode = warehouses.find(w => w.id === warehouseId)?.code;
   const list = orders.filter(
-    o =>
-      (status === 'ALL' || o.status === status) &&
-      (!whCode || o.warehouseCodes.includes(whCode)) &&
-      (!q || (o.orderCode + o.customerName).toLowerCase().includes(q.toLowerCase()))
+    o => !whCode || o.warehouseCodes.includes(whCode) || o.warehouseCodes.length === 0
   );
   const selected = orders.find(o => o.id === selectedId) ?? null;
 
   return (
     <div className="mx-auto max-w-7xl">
-      {/* Tiêu đề & Thông báo dữ liệu mẫu (T7) */}
+      {/* Tiêu đề & Nút làm mới */}
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
         <div className="d-flex align-items-center gap-3">
           <h1 className="h4 fw-bold mb-0 text-dark">Đơn hàng</h1>
-          <span
-            className="badge bg-warning text-dark px-2.5 py-1"
-            style={{ fontSize: '0.75rem', borderRadius: '6px' }}
-            title="Dữ liệu mẫu trong bộ nhớ, sẽ nối API thật khi Task 22 hoàn tất"
-          >
-            Dữ liệu mẫu
-          </span>
         </div>
 
         <div className="d-flex align-items-center gap-2 small text-muted">
@@ -79,20 +69,20 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      {/* Bộ lọc tìm kiếm và trạng thái */}
+      {/* Bộ lọc tìm kiếm, trạng thái và khoảng ngày */}
       <div className="mb-3 d-flex flex-wrap gap-2">
         <input
           type="search"
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          placeholder="Tìm theo mã đơn hoặc tên khách"
+          value={filters.q ?? ''}
+          onChange={e => updateFilters({ q: e.target.value })}
+          placeholder="Tìm theo mã đơn, tên hoặc SĐT khách"
           aria-label="Tìm đơn hàng"
           className="form-control form-control-sm"
-          style={{ maxWidth: '320px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
+          style={{ maxWidth: '280px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
         />
         <select
-          value={status}
-          onChange={e => setStatus(e.target.value as OrderStatus | 'ALL')}
+          value={filters.status ?? 'ALL'}
+          onChange={e => updateFilters({ status: e.target.value as OrderStatus | 'ALL' })}
           aria-label="Lọc theo trạng thái"
           className="form-select form-select-sm"
           style={{ maxWidth: '200px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
@@ -104,12 +94,33 @@ export default function AdminOrdersPage() {
             </option>
           ))}
         </select>
+        <input
+          type="date"
+          value={filters.from ?? ''}
+          onChange={e => updateFilters({ from: e.target.value })}
+          aria-label="Từ ngày"
+          className="form-control form-control-sm"
+          style={{ maxWidth: '160px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
+        />
+        <input
+          type="date"
+          value={filters.to ?? ''}
+          onChange={e => updateFilters({ to: e.target.value })}
+          aria-label="Đến ngày"
+          className="form-control form-control-sm"
+          style={{ maxWidth: '160px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
+        />
       </div>
 
       {error ? (
-        <div role="alert" className="alert alert-danger d-flex align-items-center gap-2 small">
-          <AlertCircle size={16} />
-          <span>Không tải được đơn hàng. Kiểm tra kết nối rồi tải lại trang.</span>
+        <div role="alert" className="alert alert-danger d-flex align-items-center justify-content-between gap-2 small">
+          <div className="d-flex align-items-center gap-2">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+          <button type="button" onClick={refreshOrders} className="btn btn-danger btn-sm">
+            Tải lại
+          </button>
         </div>
       ) : loading ? (
         <p className="text-sm text-secondary">Đang tải đơn hàng…</p>
