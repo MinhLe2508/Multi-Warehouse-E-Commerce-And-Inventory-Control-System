@@ -1,23 +1,41 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AdminInventoryController } from './admin-inventory.controller';
-import { AdminInventoryService } from './admin-inventory.service';
+import { UserRole } from '@prisma/client';
+import { BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
-import {
-  ConflictException,
-  UnprocessableEntityException,
-  NotFoundException,
-} from '@nestjs/common';
+import { InventoryService } from '../../inventory/inventory.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AdminInventoryController } from './admin-inventory.controller';
+import { AdminInventoryService } from './admin-inventory.service';
 
-describe('AdminInventoryController', () => {
+describe('AdminInventoryController (FR-INV-01)', () => {
   const actorId = '11111111-1111-4111-8111-111111111111';
   let controller: AdminInventoryController;
-  let service: AdminInventoryService;
+
+  const mockInventoryService = {
+    findAll: jest.fn(),
+    updateStock: jest.fn(),
+  };
+
+  const mockPrismaService = {
+    warehouse: {
+      findMany: jest.fn(),
+    },
+    inventory: {
+      findMany: jest.fn(),
+    },
+  };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminInventoryController],
-      providers: [AdminInventoryService],
+      providers: [
+        AdminInventoryService,
+        { provide: InventoryService, useValue: mockInventoryService },
+        { provide: PrismaService, useValue: mockPrismaService },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
@@ -26,122 +44,101 @@ describe('AdminInventoryController', () => {
       .compile();
 
     controller = module.get<AdminInventoryController>(AdminInventoryController);
-    service = module.get<AdminInventoryService>(AdminInventoryService);
   });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
-    expect(service).toBeDefined();
   });
 
-  describe('findAll', () => {
-    it('should return paginated inventory items', () => {
-      const result = controller.findAll({ page: 1, limit: 10 });
-      expect(result).toHaveProperty('items');
-      expect(result).toHaveProperty('total');
-      expect(result.items.length).toBeLessThanOrEqual(10);
-      expect(result.page).toBe(1);
+  it('findAll delegates to InventoryService.findAll with role', async () => {
+    mockInventoryService.findAll.mockResolvedValue({
+      items: [{ id: '1', stock: 20, reservedStock: 2, availableStock: 18 }],
+      total: 1,
+      limit: 50,
+      offset: 0,
     });
 
-    it('should filter items by category', () => {
-      const result = controller.findAll({ category: 'Điện tử' });
-      expect(result.items.every((i) => i.category === 'Điện tử')).toBe(true);
-    });
+    const res = await controller.findAll(
+      { page: 1, limit: 50, warehouseId: 'wh-1' },
+      UserRole.WAREHOUSE_STAFF,
+    );
 
-    it('should filter items by search term', () => {
-      const result = controller.findAll({ search: 'SKU-001' });
-      expect(result.items.some((i) => i.sku === 'SKU-001')).toBe(true);
-    });
+    expect(mockInventoryService.findAll).toHaveBeenCalledWith(
+      {
+        warehouseId: 'wh-1',
+        productId: undefined,
+        lowStockOnly: false,
+        limit: 50,
+        offset: 0,
+      },
+      UserRole.WAREHOUSE_STAFF,
+    );
+    expect(res.total).toBe(1);
   });
 
-  describe('getSummary', () => {
-    it('should return KPIs and warehouse distribution', () => {
-      const summary = controller.getSummary();
-      expect(summary).toHaveProperty('kpis');
-      expect(summary).toHaveProperty('warehouseDistribution');
-      expect(summary.kpis.totalProducts).toBeGreaterThan(0);
-      expect(summary.warehouseDistribution.length).toBe(3);
-    });
+  it('getSummary aggregates warehouse totals from DB read-only', async () => {
+    mockPrismaService.warehouse.findMany.mockResolvedValue([
+      {
+        id: 'wh-1',
+        code: 'WH-HCM',
+        name: 'Kho HCM',
+        region: 'SOUTH',
+        defaultLowStockThreshold: 10,
+      },
+    ]);
+    mockPrismaService.inventory.findMany.mockResolvedValue([
+      {
+        warehouseId: 'wh-1',
+        productId: 'prod-1',
+        stock: 30,
+        reservedStock: 5,
+        availableStock: 25,
+        threshold: null,
+      },
+      {
+        warehouseId: 'wh-1',
+        productId: 'prod-2',
+        stock: 5,
+        reservedStock: 5,
+        availableStock: 0,
+        threshold: 10,
+      },
+    ]);
+
+    const summary = await controller.getSummary();
+    expect(summary.totalProducts).toBe(2);
+    expect(summary.totalStock).toBe(35);
+    expect(summary.totalReserved).toBe(10);
+    expect(summary.totalAvailable).toBe(25);
+    expect(summary.outOfStockCount).toBe(1);
+    expect(summary.byWarehouse[0].code).toBe('WH-HCM');
   });
 
-  describe('adjustStock', () => {
-    it('should adjust stock successfully when version matches', () => {
-      const list = controller.findAll({ page: 1, limit: 5 });
-      const firstItem = list.items[0];
-      const whKey = Object.keys(firstItem.warehouses)[0];
-      const whDetail = firstItem.warehouses[whKey];
-
-      const initialVersion = whDetail.version;
-
-      const res = controller.adjustStock(
-        whDetail.inventoryId,
-        {
-          newStock: 50,
-          expectedVersion: initialVersion,
-          note: 'Điều chỉnh kiểm kê định kỳ',
-        },
-        actorId,
-      );
-
-      expect(res.success).toBe(true);
-      expect(res.data.stock).toBe(50);
-      expect(res.data.version).toBe(initialVersion + 1);
+  it('adjustStock delegates to InventoryService.updateStock', async () => {
+    mockInventoryService.updateStock.mockResolvedValue({
+      id: '101',
+      stock: 50,
+      reservedStock: 2,
+      availableStock: 48,
     });
 
-    it('should throw ConflictException (409) when version does not match', () => {
-      const list = controller.findAll({ page: 1, limit: 5 });
-      const firstItem = list.items[0];
-      const whKey = Object.keys(firstItem.warehouses)[0];
-      const whDetail = firstItem.warehouses[whKey];
+    const res = await controller.adjustStock(
+      '101',
+      { stock: 50, threshold: 10, note: 'Kiểm kê cuối tháng' },
+      actorId,
+    );
 
-      expect(() => {
-        controller.adjustStock(
-          whDetail.inventoryId,
-          {
-            newStock: 60,
-            expectedVersion: 9999, // Stale version!
-            note: 'Cố tình gửi version cũ',
-          },
-          actorId,
-        );
-      }).toThrow(ConflictException);
-    });
+    expect(mockInventoryService.updateStock).toHaveBeenCalledWith(
+      '101',
+      { stock: 50, threshold: 10, note: 'Kiểm kê cuối tháng' },
+      actorId,
+    );
+    expect(res.stock).toBe(50);
+  });
 
-    it('should throw UnprocessableEntityException (422) when newStock < reservedStock', () => {
-      const list = controller.findAll({ page: 1, limit: 5 });
-      const targetItem =
-        list.items.find((i) => i.totalReserved > 0) || list.items[1];
-      const whKey = Object.keys(targetItem.warehouses)[0];
-      const whDetail = targetItem.warehouses[whKey];
-
-      // Đảm bảo reserved > 0
-      whDetail.reservedStock = 10;
-
-      expect(() => {
-        controller.adjustStock(
-          whDetail.inventoryId,
-          {
-            newStock: 5, // < reserved 10
-            expectedVersion: whDetail.version,
-            note: 'Số lượng mới nhỏ hơn reserved',
-          },
-          actorId,
-        );
-      }).toThrow(UnprocessableEntityException);
-    });
-
-    it('should throw NotFoundException (404) when inventory ID does not exist', () => {
-      expect(() => {
-        controller.adjustStock(
-          'non-existent-id',
-          {
-            newStock: 10,
-            expectedVersion: 1,
-            note: 'Điều chỉnh id không có',
-          },
-          actorId,
-        );
-      }).toThrow(NotFoundException);
-    });
+  it('adjustStock throws BadRequestException when neither stock nor threshold provided', async () => {
+    await expect(
+      controller.adjustStock('101', { note: 'No changes' }, actorId),
+    ).rejects.toThrow(BadRequestException);
   });
 });
