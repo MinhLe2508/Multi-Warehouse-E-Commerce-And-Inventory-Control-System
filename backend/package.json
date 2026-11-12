@@ -19,7 +19,11 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "sync:kb": "ts-node src/chatbot/scripts/sync-kb.ts",
-    "eval:chatbot": "ts-node src/chatbot/scripts/chatbot-eval.ts"
+    "eval:chatbot": "ts-node src/chatbot/scripts/chatbot-eval.ts",
+    "test:load:setup": "ts-node test/load-test/setup-test-data.ts",
+    "test:load:run": "ts-node test/load-test/run-concurrency-test.ts",
+    "test:load:verify": "ts-node test/load-test/verify-oversell.ts",
+    "test:load:all": "ts-node test/load-test/setup-test-data.ts && ts-node test/load-test/run-concurrency-test.ts && ts-node test/load-test/verify-oversell.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
