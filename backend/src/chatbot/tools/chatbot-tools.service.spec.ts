@@ -76,13 +76,17 @@ describe('ChatbotToolsService', () => {
   let service: ChatbotToolsService;
   let prisma: {
     order: { findMany: jest.Mock };
-    product: { findFirst: jest.Mock };
+    product: { findFirst: jest.Mock; findMany: jest.Mock };
+    category: { findFirst: jest.Mock };
+    warehouse: { findFirst: jest.Mock };
   };
 
   beforeEach(() => {
     prisma = {
       order: { findMany: jest.fn() },
-      product: { findFirst: jest.fn() },
+      product: { findFirst: jest.fn(), findMany: jest.fn() },
+      category: { findFirst: jest.fn() },
+      warehouse: { findFirst: jest.fn() },
     };
     service = new ChatbotToolsService(prisma as unknown as PrismaService);
   });
@@ -250,6 +254,122 @@ describe('ChatbotToolsService', () => {
       expect(res).toMatchObject({ ok: false, error: 'NOT_FOUND' });
       expect(prisma.product.findFirst.mock.calls[0][0].where.OR).toHaveLength(
         2,
+      );
+    });
+  });
+
+  describe('browseCategory — lọc theo danh mục, giá và kho', () => {
+    it('lọc theo khoảng giá maxPrice (ví dụ: dưới 20 triệu)', async () => {
+      prisma.product.findMany.mockResolvedValue([
+        {
+          id: 'prod-1',
+          sku: 'SKU-001',
+          name: 'Laptop Gaming',
+          basePrice: new Prisma.Decimal('18500000'),
+          discountPercent: new Prisma.Decimal('0'),
+          category: { name: 'Laptop & Máy tính' },
+          inventory: [{ availableStock: 10 }],
+        },
+      ]);
+
+      const res = await service.execute('browseCategory', {
+        maxPrice: 20000000,
+        limit: 5,
+      });
+
+      expect(res.ok).toBe(true);
+      const callArg = prisma.product.findMany.mock.calls[0][0];
+      expect(callArg.where.basePrice).toEqual({ lte: 20000000 });
+      expect(callArg.orderBy).toEqual({ basePrice: 'desc' });
+      const data = (
+        res as {
+          data: { products: Array<{ name: string; formattedPrice: string }> };
+        }
+      ).data;
+      expect(data.products).toHaveLength(1);
+      expect(data.products[0].formattedPrice).toContain('18.500.000');
+    });
+
+    it('lọc theo khoảng giá từ minPrice đến maxPrice', async () => {
+      prisma.product.findMany.mockResolvedValue([
+        {
+          id: 'prod-2',
+          sku: 'SKU-002',
+          name: 'Tai nghe Bluetooth',
+          basePrice: new Prisma.Decimal('1200000'),
+          discountPercent: new Prisma.Decimal('0'),
+          category: { name: 'Âm thanh' },
+          inventory: [{ availableStock: 5 }],
+        },
+      ]);
+
+      const res = await service.execute('browseCategory', {
+        categoryName: 'Âm thanh',
+        minPrice: 500000,
+        maxPrice: 2000000,
+      });
+
+      expect(res.ok).toBe(true);
+      const callArg = prisma.product.findMany.mock.calls[0][0];
+      expect(callArg.where.basePrice).toEqual({ gte: 500000, lte: 2000000 });
+    });
+
+    it('lọc theo kho hàng (ví dụ: kho TP.HCM)', async () => {
+      prisma.warehouse.findFirst.mockResolvedValue({
+        id: 'wh-hcm-id',
+        name: 'Kho Trung Tâm Hồ Chí Minh',
+        region: 'Miền Nam',
+      });
+      prisma.product.findMany.mockResolvedValue([
+        {
+          id: 'prod-3',
+          sku: 'SKU-003',
+          name: 'Điện thoại Model 101',
+          basePrice: new Prisma.Decimal('15000000'),
+          discountPercent: new Prisma.Decimal('0'),
+          category: { name: 'Điện thoại' },
+          inventory: [
+            {
+              availableStock: 8,
+              warehouseId: 'wh-hcm-id',
+              warehouse: {
+                id: 'wh-hcm-id',
+                name: 'Kho Trung Tâm Hồ Chí Minh',
+                region: 'Miền Nam',
+              },
+            },
+          ],
+        },
+      ]);
+
+      const res = await service.execute('browseCategory', {
+        warehouse: 'Hồ Chí Minh',
+      });
+
+      expect(res.ok).toBe(true);
+      const callArg = prisma.product.findMany.mock.calls[0][0];
+      expect(callArg.where.inventory.some.warehouseId).toBe('wh-hcm-id');
+      const data = (
+        res as {
+          data: {
+            warehouseName: string;
+            products: Array<{ warehouseAvailable: number }>;
+          };
+        }
+      ).data;
+      expect(data.warehouseName).toBe('Kho Trung Tâm Hồ Chí Minh');
+      expect(data.products[0].warehouseAvailable).toBe(8);
+    });
+
+    it('không tìm thấy sản phẩm -> trả NOT_FOUND kèm mô tả rõ ràng', async () => {
+      prisma.product.findMany.mockResolvedValue([]);
+      const res = await service.execute('browseCategory', {
+        maxPrice: 10000,
+      });
+      expect(res.ok).toBe(false);
+      expect((res as { error: string }).error).toBe('NOT_FOUND');
+      expect((res as { message: string }).message).toContain(
+        'có giá dưới 10.000 đ',
       );
     });
   });

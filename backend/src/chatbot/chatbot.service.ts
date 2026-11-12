@@ -66,6 +66,167 @@ interface GenerationResult {
 // Giới hạn số vòng tool-use mỗi câu hỏi để chống vòng lặp vô hạn / tốn token (CON-07)
 const MAX_TOOL_ROUNDS = 3;
 
+interface PriceFilterResult {
+  minPrice?: number;
+  maxPrice?: number;
+  label: string;
+}
+
+function parsePriceRange(text: string): PriceFilterResult | null {
+  const t = text.toLowerCase();
+
+  const parseAmount = (numStr: string, unitStr?: string): number | null => {
+    if (!numStr) return null;
+    let raw = numStr.trim();
+    const unit = (unitStr || '').trim().toLowerCase();
+
+    // Dấu chấm phân cách hàng nghìn (ví dụ 500.000, 20.000.000)
+    if (/\d{1,3}(?:\.\d{3})+/.test(raw) && !unit) {
+      const cleanInt = parseInt(raw.replace(/\./g, ''), 10);
+      if (!isNaN(cleanInt)) return cleanInt;
+    }
+
+    raw = raw.replace(/,/g, '.');
+    const cleanNum = parseFloat(raw);
+    if (isNaN(cleanNum)) return null;
+
+    if (unit.match(/^(triệu|tr|củ)$/)) {
+      return Math.round(cleanNum * 1_000_000);
+    }
+    if (unit.match(/^(k|nghìn|ngàn)$/)) {
+      return Math.round(cleanNum * 1_000);
+    }
+    if (cleanNum >= 10_000) {
+      return Math.round(cleanNum);
+    }
+    return null;
+  };
+
+  // 1. Khoảng giá: "từ X đến Y", "khoảng X - Y", "tầm X đến Y", "X đến Y triệu"
+  const rangeRegex =
+    /(?:từ|khoảng|tầm)?\s*(\d+(?:[.,]\d+)?)\s*(triệu|tr|củ|k|nghìn|ngàn)?\s*(?:đến|tới|-)\s*(\d+(?:[.,]\d+)?)\s*(triệu|tr|củ|k|nghìn|ngàn)/i;
+  const rangeMatch = t.match(rangeRegex);
+  if (rangeMatch) {
+    let minUnit = rangeMatch[2];
+    const maxUnit = rangeMatch[4];
+    if (!minUnit && maxUnit) minUnit = maxUnit;
+    const min = parseAmount(rangeMatch[1], minUnit);
+    const max = parseAmount(rangeMatch[3], maxUnit);
+    if (min !== null || max !== null) {
+      const minText = min
+        ? new Intl.NumberFormat('vi-VN').format(min) + ' đ'
+        : '0 đ';
+      const maxText = max
+        ? new Intl.NumberFormat('vi-VN').format(max) + ' đ'
+        : 'không giới hạn';
+      return {
+        minPrice: min ?? undefined,
+        maxPrice: max ?? undefined,
+        label: `từ ${minText} đến ${maxText}`,
+      };
+    }
+  }
+
+  // 2. Dưới / nhỏ hơn / <= / tối đa / không quá
+  const underRegex =
+    /(?:dưới|nhỏ\s*hơn|ít\s*hơn|tối\s*đa|không\s*quá|thấp\s*hơn|<=|<)\s*(\d+(?:[.,]\d+)?(?:\.\d{3})*)\s*(triệu|tr|củ|k|nghìn|ngàn)?/i;
+  const underMatch = t.match(underRegex);
+  if (underMatch) {
+    let unit = underMatch[2];
+    if (!unit) {
+      const unitAfter = t.match(/(triệu|tr|củ|k|nghìn|ngàn)/i);
+      if (unitAfter) unit = unitAfter[1];
+    }
+    const max = parseAmount(underMatch[1], unit);
+    if (max !== null) {
+      return {
+        maxPrice: max,
+        label: `dưới ${new Intl.NumberFormat('vi-VN').format(max)} đ`,
+      };
+    }
+  }
+
+  // 3. Trên / lớn hơn / >= / tối thiểu / cao hơn
+  const overRegex =
+    /(?:trên|lớn\s*hơn|nhiều\s*hơn|tối\s*thiểu|cao\s*hơn|>=|>)\s*(\d+(?:[.,]\d+)?(?:\.\d{3})*)\s*(triệu|tr|củ|k|nghìn|ngàn)?/i;
+  const overMatch = t.match(overRegex);
+  if (overMatch) {
+    let unit = overMatch[2];
+    if (!unit) {
+      const unitAfter = t.match(/(triệu|tr|củ|k|nghìn|ngàn)/i);
+      if (unitAfter) unit = unitAfter[1];
+    }
+    const min = parseAmount(overMatch[1], unit);
+    if (min !== null) {
+      return {
+        minPrice: min,
+        label: `trên ${new Intl.NumberFormat('vi-VN').format(min)} đ`,
+      };
+    }
+  }
+
+  // 4. "từ X trở lên"
+  const fromRegex =
+    /(?:từ)\s*(\d+(?:[.,]\d+)?(?:\.\d{3})*)\s*(triệu|tr|củ|k|nghìn|ngàn)\s*(?:trở\s*lên)/i;
+  const fromMatch = t.match(fromRegex);
+  if (fromMatch) {
+    const min = parseAmount(fromMatch[1], fromMatch[2]);
+    if (min !== null) {
+      return {
+        minPrice: min,
+        label: `từ ${new Intl.NumberFormat('vi-VN').format(min)} đ trở lên`,
+      };
+    }
+  }
+
+  // 5. "tầm X triệu" / "khoảng X triệu" / "giá X triệu"
+  const aboutRegex =
+    /(?:tầm|khoảng|giá|mức\s*giá)\s*(\d+(?:[.,]\d+)?)\s*(triệu|tr|củ|k|nghìn|ngàn)/i;
+  const aboutMatch = t.match(aboutRegex);
+  if (aboutMatch) {
+    const val = parseAmount(aboutMatch[1], aboutMatch[2]);
+    if (val !== null) {
+      return {
+        maxPrice: val,
+        label: `tầm ${new Intl.NumberFormat('vi-VN').format(val)} đ trở xuống`,
+      };
+    }
+  }
+
+  return null;
+}
+
+function parseWarehouseFilter(
+  text: string,
+): { warehouse: string; label: string } | null {
+  const t = text.toLowerCase();
+  const whMatch = t.match(
+    /(?:kho|khu\s*vực)\s*(tp\.?\s*hcm|thành\s*phố\s*hồ\s*chí\s*minh|hồ\s*chí\s*minh|sài\s*gòn|hcm|hà\s*nội|hn|đà\s*nẵng|dn|miền\s*bắc|miền\s*trung|miền\s*nam)/i,
+  );
+  if (whMatch) {
+    const raw = whMatch[1].trim();
+    if (/hcm|hồ\s*chí\s*minh|sài\s*gòn|miền\s*nam/i.test(raw)) {
+      return {
+        warehouse: 'Hồ Chí Minh',
+        label: 'Kho Trung Tâm Hồ Chí Minh (Miền Nam)',
+      };
+    }
+    if (/hà\s*nội|hn|miền\s*bắc/i.test(raw)) {
+      return {
+        warehouse: 'Hà Nội',
+        label: 'Kho Trung Tâm Hà Nội (Miền Bắc)',
+      };
+    }
+    if (/đà\s*nẵng|dn|miền\s*trung/i.test(raw)) {
+      return {
+        warehouse: 'Đà Nẵng',
+        label: 'Kho Trung Tâm Đà Nẵng (Miền Trung)',
+      };
+    }
+  }
+  return null;
+}
+
 @Injectable()
 export class ChatbotService {
   private readonly logger = new Logger(ChatbotService.name);
@@ -454,7 +615,7 @@ export class ChatbotService {
           {
             name: TOOL_BROWSE_CATEGORY,
             description:
-              'Tra cứu danh sách các sản phẩm đang bán theo Danh mục sản phẩm (Category). Dùng khi khách hỏi trong danh mục X có những sản phẩm nào, hoặc nhóm hàng X gồm những mặt hàng nào.',
+              'Tra cứu danh sách các sản phẩm đang bán theo Danh mục sản phẩm (Category), Kho hàng, hoặc lọc theo khoảng giá minPrice/maxPrice. Dùng khi khách hỏi trong danh mục X có những sản phẩm nào, kho TP.HCM/Hà Nội/Đà Nẵng có gì, hoặc tìm sản phẩm theo mức giá (ví dụ: dưới 20 triệu, từ 5tr đến 10tr).',
             parameters: {
               type: Type.OBJECT,
               properties: {
@@ -462,6 +623,19 @@ export class ChatbotService {
                   type: Type.STRING,
                   description:
                     'Tên hoặc từ khóa danh mục (ví dụ: "thiết bị đeo thông minh", "điện thoại", "âm thanh", "laptop", "phụ kiện").',
+                },
+                warehouse: {
+                  type: Type.STRING,
+                  description:
+                    'Tên kho hoặc khu vực cần tra cứu tồn kho (ví dụ: "TP.HCM", "Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Miền Bắc", "Miền Trung", "Miền Nam").',
+                },
+                minPrice: {
+                  type: Type.NUMBER,
+                  description: 'Giá tối thiểu (VND).',
+                },
+                maxPrice: {
+                  type: Type.NUMBER,
+                  description: 'Giá tối đa (VND).',
                 },
                 limit: {
                   type: Type.INTEGER,
@@ -686,7 +860,10 @@ export class ChatbotService {
       }
     }
 
-    // 2. Kiểm tra ý định tra cứu sản phẩm theo Danh mục (browseCategory)
+    // 2. Kiểm tra ý định tra cứu sản phẩm theo Danh mục, Kho hàng hoặc Lọc theo Giá (browseCategory)
+    const priceFilter = parsePriceRange(normalized);
+    const warehouseFilter = parseWarehouseFilter(normalized);
+
     const categoryKeywords = [
       {
         key: 'Thiết bị đeo thông minh',
@@ -738,10 +915,34 @@ export class ChatbotService {
           /chuột/i,
         ],
       },
+      {
+        key: 'Gia dụng thông minh',
+        patterns: [
+          /gia\s*dụng/i,
+          /robot\s*hút\s*bụi/i,
+          /máy\s*lọc\s*không\s*khí/i,
+          /nồi\s*chiên/i,
+        ],
+      },
+      {
+        key: 'Màn hình & Máy chiếu',
+        patterns: [/màn\s*hình/i, /máy\s*chiếu/i, /monitor/i, /projector/i],
+      },
+      {
+        key: 'Thiết bị lưu trữ',
+        patterns: [
+          /lưu\s*trữ/i,
+          /ổ\s*cứng/i,
+          /\bssd\b/i,
+          /\bhdd\b/i,
+          /thẻ\s*nhớ/i,
+          /\busb\b/i,
+        ],
+      },
     ];
 
     const isListingCategoryIntent =
-      /(gồm\s*(những)?\s*sản\s*phẩm\s*nào|có\s*(những)?\s*sản\s*phẩm\s*nào|có\s*(những)?\s*mặt\s*hàng\s*nào|bán\s*(những)?\s*(sản\s*phẩm|mặt\s*hàng)\s*nào|danh\s*mục|danh\s*sách\s*(sản\s*phẩm|mặt\s*hàng)|những\s*món\s*nào|những\s*gì|mặt\s*hàng\s*nào)/i.test(
+      /(gồm\s*(những)?\s*sản\s*phẩm\s*nào|có\s*(những)?\s*sản\s*phẩm\s*nào|có\s*(những)?\s*mặt\s*hàng\s*nào|bán\s*(những)?\s*(sản\s*phẩm|mặt\s*hàng)\s*nào|danh\s*mục|danh\s*sách\s*(sản\s*phẩm|mặt\s*hàng)|những\s*món\s*nào|những\s*gì|mặt\s*hàng\s*nào|còn\s*(những)?\s*(mặt\s*hàng|sản\s*phẩm)\s*nào|sản\s*phẩm\s*nào|có\s*gì|bán\s*gì)/i.test(
         normalized,
       );
 
@@ -749,47 +950,106 @@ export class ChatbotService {
       c.patterns.some((p) => p.test(normalized)),
     );
 
-    // Nếu người dùng hỏi liệt kê sản phẩm của danh mục hoặc hỏi trực tiếp danh mục
-    if (
-      matchedCategory &&
-      (isListingCategoryIntent ||
-        !normalized.match(/model\s*\d+|\bsku-\d+\b/i))
-    ) {
+    const isCatalogOrFilterQuery =
+      Boolean(priceFilter) ||
+      Boolean(warehouseFilter) ||
+      (matchedCategory &&
+        (isListingCategoryIntent ||
+          !normalized.match(/model\s*\d+|\bsku-\d+\b/i)));
+
+    // Không xử lý browseCategory nếu người dùng đang hỏi đích danh 1 mã sản phẩm cụ thể (ví dụ SKU-00128, Model 128) mà không phải lọc theo giá
+    const isSpecificProductQuery =
+      /\b(sku-\d+)\b/i.test(normalized) ||
+      (/\bmodel\s*\d+\b/i.test(normalized) && !priceFilter);
+
+    if (isCatalogOrFilterQuery && !isSpecificProductQuery) {
+      const browseInput: Record<string, unknown> = {
+        limit: 5,
+        ...(matchedCategory ? { categoryName: matchedCategory.key } : {}),
+        ...(warehouseFilter ? { warehouse: warehouseFilter.warehouse } : {}),
+        ...(priceFilter?.minPrice !== undefined
+          ? { minPrice: priceFilter.minPrice }
+          : {}),
+        ...(priceFilter?.maxPrice !== undefined
+          ? { maxPrice: priceFilter.maxPrice }
+          : {}),
+      };
+
       const browseRes = await this.toolsService.execute(
         TOOL_BROWSE_CATEGORY,
-        { categoryName: matchedCategory.key, limit: 5 },
+        browseInput,
         toolCtx,
       );
 
-      if (browseRes && browseRes.ok) {
+      if (browseRes && typeof browseRes === 'object') {
         toolCalls.push({
           name: TOOL_BROWSE_CATEGORY,
-          input: { categoryName: matchedCategory.key },
-          ok: true,
+          input: browseInput,
+          ok: browseRes.ok,
+          ...(browseRes.ok ? {} : { error: browseRes.error }),
         });
+
+        if (!browseRes.ok) {
+          return {
+            replyText:
+              browseRes.message ||
+              'Dạ, hiện chưa tìm thấy sản phẩm nào phù hợp với yêu cầu trên hệ thống.',
+            isFallback: false,
+            toolCalls,
+          };
+        }
 
         const catData = browseRes.data as {
           categoryName: string;
+          warehouseName?: string;
+          warehouseRegion?: string;
           totalProductsFound: number;
           products: Array<{
             name: string;
             sku: string;
             formattedPrice: string;
             totalAvailable: number;
+            warehouseAvailable?: number;
             status: string;
+            categoryName?: string;
           }>;
         };
 
         const itemsText = catData.products
-          .map(
-            (p) =>
-              `• **${p.name}** (Mã SKU: \`${p.sku}\`): Giá **${p.formattedPrice}** — Trạng thái: **${p.status}** (Khả dụng: **${p.totalAvailable}** sản phẩm)`,
-          )
+          .map((p) => {
+            const availText =
+              p.warehouseAvailable !== undefined
+                ? `Tại kho: **${p.warehouseAvailable}** (Toàn quốc: **${p.totalAvailable}**)`
+                : `Khả dụng: **${p.totalAvailable}** sản phẩm`;
+            return `• **${p.name}** (Mã SKU: \`${p.sku}\`): Giá **${p.formattedPrice}** — Trạng thái: **${p.status}** (${availText})`;
+          })
           .join('\n');
+
+        let headerText = 'Dạ, ';
+        if (catData.warehouseName) {
+          headerText += `tại **${catData.warehouseName}**`;
+          if (matchedCategory) {
+            headerText += ` trong danh mục **${catData.categoryName}**`;
+          }
+          if (priceFilter) {
+            headerText += ` với mức giá **${priceFilter.label}**`;
+          }
+          headerText += `, hệ thống MultiMart hiện đang sẵn có các mặt hàng sau:`;
+        } else if (matchedCategory) {
+          headerText += `trong danh mục **${catData.categoryName}**`;
+          if (priceFilter) {
+            headerText += ` với mức giá **${priceFilter.label}**`;
+          }
+          headerText += `, hệ thống MultiMart hiện có các sản phẩm tiêu biểu sau:`;
+        } else if (priceFilter) {
+          headerText += `hệ thống MultiMart hiện có các sản phẩm với mức giá **${priceFilter.label}** sau:`;
+        } else {
+          headerText += `hệ thống MultiMart hiện có các sản phẩm sau:`;
+        }
 
         return {
           replyText:
-            `Dạ, trong danh mục **${catData.categoryName}**, hệ thống MultiMart hiện có các sản phẩm tiêu biểu sau:\n\n` +
+            `${headerText}\n\n` +
             itemsText +
             `\n\nQuý khách quan tâm sản phẩm nào có thể nhắn em tên hoặc mã SKU để em kiểm tra chi tiết lượng tồn kho từng khu vực nhé!`,
           isFallback: false,

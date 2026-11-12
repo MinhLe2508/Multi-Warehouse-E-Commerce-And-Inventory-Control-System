@@ -365,6 +365,23 @@ export class ChatbotToolsService {
 
     const limit = this.clampInt(input.limit, 1, 10, 5);
 
+    const minPrice =
+      typeof input.minPrice === 'number'
+        ? input.minPrice
+        : typeof input.minPrice === 'string' && !isNaN(Number(input.minPrice))
+          ? Number(input.minPrice)
+          : undefined;
+
+    const maxPrice =
+      typeof input.maxPrice === 'number'
+        ? input.maxPrice
+        : typeof input.maxPrice === 'string' && !isNaN(Number(input.maxPrice))
+          ? Number(input.maxPrice)
+          : undefined;
+
+    const rawWarehouse =
+      typeof input.warehouse === 'string' ? input.warehouse.trim() : undefined;
+
     // Chuẩn hóa tìm danh mục
     let category = null;
     if (rawCategory) {
@@ -398,6 +415,52 @@ export class ChatbotToolsService {
       }
     }
 
+    // Chuẩn hóa tìm kho
+    let matchedWarehouse: { id: string; name: string; region: string } | null =
+      null;
+    if (rawWarehouse) {
+      const normWh = rawWarehouse.toLowerCase();
+      let regionFilter: string | undefined = undefined;
+      let nameFilter: string | undefined = undefined;
+
+      if (/hcm|hồ\s*chí\s*minh|sài\s*gòn|miền\s*nam/i.test(normWh)) {
+        regionFilter = 'Miền Nam';
+        nameFilter = 'Hồ Chí Minh';
+      } else if (/hà\s*nội|hn|miền\s*bắc/i.test(normWh)) {
+        regionFilter = 'Miền Bắc';
+        nameFilter = 'Hà Nội';
+      } else if (/đà\s*nẵng|dn|miền\s*trung/i.test(normWh)) {
+        regionFilter = 'Miền Trung';
+        nameFilter = 'Đà Nẵng';
+      }
+
+      matchedWarehouse = await this.prisma.warehouse.findFirst({
+        where: {
+          isActive: true,
+          OR: [
+            ...(regionFilter ? [{ region: regionFilter }] : []),
+            ...(nameFilter
+              ? [
+                  {
+                    name: {
+                      contains: nameFilter,
+                      mode: 'insensitive' as Prisma.QueryMode,
+                    },
+                  },
+                ]
+              : []),
+            {
+              name: {
+                contains: rawWarehouse,
+                mode: 'insensitive',
+              },
+            },
+          ],
+        },
+        select: { id: true, name: true, region: true },
+      });
+    }
+
     const whereProduct: Prisma.ProductWhereInput = {
       isActive: true,
     };
@@ -410,10 +473,36 @@ export class ChatbotToolsService {
       ];
     }
 
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      whereProduct.basePrice = {};
+      if (minPrice !== undefined) {
+        whereProduct.basePrice.gte = minPrice;
+      }
+      if (maxPrice !== undefined) {
+        whereProduct.basePrice.lte = maxPrice;
+      }
+    }
+
+    if (matchedWarehouse) {
+      whereProduct.inventory = {
+        some: {
+          warehouseId: matchedWarehouse.id,
+          availableStock: { gt: 0 },
+        },
+      };
+    }
+
+    const orderByCondition: Prisma.ProductOrderByWithRelationInput =
+      maxPrice !== undefined
+        ? { basePrice: 'desc' }
+        : minPrice !== undefined
+          ? { basePrice: 'asc' }
+          : { name: 'asc' };
+
     const products = await this.prisma.product.findMany({
       where: whereProduct,
       take: limit,
-      orderBy: { name: 'asc' },
+      orderBy: orderByCondition,
       select: {
         id: true,
         sku: true,
@@ -423,15 +512,31 @@ export class ChatbotToolsService {
         category: { select: { name: true } },
         inventory: {
           where: { warehouse: { isActive: true } },
-          select: { availableStock: true },
+          select: {
+            availableStock: true,
+            warehouseId: true,
+            warehouse: {
+              select: { id: true, name: true, region: true },
+            },
+          },
         },
       },
     });
 
     if (products.length === 0) {
+      let desc = '';
+      if (category) desc += `trong danh mục "${category.name}" `;
+      if (matchedWarehouse) desc += `tại "${matchedWarehouse.name}" `;
+      if (minPrice !== undefined && maxPrice !== undefined) {
+        desc += `trong tầm giá từ ${new Intl.NumberFormat('vi-VN').format(minPrice)} đ đến ${new Intl.NumberFormat('vi-VN').format(maxPrice)} đ`;
+      } else if (maxPrice !== undefined) {
+        desc += `có giá dưới ${new Intl.NumberFormat('vi-VN').format(maxPrice)} đ`;
+      } else if (minPrice !== undefined) {
+        desc += `có giá từ ${new Intl.NumberFormat('vi-VN').format(minPrice)} đ trở lên`;
+      }
       return this.fail(
         'NOT_FOUND',
-        `Không tìm thấy sản phẩm nào trong danh mục "${rawCategory}".`,
+        `Dạ, hiện chưa tìm thấy sản phẩm nào ${desc || (rawCategory ? `phù hợp với yêu cầu "${rawCategory}"` : 'phù hợp')} trên hệ thống ạ.`,
       );
     }
 
@@ -441,22 +546,35 @@ export class ChatbotToolsService {
         categoryName: category
           ? category.name
           : rawCategory || 'Tất cả danh mục',
+        warehouseName: matchedWarehouse ? matchedWarehouse.name : undefined,
+        warehouseRegion: matchedWarehouse ? matchedWarehouse.region : undefined,
         totalProductsFound: products.length,
         products: products.map((p) => {
           const totalAvailable = p.inventory.reduce(
             (sum, inv) => sum + inv.availableStock,
             0,
           );
+          const whInv = matchedWarehouse
+            ? p.inventory.find(
+                (inv) => inv.warehouseId === matchedWarehouse?.id,
+              )
+            : null;
+          const warehouseAvailable = whInv
+            ? whInv.availableStock
+            : totalAvailable;
           const price = Number(p.basePrice);
           return {
             name: p.name,
             sku: p.sku,
             basePrice: price,
-            formattedPrice:
-              new Intl.NumberFormat('vi-VN').format(price) + ' đ',
+            formattedPrice: new Intl.NumberFormat('vi-VN').format(price) + ' đ',
             discountPercent: Number(p.discountPercent),
             totalAvailable,
-            status: totalAvailable > 0 ? 'Còn hàng' : 'Tạm hết hàng',
+            warehouseAvailable,
+            status:
+              (matchedWarehouse ? warehouseAvailable : totalAvailable) > 0
+                ? 'Còn hàng'
+                : 'Tạm hết hàng',
             categoryName: p.category?.name ?? 'Khác',
           };
         }),

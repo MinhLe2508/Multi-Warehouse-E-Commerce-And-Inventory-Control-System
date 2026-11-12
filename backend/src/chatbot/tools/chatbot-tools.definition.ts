@@ -81,15 +81,31 @@ export const CHATBOT_TOOLS: Anthropic.Tool[] = [
   {
     name: TOOL_BROWSE_CATEGORY,
     description:
-      'Tra cứu danh sách các mặt hàng/sản phẩm đang bán theo Danh mục sản phẩm (Category), ' +
-      'ví dụ: "Thiết bị đeo thông minh", "Điện thoại & Máy tính bảng", "Laptop & Máy tính", "Âm thanh", "Phụ kiện công nghệ". ' +
-      'Dùng khi khách hỏi trong một danh mục có những sản phẩm nào, nhóm hàng này bán những gì, hoặc muốn xem danh mục sản phẩm.',
+      'Tra cứu danh sách các mặt hàng/sản phẩm đang bán theo Danh mục sản phẩm (Category), KHO HÀNG, hoặc LỌC THEO KHOẢNG GIÁ. ' +
+      'Ví dụ: "Thiết bị đeo thông minh", "kho TP.HCM còn những mặt hàng nào", "kho Hà Nội còn gì", "sản phẩm có giá dưới 20 triệu", "laptop dưới 15tr", "tai nghe từ 500k đến 2 triệu". ' +
+      'Hỗ trợ kết hợp: categoryName, warehouse (tên kho/khu vực: TP.HCM, Hà Nội, Đà Nẵng, Miền Bắc, Miền Trung, Miền Nam), minPrice, maxPrice.',
     input_schema: {
       type: 'object',
       properties: {
         categoryName: {
           type: 'string',
-          description: 'Tên hoặc từ khóa danh mục (ví dụ: "thiết bị đeo thông minh", "điện thoại", "âm thanh", "laptop", "phụ kiện").',
+          description:
+            'Tên hoặc từ khóa danh mục (ví dụ: "thiết bị đeo thông minh", "điện thoại", "âm thanh", "laptop", "phụ kiện").',
+        },
+        warehouse: {
+          type: 'string',
+          description:
+            'Tên kho hoặc khu vực cần tra cứu tồn kho (ví dụ: "TP.HCM", "Hà Nội", "Đà Nẵng", "Miền Bắc", "Miền Trung", "Miền Nam").',
+        },
+        minPrice: {
+          type: 'number',
+          description:
+            'Giá tối thiểu tính bằng VND (ví dụ: 5000000 cho 5 triệu).',
+        },
+        maxPrice: {
+          type: 'number',
+          description:
+            'Giá tối đa tính bằng VND (ví dụ: 20000000 cho 20 triệu).',
         },
         limit: {
           type: 'integer',
