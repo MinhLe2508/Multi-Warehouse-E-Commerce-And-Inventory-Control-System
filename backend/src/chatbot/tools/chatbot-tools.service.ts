@@ -24,6 +24,7 @@ import {
   CHATBOT_TOOL_NAMES,
   ChatbotToolName,
   LOOKUP_ORDER_MAX_LIMIT,
+  TOOL_BROWSE_CATEGORY,
   TOOL_CHECK_INVENTORY,
   TOOL_LOOKUP_ORDER,
 } from './chatbot-tools.definition';
@@ -94,6 +95,8 @@ export class ChatbotToolsService {
           return await this.lookupOrder(input, ctx);
         case TOOL_CHECK_INVENTORY:
           return await this.checkInventory(input, ctx);
+        case TOOL_BROWSE_CATEGORY:
+          return await this.browseCategory(input, ctx);
         default:
           return this.fail('UNKNOWN_TOOL', `Tool "${name}" không được hỗ trợ.`);
       }
@@ -341,6 +344,122 @@ export class ChatbotToolsService {
           lowStockThreshold: r.threshold,
           level: r.level,
         })),
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // browseCategory(categoryName, limit)
+  // ---------------------------------------------------------------------------
+  async browseCategory(
+    input: Record<string, unknown>,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _ctx: ToolExecutionContext,
+  ): Promise<ToolResult> {
+    const rawCategory =
+      typeof input.categoryName === 'string'
+        ? input.categoryName.trim()
+        : typeof input.keyword === 'string'
+          ? input.keyword.trim()
+          : '';
+
+    const limit = this.clampInt(input.limit, 1, 10, 5);
+
+    // Chuẩn hóa tìm danh mục
+    let category = null;
+    if (rawCategory) {
+      category = await this.prisma.category.findFirst({
+        where: {
+          isActive: true,
+          OR: [
+            { name: { contains: rawCategory, mode: 'insensitive' } },
+            {
+              slug: {
+                contains: rawCategory.toLowerCase().replace(/\s+/g, '-'),
+                mode: 'insensitive',
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    // Nếu không tìm thấy category cụ thể theo chuỗi, thử tìm từ khóa tách biệt (ví dụ "đeo", "thông minh", "điện thoại")
+    if (!category && rawCategory) {
+      const words = rawCategory.split(/\s+/).filter((w) => w.length >= 3);
+      for (const w of words) {
+        category = await this.prisma.category.findFirst({
+          where: {
+            isActive: true,
+            name: { contains: w, mode: 'insensitive' },
+          },
+        });
+        if (category) break;
+      }
+    }
+
+    const whereProduct: Prisma.ProductWhereInput = {
+      isActive: true,
+    };
+    if (category) {
+      whereProduct.categoryId = category.id;
+    } else if (rawCategory) {
+      whereProduct.OR = [
+        { name: { contains: rawCategory, mode: 'insensitive' } },
+        { description: { contains: rawCategory, mode: 'insensitive' } },
+      ];
+    }
+
+    const products = await this.prisma.product.findMany({
+      where: whereProduct,
+      take: limit,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        basePrice: true,
+        discountPercent: true,
+        category: { select: { name: true } },
+        inventory: {
+          where: { warehouse: { isActive: true } },
+          select: { availableStock: true },
+        },
+      },
+    });
+
+    if (products.length === 0) {
+      return this.fail(
+        'NOT_FOUND',
+        `Không tìm thấy sản phẩm nào trong danh mục "${rawCategory}".`,
+      );
+    }
+
+    return {
+      ok: true,
+      data: {
+        categoryName: category
+          ? category.name
+          : rawCategory || 'Tất cả danh mục',
+        totalProductsFound: products.length,
+        products: products.map((p) => {
+          const totalAvailable = p.inventory.reduce(
+            (sum, inv) => sum + inv.availableStock,
+            0,
+          );
+          const price = Number(p.basePrice);
+          return {
+            name: p.name,
+            sku: p.sku,
+            basePrice: price,
+            formattedPrice:
+              new Intl.NumberFormat('vi-VN').format(price) + ' đ',
+            discountPercent: Number(p.discountPercent),
+            totalAvailable,
+            status: totalAvailable > 0 ? 'Còn hàng' : 'Tạm hết hàng',
+            categoryName: p.category?.name ?? 'Khác',
+          };
+        }),
       },
     };
   }

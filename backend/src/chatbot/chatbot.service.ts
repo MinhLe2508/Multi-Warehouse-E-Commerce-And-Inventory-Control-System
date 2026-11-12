@@ -21,6 +21,7 @@ import {
   CHATBOT_TOOLS,
   TOOL_LOOKUP_ORDER,
   TOOL_CHECK_INVENTORY,
+  TOOL_BROWSE_CATEGORY,
 } from './tools/chatbot-tools.definition';
 import {
   ChatbotToolsService,
@@ -450,6 +451,25 @@ export class ChatbotService {
               },
             },
           },
+          {
+            name: TOOL_BROWSE_CATEGORY,
+            description:
+              'Tra cứu danh sách các sản phẩm đang bán theo Danh mục sản phẩm (Category). Dùng khi khách hỏi trong danh mục X có những sản phẩm nào, hoặc nhóm hàng X gồm những mặt hàng nào.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                categoryName: {
+                  type: Type.STRING,
+                  description:
+                    'Tên hoặc từ khóa danh mục (ví dụ: "thiết bị đeo thông minh", "điện thoại", "âm thanh", "laptop", "phụ kiện").',
+                },
+                limit: {
+                  type: Type.INTEGER,
+                  description: 'Số lượng sản phẩm cần lấy (1-10, mặc định 5).',
+                },
+              },
+            },
+          },
         ],
       },
     ];
@@ -666,7 +686,119 @@ export class ChatbotService {
       }
     }
 
-    // 2. Kiểm tra ý định tra cứu tồn kho sản phẩm (STT 27 - checkInventory)
+    // 2. Kiểm tra ý định tra cứu sản phẩm theo Danh mục (browseCategory)
+    const categoryKeywords = [
+      {
+        key: 'Thiết bị đeo thông minh',
+        patterns: [
+          /thiết\s*bị\s*đeo/i,
+          /đeo\s*thông\s*minh/i,
+          /đồng\s*hồ\s*thông\s*minh/i,
+          /vòng\s*đeo\s*tay/i,
+          /smart\s*watch/i,
+        ],
+      },
+      {
+        key: 'Điện thoại & Máy tính bảng',
+        patterns: [
+          /điện\s*thoại/i,
+          /smartphone/i,
+          /máy\s*tính\s*bảng/i,
+          /tablet/i,
+          /ipad/i,
+        ],
+      },
+      {
+        key: 'Laptop & Máy tính',
+        patterns: [
+          /laptop/i,
+          /máy\s*tính\s*xách\s*tay/i,
+          /máy\s*vi\s*tính/i,
+          /máy\s*tính\s*để\s*bàn/i,
+          /\bpc\b/i,
+        ],
+      },
+      {
+        key: 'Âm thanh',
+        patterns: [
+          /âm\s*thanh/i,
+          /loa/i,
+          /tai\s*nghe/i,
+          /headphone/i,
+          /earphone/i,
+        ],
+      },
+      {
+        key: 'Phụ kiện công nghệ',
+        patterns: [
+          /phụ\s*kiện/i,
+          /cáp\s*sạc/i,
+          /sạc\s*dự\s*phòng/i,
+          /bàn\s*phím/i,
+          /chuột/i,
+        ],
+      },
+    ];
+
+    const isListingCategoryIntent =
+      /(gồm\s*(những)?\s*sản\s*phẩm\s*nào|có\s*(những)?\s*sản\s*phẩm\s*nào|có\s*(những)?\s*mặt\s*hàng\s*nào|bán\s*(những)?\s*(sản\s*phẩm|mặt\s*hàng)\s*nào|danh\s*mục|danh\s*sách\s*(sản\s*phẩm|mặt\s*hàng)|những\s*món\s*nào|những\s*gì|mặt\s*hàng\s*nào)/i.test(
+        normalized,
+      );
+
+    const matchedCategory = categoryKeywords.find((c) =>
+      c.patterns.some((p) => p.test(normalized)),
+    );
+
+    // Nếu người dùng hỏi liệt kê sản phẩm của danh mục hoặc hỏi trực tiếp danh mục
+    if (
+      matchedCategory &&
+      (isListingCategoryIntent ||
+        !normalized.match(/model\s*\d+|\bsku-\d+\b/i))
+    ) {
+      const browseRes = await this.toolsService.execute(
+        TOOL_BROWSE_CATEGORY,
+        { categoryName: matchedCategory.key, limit: 5 },
+        toolCtx,
+      );
+
+      if (browseRes && browseRes.ok) {
+        toolCalls.push({
+          name: TOOL_BROWSE_CATEGORY,
+          input: { categoryName: matchedCategory.key },
+          ok: true,
+        });
+
+        const catData = browseRes.data as {
+          categoryName: string;
+          totalProductsFound: number;
+          products: Array<{
+            name: string;
+            sku: string;
+            formattedPrice: string;
+            totalAvailable: number;
+            status: string;
+          }>;
+        };
+
+        const itemsText = catData.products
+          .map(
+            (p) =>
+              `• **${p.name}** (Mã SKU: \`${p.sku}\`): Giá **${p.formattedPrice}** — Trạng thái: **${p.status}** (Khả dụng: **${p.totalAvailable}** sản phẩm)`,
+          )
+          .join('\n');
+
+        return {
+          replyText:
+            `Dạ, trong danh mục **${catData.categoryName}**, hệ thống MultiMart hiện có các sản phẩm tiêu biểu sau:\n\n` +
+            itemsText +
+            `\n\nQuý khách quan tâm sản phẩm nào có thể nhắn em tên hoặc mã SKU để em kiểm tra chi tiết lượng tồn kho từng khu vực nhé!`,
+          isFallback: false,
+          toolCalls,
+        };
+      }
+    }
+
+    // 3. Kiểm tra ý định tra cứu tồn kho sản phẩm (STT 27 - checkInventory)
     const hasStockKeyword =
       /(còn\s*hàng|hết\s*hàng|tồn\s*kho|có\s*hàng|kiểm\s*tra\s*kho|\bsku-\d+\b|còn\s*không|trong\s*kho)/i.test(
         normalized,
