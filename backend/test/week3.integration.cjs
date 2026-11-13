@@ -120,7 +120,7 @@ test('cleanup against real PostgreSQL with project constraints and triggers', as
           stock_after: 10,
           reserved_before: 5,
           reserved_after: 2,
-          quantity_delta: -3,
+          quantity_delta: 0,
         },
       ]);
       const states = (
