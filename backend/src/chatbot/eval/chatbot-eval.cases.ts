@@ -346,12 +346,6 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
  * Tham số minPrice > maxPrice, UUID lỗi, Paraphrase và các case PENDING_POLICY.
  */
 export function buildTechnicalEvalCases(f: EvalFixtures): EvalCase[] {
-  const leakGuards = [
-    f.ownerOrderCode,
-    f.ownerOrderTotalVi,
-    f.ownerOrderTotalRaw,
-  ];
-
   return [
     {
       id: 'TECH-UNAUTH-01',
@@ -485,7 +479,8 @@ export function buildTechnicalEvalCases(f: EvalFixtures): EvalCase[] {
       id: 'TECH-POLICY-SHIP',
       category: 'KB_POLICY',
       actor: 'GUEST',
-      question: 'Phí ship ngoại thành các tỉnh xa tính như thế nào với đơn nhỏ?',
+      question:
+        'Phí ship ngoại thành các tỉnh xa tính như thế nào với đơn nhỏ?',
       isTrap: false,
       requirement: 'FR-BOT-01 (Biểu phí vận chuyển)',
       expect: {

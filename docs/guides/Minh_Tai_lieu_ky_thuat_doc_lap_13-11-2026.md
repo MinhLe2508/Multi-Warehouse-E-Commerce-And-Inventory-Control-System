@@ -125,3 +125,4 @@ sequenceDiagram
 | **Dọn dẹp giữ hàng hết hạn (Expiration Cleanup)** | Huy, Khang | Job hiện tại dọn dẹp từng reservation lẻ | Chờ Huy chuyển sang hết hạn toàn đơn hàng (F015-F016) để cập nhật kiểm tra nhất quán. |
 | **Chính sách COD & Biểu phí ship** | Trọng, Khang | Đang được đánh dấu `PENDING_POLICY` trong bộ eval cases | Cần người chốt nghiệp vụ cung cấp số liệu chính xác để cập nhật đáp án chuẩn. |
 | **Chạy kiểm thử tải trên Database chung** | Cả nhóm | Minh kiểm thử hoàn toàn trên unit test mock và dataset riêng | Khi nghiệm thu đợt cuối, cả nhóm cần dành riêng 1 slot database độc lập để chạy toàn bộ 100 VUs thật và chụp ảnh dashboard. |
+

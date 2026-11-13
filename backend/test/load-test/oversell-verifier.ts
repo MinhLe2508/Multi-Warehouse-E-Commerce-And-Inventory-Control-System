@@ -235,9 +235,11 @@ function buildFinalResult(
   if (verdict === 'PASS') {
     summaryMessage = 'XÁC NHẬN NFR-04.1 (0 OVERSELL) THÀNH CÔNG 100%!';
   } else if (verdict === 'FAIL') {
-    summaryMessage = 'CẢNH BÁO: MỘT HOẶC NHIỀU TIÊU CHÍ NFR-04.1 CHƯA ĐẠT (FAIL)!';
+    summaryMessage =
+      'CẢNH BÁO: MỘT HOẶC NHIỀU TIÊU CHÍ NFR-04.1 CHƯA ĐẠT (FAIL)!';
   } else {
-    summaryMessage = 'LỖI: DỮ LIỆU ĐỐI SOÁT KHÔNG HỢP LỆ HOẶC THIẾU THÔNG TIN (INVALID)!';
+    summaryMessage =
+      'LỖI: DỮ LIỆU ĐỐI SOÁT KHÔNG HỢP LỆ HOẶC THIẾU THÔNG TIN (INVALID)!';
   }
 
   const markdownReport = generateMarkdownReport(checks, verdict, input);

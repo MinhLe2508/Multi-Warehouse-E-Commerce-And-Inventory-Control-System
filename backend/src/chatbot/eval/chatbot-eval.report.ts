@@ -77,9 +77,7 @@ export function renderMarkdownReport(
   lines.push(`- Thời điểm chạy: ${meta.startedAt.toISOString()}`);
   lines.push(`- Bộ sinh câu trả lời (LLM Provider): **${meta.provider}**`);
   if (meta.retrievalMode) {
-    lines.push(
-      `- Chế độ tìm kiếm (Retrieval Mode): **${meta.retrievalMode}**`,
-    );
+    lines.push(`- Chế độ tìm kiếm (Retrieval Mode): **${meta.retrievalMode}**`);
   }
   lines.push(
     `- Kho tri thức: ${meta.kbEmbedded}/${meta.kbChunks} chunk đã có embedding`,

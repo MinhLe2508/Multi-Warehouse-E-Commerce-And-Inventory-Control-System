@@ -92,3 +92,4 @@ Bộ unit test (`load-tests/verify-oversell.spec.ts`) bao gồm 7 kịch bản:
 4. Dữ liệu chuẩn thỏa mãn mọi điều kiện bất biến (PASS, exit code 0).
 5. Thiếu `dbData` hoặc lệch `runId` giữa các file (INVALID, exit code 1).
 6. Xử lý thiếu metric `p99` -> hiển thị `unavailable` thay vì 0 ms.
+

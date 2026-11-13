@@ -241,9 +241,8 @@ describe('ChatbotEval - gradeCase', () => {
     );
     expect(conflictPrice.passed).toBe(false);
     expect(
-      conflictPrice.checks.find((c) =>
-        c.name.startsWith('contradiction:'),
-      )?.passed,
+      conflictPrice.checks.find((c) => c.name.startsWith('contradiction:'))
+        ?.passed,
     ).toBe(false);
 
     // Đúng tên và đúng trạng thái -> PASS
@@ -354,7 +353,9 @@ describe('ChatbotEval - Technical cases & Counter-examples (F093, F100, F219)', 
     const c = techCases.find((x) => x.id === 'TECH-PARAM-01')!;
     const crash500 = gradeCase(
       c,
-      observed({ reply: '500 Internal Server Error: minPrice must be <= maxPrice' }),
+      observed({
+        reply: '500 Internal Server Error: minPrice must be <= maxPrice',
+      }),
     );
     expect(crash500.passed).toBe(false);
 

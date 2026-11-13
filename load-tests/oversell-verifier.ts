@@ -392,3 +392,4 @@ ${verdictConclusion}
 - **Mã thoát (Exit Code)**: \`${verdict === 'PASS' ? 0 : 1}\`
 `;
 }
+
