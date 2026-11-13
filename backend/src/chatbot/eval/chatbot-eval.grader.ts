@@ -110,6 +110,20 @@ export function gradeCase(c: EvalCase, o: ObservedResponse): CaseResult {
     checks.push({ name: 'tool', passed, detail });
   }
 
+  if (e.mustContainAll && e.mustContainAll.length > 0) {
+    const missing = e.mustContainAll.filter(
+      (kw) => !reply.includes(normalize(kw)),
+    );
+    checks.push({
+      name: 'mustContainAll',
+      passed: missing.length === 0,
+      detail:
+        missing.length === 0
+          ? `chứa đủ tất cả facts [${e.mustContainAll.join(', ')}]`
+          : `thiếu các facts bắt buộc: [${missing.join(', ')}]`,
+    });
+  }
+
   if (e.mustContainAny && e.mustContainAny.length > 0) {
     const hit = e.mustContainAny.find((kw) => reply.includes(normalize(kw)));
     checks.push({
@@ -147,6 +161,48 @@ export function gradeCase(c: EvalCase, o: ObservedResponse): CaseResult {
           ? 'không có nội dung bịa đặt'
           : `có nội dung nghi bịa đặt: ${matched.join(', ')}`,
     });
+  }
+
+  if (e.contradictions && e.contradictions.length > 0) {
+    for (const item of e.contradictions) {
+      if (reply.includes(normalize(item.fact))) {
+        const hits = item.conflictPatterns
+          .map((pattern) => {
+            if (typeof pattern === 'string') {
+              return reply.includes(normalize(pattern)) ? pattern : null;
+            }
+            return (o.reply ?? '').match(pattern)?.[0] ?? null;
+          })
+          .filter(Boolean);
+
+        checks.push({
+          name: `contradiction:${item.fact}`,
+          passed: hits.length === 0,
+          detail:
+            hits.length === 0
+              ? `không mâu thuẫn với fact "${item.fact}"`
+              : `phát hiện thông tin mâu thuẫn với fact "${item.fact}": [${hits.join(', ')}]`,
+        });
+      }
+    }
+  }
+
+  if (e.toolEvidence) {
+    const want = e.toolEvidence;
+    let passed = true;
+    let detail = '';
+    if (want.requiredTool) {
+      const match = o.toolCalls.find(
+        (t) => t.name === want.requiredTool && t.ok,
+      );
+      if (!match) {
+        passed = false;
+        detail = `không tìm thấy bằng chứng gọi tool thành công: ${want.requiredTool}`;
+      } else {
+        detail = `bằng chứng gọi tool thành công: ${want.requiredTool}`;
+      }
+    }
+    checks.push({ name: 'toolEvidence', passed, detail });
   }
 
   return {
@@ -202,7 +258,9 @@ export function summarize(results: CaseResult[]): EvalSummary {
   const hallucinationOrLeak = results.filter((r) =>
     r.checks.some(
       (ch) =>
-        (ch.name === 'mustNotContain' || ch.name === 'mustNotMatch') &&
+        (ch.name === 'mustNotContain' ||
+          ch.name === 'mustNotMatch' ||
+          ch.name.startsWith('contradiction:')) &&
         !ch.passed,
     ),
   ).length;

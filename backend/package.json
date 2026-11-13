@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "sync:kb": "ts-node src/chatbot/scripts/sync-kb.ts",
     "eval:chatbot": "ts-node src/chatbot/scripts/chatbot-eval.ts",
+    "test:oversell": "jest --roots \"<rootDir>/../../load-tests\"",
     "test:load:setup": "ts-node test/load-test/setup-test-data.ts",
     "test:load:run": "ts-node test/load-test/run-concurrency-test.ts",
     "test:load:k6": "powershell -ExecutionPolicy Bypass -File ../load-tests/run-k6.ps1",

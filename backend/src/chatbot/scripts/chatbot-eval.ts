@@ -40,7 +40,11 @@ import {
   gradeCase,
   summarize,
 } from '../eval/chatbot-eval.grader';
-import { renderMarkdownReport, verdict } from '../eval/chatbot-eval.report';
+import {
+  renderJsonReport,
+  renderMarkdownReport,
+  verdict,
+} from '../eval/chatbot-eval.report';
 
 /**
  * ChatbotEval (STT 34) — chạy bộ câu hỏi mẫu qua ChatbotService thật
@@ -239,12 +243,16 @@ async function bootstrap() {
 
     // ---- 3. Tổng hợp & xuất báo cáo --------------------------------------
     const summary = summarize(results);
-    const markdown = renderMarkdownReport(results, summary, {
+    const runId = `eval-${Date.now()}-${randomBytes(3).toString('hex')}`;
+    const reportMeta = {
+      runId,
       startedAt,
       provider,
       kbChunks: kbStats.totalChunks,
       kbEmbedded: kbStats.embeddedChunks,
-    });
+    };
+    const markdown = renderMarkdownReport(results, summary, reportMeta);
+    const jsonOutput = renderJsonReport(results, summary, reportMeta);
 
     fs.mkdirSync(opts.outDir, { recursive: true });
     const stamp = startedAt.toISOString().replace(/[:.]/g, '-');
@@ -252,29 +260,8 @@ async function bootstrap() {
     const jsonPath = path.join(opts.outDir, `chatbot-eval-${stamp}.json`);
     fs.writeFileSync(mdPath, markdown, 'utf8');
     fs.writeFileSync(path.join(opts.outDir, 'latest.md'), markdown, 'utf8');
-    fs.writeFileSync(
-      jsonPath,
-      JSON.stringify(
-        {
-          startedAt,
-          provider,
-          summary,
-          results: results.map((r) => ({
-            id: r.case.id,
-            category: r.case.category,
-            actor: r.case.actor,
-            isTrap: r.case.isTrap,
-            question: r.case.question,
-            passed: r.passed,
-            checks: r.checks,
-            observed: r.observed,
-          })),
-        },
-        null,
-        2,
-      ),
-      'utf8',
-    );
+    fs.writeFileSync(jsonPath, jsonOutput, 'utf8');
+    fs.writeFileSync(path.join(opts.outDir, 'latest.json'), jsonOutput, 'utf8');
 
     const v = verdict(summary);
     const overall = Object.values(v).every(Boolean);

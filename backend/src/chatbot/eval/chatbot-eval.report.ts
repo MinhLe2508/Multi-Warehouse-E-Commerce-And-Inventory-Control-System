@@ -9,6 +9,10 @@ export interface ReportMeta {
   provider: string;
   kbChunks: number;
   kbEmbedded: number;
+  runId?: string;
+  gitCommit?: string;
+  datasetVersion?: string;
+  retrievalMode?: 'KEYWORD' | 'VECTOR' | 'HYBRID' | 'LOCAL_MOCK';
 }
 
 // Ngưỡng đạt của bài đánh giá (có thể điều chỉnh theo yêu cầu đề tài)
@@ -22,13 +26,27 @@ export const PASS_THRESHOLDS = {
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const mark = (ok: boolean) => (ok ? '✅ Đạt' : '❌ Chưa đạt');
-const cell = (s: string) =>
+export const cell = (s: string) =>
   s
     .replace(/\|/g, '\\|')
     .replace(/\r?\n+/g, ' ')
     .trim();
 const truncate = (s: string, n: number) =>
   s.length > n ? `${s.slice(0, n - 1)}…` : s;
+
+export function redactSecrets(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [REDACTED]')
+    .replace(
+      /(eyJ[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,})/g,
+      '[JWT_REDACTED]',
+    )
+    .replace(
+      /(password|secret|apikey|api_key)\s*[:=]\s*["']?[^"'\s,]+["']?/gi,
+      '$1=[REDACTED]',
+    );
+}
 
 export function verdict(s: EvalSummary) {
   return {
@@ -52,8 +70,17 @@ export function renderMarkdownReport(
 
   lines.push('# Báo cáo đánh giá Chatbot RAG (STT 34 — ChatbotEval)');
   lines.push('');
+  if (meta.runId) lines.push(`- **Run ID**: \`${meta.runId}\``);
+  if (meta.gitCommit) lines.push(`- **Git Commit SHA**: \`${meta.gitCommit}\``);
+  if (meta.datasetVersion)
+    lines.push(`- **Phiên bản Dataset**: \`${meta.datasetVersion}\``);
   lines.push(`- Thời điểm chạy: ${meta.startedAt.toISOString()}`);
-  lines.push(`- Bộ sinh câu trả lời: **${meta.provider}**`);
+  lines.push(`- Bộ sinh câu trả lời (LLM Provider): **${meta.provider}**`);
+  if (meta.retrievalMode) {
+    lines.push(
+      `- Chế độ tìm kiếm (Retrieval Mode): **${meta.retrievalMode}**`,
+    );
+  }
   lines.push(
     `- Kho tri thức: ${meta.kbEmbedded}/${meta.kbChunks} chunk đã có embedding`,
   );
@@ -168,4 +195,52 @@ export function renderMarkdownReport(
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Xuất dữ liệu đánh giá dạng JSON có cấu trúc phục vụ lưu trữ song song và phân tích tự động (F092, F102, F104).
+ */
+export function renderJsonReport(
+  results: CaseResult[],
+  s: EvalSummary,
+  meta: ReportMeta,
+): string {
+  const sanitizedCases = results.map((r) => ({
+    id: r.case.id,
+    category: r.case.category,
+    actor: r.case.actor,
+    question: r.case.question,
+    isTrap: r.case.isTrap,
+    requirement: r.case.requirement,
+    status: r.case.status ?? 'ACTIVE',
+    passed: r.passed,
+    observed: {
+      reply: redactSecrets(r.observed.reply),
+      isFallback: r.observed.isFallback,
+      escalatedToHuman: r.observed.escalatedToHuman,
+      toolCalls: r.observed.toolCalls,
+      latencyMs: r.observed.latencyMs,
+      retrievedTitles: r.observed.retrievedTitles,
+      error: r.observed.error,
+    },
+    checks: r.checks,
+  }));
+
+  const payload = {
+    metadata: {
+      runId: meta.runId ?? 'run-local-unknown',
+      gitCommit: meta.gitCommit ?? 'unknown',
+      datasetVersion: meta.datasetVersion ?? '1.0.0',
+      startedAt: meta.startedAt.toISOString(),
+      provider: meta.provider,
+      retrievalMode: meta.retrievalMode ?? 'AUTO',
+      kbChunks: meta.kbChunks,
+      kbEmbedded: meta.kbEmbedded,
+    },
+    summary: s,
+    verdict: verdict(s),
+    cases: sanitizedCases,
+  };
+
+  return JSON.stringify(payload, null, 2);
 }

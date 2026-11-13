@@ -67,7 +67,75 @@ describe('RetrievalService', () => {
     expect(result.documents).toHaveLength(2);
     expect(result.documents[0].title).toBe('Chính sách hoàn tiền');
     expect(result.documents[0].similarity).toBe(0.88);
-    expect(result.hasHighConfidence).toBe(true); // 0.88 >= 0.75
+    expect(result.hasHighConfidence).toBe(true); // 0.88 >= 0.58
+  });
+
+  it('trả về mảng rỗng và hasHighConfidence=false khi cơ sở dữ liệu không có tài liệu nào', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
+
+    const result = await service.searchKnowledgeBase('Chính sách chưa từng có');
+    expect(result.documents).toHaveLength(0);
+    expect(result.hasHighConfidence).toBe(false);
+  });
+
+  it('lọc bỏ các tài liệu có độ tương đồng dưới minSimilarity', async () => {
+    const mockRows = [
+      {
+        id: 'doc-1',
+        title: 'Chính sách bảo hành',
+        docType: 'POLICY',
+        chunkIndex: 0,
+        content: 'Bảo hành 12 tháng.',
+        sourceUrl: null,
+        similarity: 0.35, // Dưới minSimilarity mặc định 0.45
+      },
+    ];
+
+    prisma.$queryRaw.mockResolvedValueOnce(mockRows);
+
+    const result = await service.searchKnowledgeBase('Bảo hành');
+    expect(result.documents).toHaveLength(0);
+    expect(result.hasHighConfidence).toBe(false);
+  });
+
+  it('đánh dấu hasHighConfidence=false khi tài liệu đạt minSimilarity nhưng dưới HIGH_CONFIDENCE_THRESHOLD', async () => {
+    const mockRows = [
+      {
+        id: 'doc-1',
+        title: 'Giao hàng',
+        docType: 'SHIPPING',
+        chunkIndex: 0,
+        content: 'Giao hàng toàn quốc.',
+        sourceUrl: null,
+        similarity: 0.52, // >= 0.45 nhưng < 0.58 (HIGH_CONFIDENCE_THRESHOLD)
+      },
+    ];
+
+    prisma.$queryRaw.mockResolvedValueOnce(mockRows);
+
+    const result = await service.searchKnowledgeBase('Giao hàng');
+    expect(result.documents).toHaveLength(1);
+    expect(result.hasHighConfidence).toBe(false);
+  });
+
+  it('xử lý khi embedding provider bị lỗi (429 rate limit hoặc mất mạng) fallback êm dịu', async () => {
+    embeddingService.embedQuery.mockRejectedValueOnce(
+      new Error('Voyage AI 429 Too Many Requests'),
+    );
+
+    const result = await service.searchKnowledgeBase('Cách đổi trả hàng');
+    // Khi fallback keyword không tìm thấy dữ liệu mẫu, trả về documents rỗng an toàn, không ném exception
+    expect(result.documents).toHaveLength(0);
+    expect(result.hasHighConfidence).toBe(false);
+  });
+
+  it('truy vấn với tùy chọn docType truyền điều kiện lọc vào CSDL', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
+
+    await service.searchKnowledgeBase('Thời gian giao hàng', {
+      docType: 'SHIPPING',
+    });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('formatContextForPrompt hiển thị đầy đủ thông tin tài liệu', () => {
