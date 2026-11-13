@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    # Nhánh project cũng được kiểm tra sau khi push.
+    branches: [main, develop, project]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Kiểm tra ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [backend, frontend]
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài Node.js 24 và cache npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      - name: Cài dependencies đúng package-lock
+        run: npm ci --no-audit --no-fund
+
+      # Prisma Client phải được tạo trước khi TypeScript compile Backend.
+      - name: Sinh Prisma Client cho Backend
+        if: matrix.app == 'backend'
+        run: npx prisma generate
+        env:
+          # URL giả chỉ dùng cho bước generate; không kết nối database.
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      # Không dùng npm run lint của Backend vì script đó có --fix,
+      # có thể tự sửa file ngay trong CI thay vì chỉ kiểm tra.
+      - name: Kiểm tra ESLint Backend
+        if: matrix.app == 'backend'
+        run: npx eslint "src/**/*.ts"
+
+      - name: Kiểm tra ESLint Frontend
+        if: matrix.app == 'frontend'
+        run: npm run lint
+
+      - name: Chạy unit test Backend
+        if: matrix.app == 'backend'
+        run: npm test -- --ci --passWithNoTests --coverage --runInBand
+
+      - name: Build ứng dụng
+        run: npm run build
+
+  integration:
+    name: Kiểm tra tích hợp Docker
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài Node.js 24 để chạy Prisma CLI trên host
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Tạo cấu hình CI từ file mẫu
+        run: cp .env.example .env
+
+      - name: Xác thực cú pháp Docker Compose và các biến môi trường
+        run: docker compose --profile full config --quiet
+
+      # Chỉ chạy database trước. Backend chưa được chạy ở bước này, vì /health cần bảng/extension do Prisma migrations tạo ra.
+      - name: Khởi động PostgreSQL và Redis
+        run: docker compose up -d postgres redis --wait --wait-timeout 120
+
+      # backend/Dockerfile dùng npm prune --omit=dev, nên Prisma CLI không có trong container production. Cài CLI trên runner để chạy migration.
+      - name: Cài Prisma CLI trên runner
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Áp dụng Prisma migrations lên PostgreSQL vừa tạo
+        working-directory: backend
+        # prisma.config.ts tự nạp .env ở thư mục gốc repository.
+        # DATABASE_URL trong file mẫu trỏ đến localhost:5433 của host.
+        run: npx prisma migrate deploy
+
+      - name: Xác nhận pgvector hoạt động sau migrations
+        run: |
+          docker compose exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U warehouse -d warehouse \
+            -c "SELECT '[1,2,3]'::vector;"
+
+      - name: Dựng và khởi động Backend cùng Frontend
+        run: docker compose --profile full up -d --build --wait --wait-timeout 180
+
+      - name: Kiểm tra API /health và giao diện Frontend
+        run: |
+          curl --fail --show-error --silent --retry 10 --retry-connrefused --retry-delay 3 \
+            http://localhost:3001/health
+          curl --fail --show-error --silent --retry 10 --retry-connrefused --retry-delay 3 \
+            http://localhost:3000
+          docker compose exec -T redis redis-cli ping
+
+      # Trên nhánh chưa tích hợp AdminApi, bỏ qua bài smoke test này.
+      # Sau khi staff.controller.ts được thêm, 401 chứng tỏ route được đăng ký và có JwtAuthGuard; 404 thường là chưa import AdminApiModule.
+      # Bài test này KHÔNG thay thế E2E test bằng Admin JWT thật.
+      - name: Kiểm tra route AdminApi có yêu cầu JWT
+        run: |
+          if [ -f backend/src/adminapi/staff.controller.ts ]; then
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              http://localhost:3001/admin/staff)"
+            echo "GET /admin/staff (không có JWT) -> HTTP ${status}"
+            test "${status}" = "401"
+          else
+            echo "Chưa có staff.controller.ts trên nhánh này; bỏ qua smoke test AdminApi."
+          fi
+
+      - name: In log khi tích hợp thất bại
+        if: failure()
+        run: docker compose --profile full logs --no-color
+
+      - name: Dọn container và volumes CI
+        if: always()
+        run: docker compose --profile full down -v --remove-orphans
