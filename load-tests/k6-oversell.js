@@ -5,14 +5,18 @@ import { Counter, Rate, Trend } from 'k6/metrics';
 // Nạp dữ liệu test đã chuẩn bị từ setup-test-data.ts
 const testData = JSON.parse(open('./test-data.json'));
 
-// Custom metrics để đo lường trực tiếp NFR-04.1 và NFR-01
+// Custom metrics để đo lường trực tiếp NFR-04.1 và NFR-01 (tách riêng độ trễ 201 và 409)
 export const ordersSuccess201 = new Counter('orders_success_201');
 export const ordersConflict409 = new Counter('orders_conflict_409');
 export const unexpectedErrors = new Counter('unexpected_errors');
 export const orderLatencyTrend = new Trend('order_api_duration', true);
+export const success201LatencyTrend = new Trend('order_201_duration_ms', true);
+export const conflict409LatencyTrend = new Trend('order_409_duration_ms', true);
 export const successRate = new Rate('order_success_rate');
 
 export const options = {
+  // Bắt buộc cấu hình summaryTrendStats để k6 tính toán và xuất đầy đủ p(50)/med, p(90), p(95), p(99) thật (F110)
+  summaryTrendStats: ['min', 'avg', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     oversell_spike_test: {
       executor: 'per-vu-iterations',
@@ -73,9 +77,11 @@ export default function () {
 
   if (is201) {
     ordersSuccess201.add(1);
+    success201LatencyTrend.add(duration);
     successRate.add(1);
   } else if (is409) {
     ordersConflict409.add(1);
+    conflict409LatencyTrend.add(duration);
     successRate.add(0);
   } else {
     unexpectedErrors.add(1);
@@ -89,36 +95,54 @@ export default function () {
   });
 }
 
+function extractTrendValues(metric) {
+  const vals = metric && metric.values ? metric.values : {};
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  return {
+    min: num(vals.min),
+    avg: num(vals.avg),
+    med: num(vals.med),
+    max: num(vals.max),
+    p90: num(vals['p(90)']),
+    p95: num(vals['p(95)']),
+    // Tuyệt đối không thay thế p99 bị thiếu bằng 0 (F110)
+    p99: num(vals['p(99)']),
+  };
+}
+
+function fmtMs(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? `${v.toFixed(1)} ms` : 'unavailable';
+}
+
 export function handleSummary(data) {
-  const reqDuration = data.metrics.http_req_duration ? data.metrics.http_req_duration.values : {};
+  const durationMs = extractTrendValues(data.metrics.http_req_duration);
+  const duration201Ms = extractTrendValues(data.metrics.order_201_duration_ms);
+  const duration409Ms = extractTrendValues(data.metrics.order_409_duration_ms);
   const s201 = data.metrics.orders_success_201 ? data.metrics.orders_success_201.values.count : 0;
   const c409 = data.metrics.orders_conflict_409 ? data.metrics.orders_conflict_409.values.count : 0;
   const errs = data.metrics.unexpected_errors ? data.metrics.unexpected_errors.values.count : 0;
   const total = s201 + c409 + errs;
 
   const summary = {
+    runId: (__ENV.LOAD_TEST_RUN_ID) || testData.runId || 'unknown-run',
+    gitCommit: (__ENV.GIT_COMMIT) || testData.gitCommit || 'unknown',
+    runner: 'k6',
     testDate: new Date().toISOString(),
     totalRequests: total,
     success201: s201,
     conflict409: c409,
     unexpectedErrors: errs,
     initialStock: testData.initialStock,
-    durationMs: {
-      min: reqDuration.min || 0,
-      avg: reqDuration.avg || 0,
-      med: reqDuration.med || 0,
-      max: reqDuration.max || 0,
-      p90: reqDuration['p(90)'] || 0,
-      p95: reqDuration['p(95)'] || 0,
-      p99: reqDuration['p(99)'] || 0,
-    },
-    rps: (data.metrics.http_reqs ? data.metrics.http_reqs.values.rate : 0),
+    durationMs,
+    duration201Ms,
+    duration409Ms,
+    rps: data.metrics.http_reqs ? data.metrics.http_reqs.values.rate : 0,
   };
 
   return {
     'stdout': `
 ============================================================
-🎯 K6 CONCURRENCY OVERSELL LOAD TEST SUMMARY
+🎯 K6 CONCURRENCY OVERSELL LOAD TEST SUMMARY (RunId: ${summary.runId})
 ============================================================
 Total VUs / Requests:      ${total}
 Success Orders (HTTP 201): ${s201} (Expected: ${testData.initialStock})
@@ -126,14 +150,14 @@ Conflict Rejections (409): ${c409} (Expected: ${testData.totalVUs - testData.ini
 Unexpected Errors (500):   ${errs} (Expected: 0)
 ------------------------------------------------------------
 NFR-04.1 (Zero Oversell):  ${s201 === testData.initialStock && errs === 0 ? 'PASSED ✅' : 'FAILED ❌'}
-NFR-01 Latency Metrics:
-  - Min: ${reqDuration.min ? reqDuration.min.toFixed(1) : 0} ms
-  - Avg: ${reqDuration.avg ? reqDuration.avg.toFixed(1) : 0} ms
-  - Med: ${reqDuration.med ? reqDuration.med.toFixed(1) : 0} ms
-  - p90: ${reqDuration['p(90)'] ? reqDuration['p(90)'].toFixed(1) : 0} ms
-  - p95: ${reqDuration['p(95)'] ? reqDuration['p(95)'].toFixed(1) : 0} ms
-  - p99: ${reqDuration['p(99)'] ? reqDuration['p(99)'].toFixed(1) : 0} ms
-  - Max: ${reqDuration.max ? reqDuration.max.toFixed(1) : 0} ms
+NFR-01 Latency Metrics (Overall):
+  - Min: ${fmtMs(durationMs.min)}
+  - Avg: ${fmtMs(durationMs.avg)}
+  - Med: ${fmtMs(durationMs.med)}
+  - p90: ${fmtMs(durationMs.p90)}
+  - p95: ${fmtMs(durationMs.p95)}
+  - p99: ${fmtMs(durationMs.p99)}
+  - Max: ${fmtMs(durationMs.max)}
 ============================================================
 `,
     '/scripts/load-test-summary.json': JSON.stringify(summary, null, 2),

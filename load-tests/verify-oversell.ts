@@ -11,15 +11,23 @@
  * 7. Xuất báo cáo markdown hoàn chỉnh vào `backend/reports/NFR-04.1-NFR-01-OVERSELL-REPORT.md`.
  */
 
-import dotenv from 'dotenv';
-import path from 'node:path';
-import fs from 'node:fs';
+import dotenv from "dotenv";
+import path from "node:path";
+import fs from "node:fs";
+
+const backendNodeModules = path.resolve(__dirname, "../backend/node_modules");
+if (fs.existsSync(backendNodeModules)) {
+  module.paths.unshift(backendNodeModules);
+  if (require.main) {
+    require.main.paths.unshift(backendNodeModules);
+  }
+}
 
 const envCandidates = [
-  path.resolve(process.cwd(), '../.env'),
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '../../../../.env'),
-  path.resolve(__dirname, '../../../.env'),
+  path.resolve(process.cwd(), "../.env"),
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(__dirname, "../../../../.env"),
+  path.resolve(__dirname, "../../../.env"),
 ];
 for (const envPath of envCandidates) {
   if (fs.existsSync(envPath)) {
@@ -34,10 +42,14 @@ for (const envPath of envCandidates) {
   return this.toString();
 };
 
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../backend/src/app.module';
-import { PrismaService } from '../backend/src/prisma/prisma.service';
-import { evaluateOversell, MetricsSummary } from './oversell-verifier';
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "../backend/src/app.module";
+import { PrismaService } from "../backend/src/prisma/prisma.service";
+import {
+  evaluateOversell,
+  type MetricsSummaryPayload,
+  type DatabaseState,
+} from "./oversell-verifier";
 
 interface TestDataPayload {
   runId?: string;
@@ -48,17 +60,17 @@ interface TestDataPayload {
   totalVUs: number;
 }
 
-async function verifyOversell() {
-  console.log('====================================================');
-  console.log('🔍 [TASK 32] ĐỐI SOÁT CƠ SỞ DỮ LIỆU & KIỂM TRA NFR-04.1');
-  console.log('====================================================\n');
+export async function verifyOversell() {
+  console.log("====================================================");
+  console.log("🔍 [TASK 32] ĐỐI SOÁT CƠ SỞ DỮ LIỆU & KIỂM TRA NFR-04.1");
+  console.log("====================================================\n");
 
   // Đọc metadata từ test-data.json
   const candidatePaths = [
-    path.resolve(__dirname, '../../../load-tests/test-data.json'),
-    path.resolve(__dirname, 'test-data.json'),
+    path.resolve(__dirname, "test-data.json"),
+    path.resolve(__dirname, "../backend/test/load-test/test-data.json"),
   ];
-  let testDataPath = '';
+  let testDataPath = "";
   for (const p of candidatePaths) {
     if (fs.existsSync(p)) {
       testDataPath = p;
@@ -68,17 +80,17 @@ async function verifyOversell() {
 
   if (!testDataPath) {
     throw new Error(
-      'Không tìm thấy file test-data.json! Hãy chạy setup-test-data.ts trước.',
+      "Không tìm thấy file test-data.json! Hãy chạy setup-test-data.ts trước.",
     );
   }
 
   const testData = JSON.parse(
-    fs.readFileSync(testDataPath, 'utf-8'),
+    fs.readFileSync(testDataPath, "utf-8"),
   ) as TestDataPayload;
   const { productId, initialStock, totalVUs } = testData;
 
   const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn'],
+    logger: ["error", "warn"],
   });
   const prisma = app.get(PrismaService);
 
@@ -99,7 +111,7 @@ async function verifyOversell() {
     const currentReservedStock = inventory.reservedStock;
     const availableStock = currentStock - currentReservedStock;
 
-    console.log('1. TRẠNG THÁI TỒN KHO HIỆN TẠI TRONG DATABASE:');
+    console.log("1. TRẠNG THÁI TỒN KHO HIỆN TẠI TRONG DATABASE:");
     console.log(`   - Tổng tồn kho (stock): ${currentStock}`);
     console.log(`   - Đang giữ chỗ (reserved_stock): ${currentReservedStock}`);
     console.log(
@@ -121,10 +133,10 @@ async function verifyOversell() {
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
     });
 
-    console.log('\n2. SỐ LƯỢNG ĐƠN HÀNG ĐƯỢC TẠO THÀNH CÔNG:');
+    console.log("\n2. SỐ LƯỢNG ĐƠN HÀNG ĐƯỢC TẠO THÀNH CÔNG:");
     console.log(`   - Tổng số order_items: ${orderItems.length}`);
     const distinctOrders = [
       ...new Set(orderItems.map((item) => item.order.id)),
@@ -148,14 +160,14 @@ async function verifyOversell() {
     });
 
     const holdingReservations = reservations.filter(
-      (r) => r.status === 'HOLDING',
+      (r) => r.status === "HOLDING",
     );
     const totalHoldingQuantity = holdingReservations.reduce(
       (sum, r) => sum + r.quantity,
       0,
     );
 
-    console.log('\n3. BẢNG STOCK_RESERVATIONS:');
+    console.log("\n3. BẢNG STOCK_RESERVATIONS:");
     console.log(`   - Tổng số bản ghi giữ chỗ: ${reservations.length}`);
     console.log(
       `   - Bản ghi trạng thái HOLDING: ${holdingReservations.length}`,
@@ -165,31 +177,32 @@ async function verifyOversell() {
     );
 
     // 4. Thu thập dbData và metricsSummary để đánh giá chuẩn xác
-    const dbData = {
+    const dbData: DatabaseState = {
       currentStock,
       currentReservedStock,
       availableStock,
-      distinctOrderCount: distinctOrders.length,
+      distinctOrdersCount: distinctOrders.length,
       totalSoldQuantity,
-      holdingReservationCount: holdingReservations.length,
+      holdingReservationsCount: holdingReservations.length,
       totalHoldingQuantity,
-      deadlockCount: 0,
-      runId: testData.runId,
     };
 
     // Đọc số liệu k6/concurrency metrics nếu có
-    let metricsSummary: MetricsSummary = {};
+    let metricsSummary: MetricsSummaryPayload | null = null;
 
     const summaryCandidates = [
-      path.resolve(__dirname, '../../../load-tests/load-test-summary.json'),
-      path.resolve(__dirname, 'load-test-summary.json'),
+      path.resolve(__dirname, "load-test-summary.json"),
+      path.resolve(
+        __dirname,
+        "../backend/test/load-test/load-test-summary.json",
+      ),
     ];
     for (const sp of summaryCandidates) {
       if (fs.existsSync(sp)) {
         try {
           metricsSummary = JSON.parse(
-            fs.readFileSync(sp, 'utf-8'),
-          ) as MetricsSummary;
+            fs.readFileSync(sp, "utf-8"),
+          ) as MetricsSummaryPayload;
           break;
         } catch {
           // ignore parse error
@@ -211,48 +224,50 @@ async function verifyOversell() {
       metricsSummary,
     });
 
-    console.log('\n4. ĐÁNH GIÁ CÁC TIÊU CHÍ NFR-04.1 (ZERO OVERSELL):');
+    console.log("\n4. ĐÁNH GIÁ CÁC TIÊU CHÍ NFR-04.1 (ZERO OVERSELL):");
     for (const chk of evaluation.checks) {
       console.log(
-        `   [${chk.passed ? 'PASS ✅' : 'FAIL ❌'}] ${chk.name}: ${chk.actual} (Kỳ vọng: ${chk.expected})`,
+        `   [${chk.status === "PASS" ? "PASS ✅" : "FAIL ❌"}] ${chk.name}: ${chk.observed} (Kỳ vọng: ${chk.expected})`,
       );
     }
 
     // 6. Xuất báo cáo Markdown NFR được sinh động (không bao giờ hardcode PASS khi có lỗi)
-    const reportDir = path.resolve(__dirname, '../backend/reports');
+    const reportDir = path.resolve(__dirname, "../backend/reports");
     if (!fs.existsSync(reportDir)) {
       fs.mkdirSync(reportDir, { recursive: true });
     }
 
     const reportPath = path.join(
       reportDir,
-      'NFR-04.1-NFR-01-OVERSELL-REPORT.md',
+      "NFR-04.1-NFR-01-OVERSELL-REPORT.md",
     );
 
-    fs.writeFileSync(reportPath, evaluation.markdownReport, 'utf-8');
+    fs.writeFileSync(reportPath, evaluation.markdownReport, "utf-8");
     console.log(`\n📄 ĐÃ XUẤT BÁO CÁO KỸ THUẬT: ${reportPath}`);
 
-    if (evaluation.verdict === 'PASS') {
-      console.log('\n🎉 ====================================================');
-      console.log('🎉 XÁC NHẬN NFR-04.1 (0 OVERSELL) THÀNH CÔNG 100%!');
-      console.log('🎉 ====================================================\n');
-    } else if (evaluation.verdict === 'INVALID') {
+    if (evaluation.verdict === "PASS") {
+      console.log("\n🎉 ====================================================");
+      console.log("🎉 XÁC NHẬN NFR-04.1 (0 OVERSELL) THÀNH CÔNG 100%!");
+      console.log("🎉 ====================================================\n");
+    } else if (evaluation.verdict === "INVALID") {
       console.error(
-        '\n⚠️ CẢNH BÁO: DỮ LIỆU KIỂM THỬ KHÔNG HỢP LỆ HOẶC THIẾU DỮ LIỆU HẬU KIỂM!',
+        "\n⚠️ CẢNH BÁO: DỮ LIỆU KIỂM THỬ KHÔNG HỢP LỆ HOẶC THIẾU DỮ LIỆU HẬU KIỂM!",
       );
       process.exit(evaluation.exitCode);
     } else {
       console.error(
-        '\n❌ CẢNH BÁO: MỘT HOẶC NHIỀU TIÊU CHÍ NFR-04.1 CHƯA ĐẠT!',
+        "\n❌ CẢNH BÁO: MỘT HOẶC NHIỀU TIÊU CHÍ NFR-04.1 CHƯA ĐẠT!",
       );
       process.exit(evaluation.exitCode);
     }
   } catch (error) {
-    console.error('❌ Lỗi khi đối soát dữ liệu:', error);
+    console.error("❌ Lỗi khi đối soát dữ liệu:", error);
     process.exit(1);
   } finally {
     await app.close();
   }
 }
 
-void verifyOversell();
+if (require.main === module) {
+  void verifyOversell();
+}

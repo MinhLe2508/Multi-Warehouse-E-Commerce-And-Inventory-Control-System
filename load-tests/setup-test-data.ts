@@ -10,15 +10,23 @@
  * 6. Xuất metadata ra `load-tests/test-data.json`.
  */
 
-import dotenv from 'dotenv';
-import path from 'node:path';
-import fs from 'node:fs';
+import dotenv from "dotenv";
+import path from "node:path";
+import fs from "node:fs";
+
+const backendNodeModules = path.resolve(__dirname, "../backend/node_modules");
+if (fs.existsSync(backendNodeModules)) {
+  module.paths.unshift(backendNodeModules);
+  if (require.main) {
+    require.main.paths.unshift(backendNodeModules);
+  }
+}
 
 const envCandidates = [
-  path.resolve(process.cwd(), '../.env'),
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '../../../../.env'),
-  path.resolve(__dirname, '../../../.env'),
+  path.resolve(process.cwd(), "../.env"),
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(__dirname, "../../../../.env"),
+  path.resolve(__dirname, "../../../.env"),
 ];
 for (const envPath of envCandidates) {
   if (fs.existsSync(envPath)) {
@@ -33,36 +41,71 @@ for (const envPath of envCandidates) {
   return this.toString();
 };
 
-import { NestFactory } from '@nestjs/core';
-import { UserRole } from '@prisma/client';
-import { AppModule } from '../../src/app.module';
-import { PrismaService } from '../../src/prisma/prisma.service';
-import { JwtService } from '@nestjs/jwt';
+import { NestFactory } from "@nestjs/core";
+import { execSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { AppModule } from "../backend/src/app.module";
+import { PrismaService } from "../backend/src/prisma/prisma.service";
+import { JwtService } from "@nestjs/jwt";
 
-export const TEST_SKU = 'SKU-LOADTEST-OVERSELL';
+const UserRole = {
+  CUSTOMER: "CUSTOMER",
+  WAREHOUSE_STAFF: "WAREHOUSE_STAFF",
+  ADMIN: "ADMIN",
+} as const;
+
+export const TEST_SKU = "SKU-LOADTEST-OVERSELL";
 export const INITIAL_STOCK = 10;
 export const TOTAL_CUSTOMERS = 100;
+export const RESERVATION_TTL_MINUTES = 15;
 
-async function setupTestData() {
-  console.log('====================================================');
-  console.log('🚀 [TASK 32] KHỞI TẠO DỮ LIỆU KIỂM THỬ TRANH MUA CONCURRENCY');
-  console.log('====================================================\n');
+function resolveGitCommit(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return process.env.GIT_COMMIT || "unknown";
+  }
+}
+
+export async function setupTestData() {
+  console.log("====================================================");
+  console.log("🚀 [TASK 32] KHỞI TẠO DỮ LIỆU KIỂM THỬ TRANH MUA CONCURRENCY");
+  console.log("====================================================\n");
+
+  // Chặn nhầm môi trường production thực tế (F208)
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.ALLOW_LOAD_TEST_SETUP !== "true"
+  ) {
+    throw new Error(
+      "Từ chối chạy setup-test-data trên NODE_ENV=production khi chưa bật ALLOW_LOAD_TEST_SETUP=true.",
+    );
+  }
+
+  const runId =
+    process.env.LOAD_TEST_RUN_ID?.trim() ||
+    `run_${Date.now()}_${randomBytes(3).toString("hex")}`;
+  const gitCommit = resolveGitCommit();
 
   const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn'],
+    logger: ["error", "warn"],
   });
 
   const prisma = app.get(PrismaService);
   const jwtAccessSecret = process.env.JWT_ACCESS_SECRET;
   if (!jwtAccessSecret) {
-    throw new Error('JWT_ACCESS_SECRET is not set in .env');
+    throw new Error("JWT_ACCESS_SECRET is not set in .env");
   }
   const jwtService = new JwtService({ secret: jwtAccessSecret });
 
   try {
     // 1. Kiểm tra kho hàng active
     let warehouse = await prisma.warehouse.findFirst({
-      where: { code: 'WH-HN01', isActive: true },
+      where: { code: "WH-HN01", isActive: true },
     });
     if (!warehouse) {
       warehouse = await prisma.warehouse.findFirst({
@@ -70,7 +113,7 @@ async function setupTestData() {
       });
     }
     if (!warehouse) {
-      throw new Error('Không tìm thấy kho hàng active nào trong hệ thống!');
+      throw new Error("Không tìm thấy kho hàng active nào trong hệ thống!");
     }
     console.log(
       `📦 Kho hàng được chọn: ${warehouse.name} (${warehouse.code}) - Vùng: ${warehouse.region}`,
@@ -83,8 +126,8 @@ async function setupTestData() {
     if (!category) {
       category = await prisma.category.create({
         data: {
-          name: 'Danh mục Test Concurrency',
-          slug: 'danh-muc-test-concurrency',
+          name: "Danh mục Test Concurrency",
+          slug: "danh-muc-test-concurrency",
           isActive: true,
         },
       });
@@ -99,8 +142,8 @@ async function setupTestData() {
       product = await prisma.product.create({
         data: {
           sku: TEST_SKU,
-          name: 'Sản phẩm Test Concurrency Oversell (10 tồn kho)',
-          slug: 'san-pham-test-concurrency-oversell',
+          name: "Sản phẩm Test Concurrency Oversell (10 tồn kho)",
+          slug: "san-pham-test-concurrency-oversell",
           categoryId: category.id,
           basePrice: 100000,
           discountPercent: 0,
@@ -122,40 +165,57 @@ async function setupTestData() {
       }
     }
 
-    // 4. Dọn dẹp các đơn hàng & reservation cũ của sản phẩm này
+    // 4. Dọn dẹp nguyên tử các đơn hàng & reservation test cũ (chỉ xóa đơn chỉ chứa sản phẩm test SKU-LOADTEST-OVERSELL)
     const existingOrderItems = await prisma.orderItem.findMany({
       where: { productId: product.id },
       select: { orderId: true, id: true },
     });
 
     if (existingOrderItems.length > 0) {
-      const orderIds = [
+      const candidateOrderIds = [
         ...new Set(
           existingOrderItems.map(
             (item: { orderId: string; id: string }) => item.orderId,
           ),
         ),
       ];
-      const orderItemIds = existingOrderItems.map(
-        (item: { orderId: string; id: string }) => item.id,
+      // Không xóa đơn hàng thật nếu đơn đó có chứa sản phẩm khác ngoài TEST_SKU (F208)
+      const mixedOrderItems = await prisma.orderItem.findMany({
+        where: {
+          orderId: { in: candidateOrderIds },
+          productId: { not: product.id },
+        },
+        select: { orderId: true },
+      });
+      const mixedOrderIds = new Set(mixedOrderItems.map((m) => m.orderId));
+      const pureTestOrderIds = candidateOrderIds.filter(
+        (id) => !mixedOrderIds.has(id),
       );
-      console.log(
-        `🧹 Dọn dẹp ${orderIds.length} đơn hàng test cũ liên quan tới sản phẩm...`,
-      );
+      const pureTestOrderItemIds = existingOrderItems
+        .filter((item) => pureTestOrderIds.includes(item.orderId))
+        .map((item) => item.id);
 
-      await prisma.stockReservation.deleteMany({
-        where: { orderItemId: { in: orderItemIds } },
-      });
-      await prisma.orderStatusHistory.deleteMany({
-        where: { orderId: { in: orderIds } },
-      });
-      await prisma.orderItem.deleteMany({
-        where: { orderId: { in: orderIds } },
-      });
-      await prisma.order.deleteMany({
-        where: { id: { in: orderIds } },
-      });
-      console.log('✅ Đã xóa sạch dữ liệu đơn hàng cũ.');
+      if (pureTestOrderIds.length > 0) {
+        console.log(
+          `🧹 Dọn dẹp ${pureTestOrderIds.length} đơn hàng test cũ của sản phẩm ${TEST_SKU}...`,
+        );
+
+        await prisma.$transaction(async (tx) => {
+          await tx.stockReservation.deleteMany({
+            where: { orderItemId: { in: pureTestOrderItemIds } },
+          });
+          await tx.orderStatusHistory.deleteMany({
+            where: { orderId: { in: pureTestOrderIds } },
+          });
+          await tx.orderItem.deleteMany({
+            where: { orderId: { in: pureTestOrderIds } },
+          });
+          await tx.order.deleteMany({
+            where: { id: { in: pureTestOrderIds } },
+          });
+        });
+        console.log("✅ Đã xóa sạch dữ liệu đơn hàng test cũ.");
+      }
     }
 
     // 5. Khởi tạo / Reset tồn kho: stock = INITIAL_STOCK (10), reserved_stock = 0
@@ -187,7 +247,7 @@ async function setupTestData() {
         email: true,
         fullName: true,
       },
-      orderBy: { email: 'asc' },
+      orderBy: { email: "asc" },
     });
 
     if (customers.length < TOTAL_CUSTOMERS) {
@@ -203,9 +263,9 @@ async function setupTestData() {
             email,
             username: `k6_cust_${Date.now()}_${i}`,
             passwordHash:
-              '$2b$10$xyzFakeHashForK6LoadTestingPurposeOnly1234567890',
+              "$2b$10$xyzFakeHashForK6LoadTestingPurposeOnly1234567890",
             fullName: `K6 Customer Test ${i}`,
-            phone: `0999${String(i).padStart(6, '0')}`,
+            phone: `0999${String(i).padStart(6, "0")}`,
             role: UserRole.CUSTOMER,
             isActive: true,
             mustChangePassword: false,
@@ -231,9 +291,9 @@ async function setupTestData() {
         ) => {
           const payload = {
             sub: user.id,
-            type: 'access',
+            type: "access",
           };
-          const token = jwtService.sign(payload, { expiresIn: '2h' });
+          const token = jwtService.sign(payload, { expiresIn: "2h" });
           return {
             vuIndex: idx + 1,
             userId: user.id,
@@ -246,6 +306,8 @@ async function setupTestData() {
 
     // 8. Xuất file test-data.json ra thư mục load-tests
     const testDataOutput = {
+      runId,
+      gitCommit,
       createdAt: new Date().toISOString(),
       productId: product.id,
       productSku: product.sku,
@@ -255,42 +317,46 @@ async function setupTestData() {
       inventoryId: inventory.id.toString(),
       initialStock: INITIAL_STOCK,
       totalVUs: TOTAL_CUSTOMERS,
-      targetEndpoint: '/orders',
-      localApiUrl: 'http://127.0.0.1:3001',
-      dockerApiUrl: 'http://host.docker.internal:3001',
+      ttlMinutes: RESERVATION_TTL_MINUTES,
+      targetEndpoint: "/orders",
+      localApiUrl: "http://127.0.0.1:3001",
+      dockerApiUrl: "http://host.docker.internal:3001",
       users: userTokens,
     };
 
     const targetDirs = [
-      path.resolve(__dirname, '../../../load-tests'),
-      path.resolve(__dirname, '../load-test'),
+      path.resolve(__dirname),
+      path.resolve(__dirname, "../backend/test/load-test"),
     ];
 
     for (const dir of targetDirs) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      const outPath = path.join(dir, 'test-data.json');
+      const outPath = path.join(dir, "test-data.json");
       fs.writeFileSync(
         outPath,
         JSON.stringify(testDataOutput, null, 2),
-        'utf-8',
+        "utf-8",
       );
       console.log(`💾 Đã lưu cấu hình dữ liệu test vào: ${outPath}`);
     }
 
-    console.log('\n====================================================');
-    console.log('✅ KHỞI TẠO TEST DATA HOÀN TẤT!');
+    console.log("\n====================================================");
+    console.log("✅ KHỞI TẠO TEST DATA HOÀN TẤT!");
+    console.log(`- Run ID: ${runId} (commit: ${gitCommit})`);
     console.log(`- Sản phẩm: ${product.name} (ID: ${product.id})`);
     console.log(`- Kho: ${warehouse.code} | Stock ban đầu = ${INITIAL_STOCK}`);
     console.log(`- Tổng số người dùng giả lập (VUs): ${userTokens.length}`);
-    console.log('====================================================\n');
+    console.log("====================================================\n");
   } catch (error) {
-    console.error('❌ Lỗi khi khởi tạo test data:', error);
+    console.error("❌ Lỗi khi khởi tạo test data:", error);
     process.exit(1);
   } finally {
     await app.close();
   }
 }
 
-void setupTestData();
+if (require.main === module) {
+  void setupTestData();
+}

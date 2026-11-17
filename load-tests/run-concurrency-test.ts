@@ -4,9 +4,9 @@
  * Đo trực tiếp NFR-04.1 (Zero Oversell) và NFR-01 (Độ trễ API).
  */
 
-import path from 'node:path';
-import fs from 'node:fs';
-import { performance } from 'node:perf_hooks';
+import path from "node:path";
+import fs from "node:fs";
+import { performance } from "node:perf_hooks";
 
 interface TestUser {
   vuIndex: number;
@@ -17,6 +17,8 @@ interface TestUser {
 }
 
 interface TestData {
+  runId?: string;
+  gitCommit?: string;
   productId: string;
   productSku: string;
   productName: string;
@@ -36,22 +38,46 @@ interface RequestResult {
   data?: unknown;
 }
 
-function calculatePercentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
+function calculatePercentile(sorted: number[], p: number): number | undefined {
+  if (sorted.length === 0) return undefined;
   const index = Math.ceil((p / 100) * sorted.length) - 1;
   return sorted[Math.max(0, Math.min(index, sorted.length - 1))];
 }
 
-async function runConcurrencyTest() {
-  console.log('============================================================');
-  console.log('⚡ [TASK 32] CHẠY LOAD TEST TRANH MUA ĐỒNG THỜI (100 VUs)');
-  console.log('============================================================\n');
+function summarizeDurations(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 0) {
+    return {
+      min: undefined,
+      avg: undefined,
+      med: undefined,
+      max: undefined,
+      p90: undefined,
+      p95: undefined,
+      p99: undefined,
+    };
+  }
+  return {
+    min: sorted[0],
+    avg: sorted.reduce((s, d) => s + d, 0) / sorted.length,
+    med: calculatePercentile(sorted, 50),
+    max: sorted[sorted.length - 1],
+    p90: calculatePercentile(sorted, 90),
+    p95: calculatePercentile(sorted, 95),
+    p99: calculatePercentile(sorted, 99),
+  };
+}
+
+export async function runConcurrencyTest() {
+  console.log("============================================================");
+  console.log("⚡ [TASK 32] CHẠY NODE SMOKE CONCURRENCY RUNNER (100 VUs)");
+  console.log("============================================================\n");
 
   const candidatePaths = [
-    path.resolve(__dirname, '../../../load-tests/test-data.json'),
-    path.resolve(__dirname, 'test-data.json'),
+    path.resolve(__dirname, "../../../load-tests/test-data.json"),
+    path.resolve(__dirname, "test-data.json"),
   ];
-  let testDataPath = '';
+  let testDataPath = "";
   for (const p of candidatePaths) {
     if (fs.existsSync(p)) {
       testDataPath = p;
@@ -61,14 +87,16 @@ async function runConcurrencyTest() {
 
   if (!testDataPath) {
     console.error(
-      '❌ Không tìm thấy test-data.json! Hãy chạy setup-test-data.ts trước.',
+      "❌ Không tìm thấy test-data.json! Hãy chạy setup-test-data.ts trước.",
     );
     process.exit(1);
   }
 
-  const testData = JSON.parse(fs.readFileSync(testDataPath, 'utf-8')) as TestData;
+  const testData = JSON.parse(
+    fs.readFileSync(testDataPath, "utf-8"),
+  ) as TestData;
   const apiUrl =
-    process.env.BASE_URL || testData.localApiUrl || 'http://127.0.0.1:3001';
+    process.env.BASE_URL || testData.localApiUrl || "http://127.0.0.1:3001";
   const targetUrl = `${apiUrl}${testData.targetEndpoint}`;
 
   console.log(`🎯 Mục tiêu API:    ${targetUrl}`);
@@ -80,7 +108,7 @@ async function runConcurrencyTest() {
     `👥 Số VUs tranh mua: ${testData.users.length} tài khoản đồng thời\n`,
   );
 
-  console.log('⏳ Đang phát lệnh bắn 100 requests đồng thời...');
+  console.log("⏳ Đang phát lệnh bắn 100 requests đồng thời...");
 
   const overallStartTime = performance.now();
 
@@ -94,17 +122,17 @@ async function runConcurrencyTest() {
           },
         ],
         shippingRecipient: user.fullName,
-        shippingPhone: '0912345678',
+        shippingPhone: "0912345678",
         shippingAddress: `Địa chỉ nhận hàng khách ${user.vuIndex}, Hà Nội`,
-        shippingRegion: testData.warehouseRegion || 'Miền Bắc',
+        shippingRegion: testData.warehouseRegion || "Miền Bắc",
       };
 
       const start = performance.now();
       try {
         const response = await fetch(targetUrl, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             Authorization: `Bearer ${user.token}`,
           },
           body: JSON.stringify(payload),
@@ -146,25 +174,41 @@ async function runConcurrencyTest() {
     (r) => r.status !== 201 && r.status !== 409,
   ).length;
 
-  const durations = results.map((r) => r.durationMs).sort((a, b) => a - b);
-  const minLatency = durations[0] || 0;
-  const maxLatency = durations[durations.length - 1] || 0;
-  const avgLatency =
-    durations.reduce((sum, d) => sum + d, 0) / (durations.length || 1);
-  const medLatency = calculatePercentile(durations, 50);
-  const p90Latency = calculatePercentile(durations, 90);
-  const p95Latency = calculatePercentile(durations, 95);
-  const p99Latency = calculatePercentile(durations, 99);
+  if (unexpectedErrors > 0) {
+    const errorDetails = results
+      .filter((r) => r.status !== 201 && r.status !== 409)
+      .slice(0, 5)
+      .map((r) => `[HTTP ${r.status}] ${JSON.stringify(r.data || r.error)}`);
+    console.log("Chi tiết lỗi bất thường (mẫu 5 requests):", errorDetails);
+  }
+
+  const durationMs = summarizeDurations(results.map((r) => r.durationMs));
+  const duration201Ms = summarizeDurations(
+    results.filter((r) => r.status === 201).map((r) => r.durationMs),
+  );
+  const duration409Ms = summarizeDurations(
+    results.filter((r) => r.status === 409).map((r) => r.durationMs),
+  );
+  const minLatency = durationMs.min ?? 0;
+  const maxLatency = durationMs.max ?? 0;
+  const avgLatency = durationMs.avg ?? 0;
+  const medLatency = durationMs.med ?? 0;
+  const p90Latency = durationMs.p90 ?? 0;
+  const p95Latency = durationMs.p95 ?? 0;
+  const p99Latency = durationMs.p99 ?? 0;
 
   const rps = (results.length / totalElapsedMs) * 1000;
 
-  console.log('\n============================================================');
-  console.log('📊 KẾT QUẢ ĐO LƯỜNG TRỰC TIẾP CONCURRENCY SPIKE TEST');
-  console.log('============================================================');
+  console.log("\n============================================================");
+  console.log(
+    `📊 KẾT QUẢ ĐO LƯỜNG CONCURRENCY SMOKE TEST (RunId: ${testData.runId ?? "unknown"})`,
+  );
+  console.log("============================================================");
+  console.log(`Runner:                        node-concurrency-smoke`);
   console.log(`Tổng số requests gửi đi:       ${results.length}`);
   console.log(`Tổng thời gian thực thi:       ${totalElapsedMs.toFixed(1)} ms`);
   console.log(`Throughput (RPS):              ${rps.toFixed(1)} req/s`);
-  console.log('------------------------------------------------------------');
+  console.log("------------------------------------------------------------");
   console.log(
     `Đơn hàng tạo thành công (201): ${success201} (Kỳ vọng: ${testData.initialStock})`,
   );
@@ -174,8 +218,8 @@ async function runConcurrencyTest() {
   console.log(
     `Lỗi hệ thống bất thường:       ${unexpectedErrors} (Kỳ vọng: 0)`,
   );
-  console.log('------------------------------------------------------------');
-  console.log('PHÂN BỐ ĐỘ TRỄ PHẢN HỒI (NFR-01):');
+  console.log("------------------------------------------------------------");
+  console.log("PHÂN BỐ ĐỘ TRỄ PHẢN HỒI (NFR-01):");
   console.log(`  - Min Latency:               ${minLatency.toFixed(1)} ms`);
   console.log(`  - Avg Latency:               ${avgLatency.toFixed(1)} ms`);
   console.log(`  - Median (p50):              ${medLatency.toFixed(1)} ms`);
@@ -183,18 +227,23 @@ async function runConcurrencyTest() {
   console.log(`  - p95 Latency:               ${p95Latency.toFixed(1)} ms`);
   console.log(`  - p99 Latency:               ${p99Latency.toFixed(1)} ms`);
   console.log(`  - Max Latency:               ${maxLatency.toFixed(1)} ms`);
-  console.log('============================================================');
+  console.log("============================================================");
 
   const zeroOversell =
-    success201 === testData.initialStock && unexpectedErrors === 0;
+    success201 === testData.initialStock &&
+    conflict409 === testData.totalVUs - testData.initialStock &&
+    unexpectedErrors === 0;
   console.log(
-    `\n🎯 ĐÁNH GIÁ NFR-04.1 (0 OVERSELL): ${zeroOversell ? 'PASSED ✅' : 'FAILED ❌'}`,
+    `\n🎯 ĐÁNH GIÁ HTTP SMOKE (Cần chạy thêm verify-oversell để hậu kiểm DB): ${zeroOversell ? "PASSED ✅" : "FAILED ❌"}`,
   );
   console.log(
-    `🎯 ĐÁNH GIÁ NFR-01 (ĐỘ TRỄ p95 < 3000ms): ${p95Latency < 3000 ? 'PASSED ✅' : 'FAILED ❌'}\n`,
+    `🎯 ĐÁNH GIÁ NFR-01 (ĐỘ TRỄ p95 < 3000ms): ${p95Latency < 3000 ? "PASSED ✅" : "FAILED ❌"}\n`,
   );
 
   const summary = {
+    runId: testData.runId ?? "unknown-run",
+    gitCommit: testData.gitCommit ?? "unknown",
+    runner: "node-concurrency-smoke",
     testDate: new Date().toISOString(),
     totalRequests: results.length,
     success201,
@@ -202,34 +251,21 @@ async function runConcurrencyTest() {
     unexpectedErrors,
     initialStock: testData.initialStock,
     totalElapsedMs,
-    durationMs: {
-      min: minLatency,
-      avg: avgLatency,
-      med: medLatency,
-      max: maxLatency,
-      p90: p90Latency,
-      p95: p95Latency,
-      p99: p99Latency,
-    },
+    durationMs,
+    duration201Ms,
+    duration409Ms,
     rps,
   };
 
-  const outputDirs = [
-    path.resolve(__dirname, '../../../load-tests'),
-    path.resolve(__dirname, '../load-test'),
-  ];
-  for (const dir of outputDirs) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const outPath = path.join(dir, 'load-test-summary.json');
-    fs.writeFileSync(outPath, JSON.stringify(summary, null, 2), 'utf-8');
-    console.log(`💾 Đã xuất tổng hợp đo lường ra: ${outPath}`);
-  }
+  const outPath = path.resolve(__dirname, "load-test-summary.json");
+  fs.writeFileSync(outPath, JSON.stringify(summary, null, 2), "utf-8");
+  console.log(`💾 Đã xuất tổng hợp đo lường canonical ra: ${outPath}`);
 
-  if (!zeroOversell) {
+  if (!zeroOversell || p95Latency >= 3000) {
     process.exit(1);
   }
 }
 
-void runConcurrencyTest();
+if (require.main === module) {
+  void runConcurrencyTest();
+}

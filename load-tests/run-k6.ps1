@@ -2,8 +2,11 @@
 # Tham số tùy chọn: -VUs 100 -BaseUrl "http://host.docker.internal:3001"
 
 param (
-    [string]$BaseUrl = "http://host.docker.internal:3001"
+    [string]$BaseUrl = "http://host.docker.internal:3001",
+    [string]$RunId = $env:LOAD_TEST_RUN_ID
 )
+
+$ErrorActionPreference = "Stop"
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "🚀 CHẠY K6 LOAD TEST TRANH MUA ĐỒNG THỜI QUA DOCKER (GRAFANA/K6)" -ForegroundColor Cyan
@@ -14,5 +17,11 @@ $CurrentDir = (Get-Item -Path $PSScriptRoot).FullName
 docker run --rm `
     -v "${CurrentDir}:/scripts" `
     -e BASE_URL="$BaseUrl" `
+    -e LOAD_TEST_RUN_ID="$RunId" `
     grafana/k6 run /scripts/k6-oversell.js
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "❌ K6 Load Test thất bại với mã thoát: $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
 

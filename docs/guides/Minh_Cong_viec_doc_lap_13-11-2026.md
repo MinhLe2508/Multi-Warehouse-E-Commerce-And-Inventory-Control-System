@@ -29,15 +29,15 @@ Không có thay đổi code nào bảo đảm tuyệt đối không ảnh hưở
 
 ## 2. Danh sách ưu tiên
 
-| Thứ tự | Việc độc lập | Mã liên quan | Cần đợi ai trước khi bắt đầu? | Điểm dừng |
-| --- | --- | --- | --- | --- |
-| 1 | Tách và kiểm thử logic kết luận load test | F209, F218 | Không | Có verdict đúng từ fixture; chưa tuyên bố hệ thống đạt NFR |
-| 2 | Chuẩn hóa parser số liệu và kiểm tra cùng lần chạy | F110–F111, F114, F218 | Không | Kiểm chứng bằng dữ liệu giả; chưa chạy tải vào DB chung |
-| 3 | Nâng chất lượng grader chatbot | F101, F103 | Không | Bắt đủ facts sai/mâu thuẫn/rò rỉ trong fixture |
-| 4 | Chuẩn bị bộ câu hỏi và phản ví dụ chatbot | F093, F100, F219 | Không với fixture kỹ thuật | Nội dung policy chưa chốt để PENDING_POLICY |
-| 5 | Hoàn thiện định dạng báo cáo eval | F092, F102, F104 | Không với formatter và fixture | Chưa thay báo cáo nghiệm thu bằng dữ liệu giả |
-| 6 | Bổ sung unit test chatbot không dùng dịch vụ thật | F088, F096, F098, F100 | Không | Test chạy bằng mock; lỗi phát hiện được ghi lại |
-| 7 | Viết hướng dẫn và danh mục cấu hình | F091, F112, F128, F130, F134, F139 | Không với bản nháp | Chưa ghi fresh setup/PASS hoặc release đã đạt |
+| Thứ tự | Việc độc lập                                       | Mã liên quan                       | Cần đợi ai trước khi bắt đầu?  | Điểm dừng                                                  |
+| ------ | -------------------------------------------------- | ---------------------------------- | ------------------------------ | ---------------------------------------------------------- |
+| 1      | Tách và kiểm thử logic kết luận load test          | F209, F218                         | Không                          | Có verdict đúng từ fixture; chưa tuyên bố hệ thống đạt NFR |
+| 2      | Chuẩn hóa parser số liệu và kiểm tra cùng lần chạy | F110–F111, F114, F218              | Không                          | Kiểm chứng bằng dữ liệu giả; chưa chạy tải vào DB chung    |
+| 3      | Nâng chất lượng grader chatbot                     | F101, F103                         | Không                          | Bắt đủ facts sai/mâu thuẫn/rò rỉ trong fixture             |
+| 4      | Chuẩn bị bộ câu hỏi và phản ví dụ chatbot          | F093, F100, F219                   | Không với fixture kỹ thuật     | Nội dung policy chưa chốt để PENDING_POLICY                |
+| 5      | Hoàn thiện định dạng báo cáo eval                  | F092, F102, F104                   | Không với formatter và fixture | Chưa thay báo cáo nghiệm thu bằng dữ liệu giả              |
+| 6      | Bổ sung unit test chatbot không dùng dịch vụ thật  | F088, F096, F098, F100             | Không                          | Test chạy bằng mock; lỗi phát hiện được ghi lại            |
+| 7      | Viết hướng dẫn và danh mục cấu hình                | F091, F112, F128, F130, F134, F139 | Không với bản nháp             | Chưa ghi fresh setup/PASS hoặc release đã đạt              |
 
 ## 3. Chi tiết việc cần làm
 
@@ -63,13 +63,13 @@ Công việc:
 
 Fixture bắt buộc:
 
-| Fixture | Kết quả phải có |
-| --- | --- |
+| Fixture                                          | Kết quả phải có                                |
+| ------------------------------------------------ | ---------------------------------------------- |
 | Expected 10, nhưng reserved/orders/HOLDING đều 0 | FAIL hoặc INVALID; không có kết luận đạt chung |
-| HTTP báo thành công nhưng hậu kiểm DB không khớp | FAIL hoặc INVALID |
-| Reserved lớn hơn stock hoặc available âm | FAIL |
-| Đủ dữ liệu và mọi invariant khớp | PASS cho fixture đó |
-| Thiếu dữ liệu bắt buộc hoặc trộn hai run | INVALID hoặc FAIL, exit khác 0 |
+| HTTP báo thành công nhưng hậu kiểm DB không khớp | FAIL hoặc INVALID                              |
+| Reserved lớn hơn stock hoặc available âm         | FAIL                                           |
+| Đủ dữ liệu và mọi invariant khớp                 | PASS cho fixture đó                            |
+| Thiếu dữ liệu bắt buộc hoặc trộn hai run         | INVALID hoặc FAIL, exit khác 0                 |
 
 Hoàn thành độc lập khi unit test chứng minh logic đúng. Việc chạy lại hệ thống thật để đóng F113/F114 thực hiện sau tích hợp, không thuộc mục này.
 
@@ -177,19 +177,19 @@ Không ghi “fresh clone chạy thành công”, “đã release” hoặc “�
 
 ## 4. Những việc chưa đưa vào phạm vi độc lập
 
-| Việc | Người cần phối hợp | Lý do |
-| --- | --- | --- |
-| Sửa error envelope dùng chung F005–F006 | Huy, Trọng | Backend và frontend phải thống nhất code lỗi |
-| Đổi cleanup F015–F016 sang hết hạn toàn đơn | Huy, Khang | Phụ thuộc expiration service, thứ tự khóa và đăng ký module |
-| Thêm inventory.changed, đổi gateway/Alerts | Huy, Khang, Triết | Publisher, transaction, quyền và consumer phải cùng contract |
-| Tái sử dụng InternalOrdersService trong chatbot | Huy | Thống nhất lookup/ownership, import/export và DI |
-| Sửa policy COD/phí ship, seed hoặc re-ingest KB thật | Trọng, Khang và người chốt nghiệp vụ | Phải khớp checkout; có thay đổi dữ liệu |
-| Thêm schema/index hoặc đổi embedding model | Khang | Liên quan migration, vector dimension và re-embed |
-| Đổi Compose, CI/CD, package scripts hoặc dependency chung | Các chủ module liên quan | Có thể ảnh hưởng cách cả nhóm chạy/build/test |
-| Hợp nhất runner và chuyển caller về load-tests/ | Huy, Khang khi rà tích hợp | Đụng scripts, đường dẫn và fixture DB; chỉ phần logic thuần được làm độc lập trước |
-| Chạy load test, DB race hoặc E2E nghiệm thu | Huy, Khang; Triết/Trọng theo luồng | Cần bản tích hợp ổn định, DB test riêng và fixture thống nhất |
-| Chạy eval cuối, sinh báo cáo nghiệm thu | Huy/Trọng/Khang theo phụ thuộc | Cần tools, history, policy, KB và cấu hình cuối |
-| Merge main, freeze, publish hoặc ghi việc đã nghiệm thu | Cả nhóm/người rà | Là bước xác nhận và bàn giao chung |
+| Việc                                                      | Người cần phối hợp                   | Lý do                                                                              |
+| --------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------- |
+| Sửa error envelope dùng chung F005–F006                   | Huy, Trọng                           | Backend và frontend phải thống nhất code lỗi                                       |
+| Đổi cleanup F015–F016 sang hết hạn toàn đơn               | Huy, Khang                           | Phụ thuộc expiration service, thứ tự khóa và đăng ký module                        |
+| Thêm inventory.changed, đổi gateway/Alerts                | Huy, Khang, Triết                    | Publisher, transaction, quyền và consumer phải cùng contract                       |
+| Tái sử dụng InternalOrdersService trong chatbot           | Huy                                  | Thống nhất lookup/ownership, import/export và DI                                   |
+| Sửa policy COD/phí ship, seed hoặc re-ingest KB thật      | Trọng, Khang và người chốt nghiệp vụ | Phải khớp checkout; có thay đổi dữ liệu                                            |
+| Thêm schema/index hoặc đổi embedding model                | Khang                                | Liên quan migration, vector dimension và re-embed                                  |
+| Đổi Compose, CI/CD, package scripts hoặc dependency chung | Các chủ module liên quan             | Có thể ảnh hưởng cách cả nhóm chạy/build/test                                      |
+| Hợp nhất runner và chuyển caller về load-tests/           | Huy, Khang khi rà tích hợp           | Đụng scripts, đường dẫn và fixture DB; chỉ phần logic thuần được làm độc lập trước |
+| Chạy load test, DB race hoặc E2E nghiệm thu               | Huy, Khang; Triết/Trọng theo luồng   | Cần bản tích hợp ổn định, DB test riêng và fixture thống nhất                      |
+| Chạy eval cuối, sinh báo cáo nghiệm thu                   | Huy/Trọng/Khang theo phụ thuộc       | Cần tools, history, policy, KB và cấu hình cuối                                    |
+| Merge main, freeze, publish hoặc ghi việc đã nghiệm thu   | Cả nhóm/người rà                     | Là bước xác nhận và bàn giao chung                                                 |
 
 ## 5. Thứ tự làm đề xuất và bằng chứng bàn giao
 
