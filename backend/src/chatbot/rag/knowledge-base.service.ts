@@ -16,7 +16,16 @@ export interface IngestResult {
   title: string;
   docType: string;
   chunksCreated: number;
+  chunksUpdated?: number;
+  chunksUnchanged?: number;
   totalTokens: number;
+}
+
+interface ExistingChunkRow {
+  id: string;
+  chunkIndex: number;
+  content: string;
+  hasEmbedding: boolean;
 }
 
 @Injectable()
@@ -29,67 +38,191 @@ export class KnowledgeBaseService {
   ) {}
 
   /**
-   * Nạp một tài liệu mới: chunk hóa, sinh embedding qua Voyage AI, và lưu vào kb_documents
+   * Nạp hoặc cập nhật tài liệu một cách idempotent theo khóa ổn định (title + docType + chunkIndex):
+   * - Cùng nội dung chạy lại không tạo bản sao trùng lặp.
+   * - Chỉ sinh lại embedding (1024 chiều) cho các chunk mới, có nội dung thay đổi hoặc thiếu vector.
+   * - Thực thi trong một DB transaction để lỗi giữa chừng rollback toàn bộ, không để lại nửa bộ dữ liệu.
    */
   async ingestDocument(input: IngestDocumentInput): Promise<IngestResult> {
+    const title = input.title.trim();
+    const docType = input.docType.trim();
+    if (!title || !docType) {
+      throw new Error('Tiêu đề và loại tài liệu không được để trống.');
+    }
+
     const chunks: string[] = chunkText(input.content, input.chunkOptions);
 
     if (chunks.length === 0) {
       throw new Error('Nội dung tài liệu rỗng hoặc không thể chunk hóa.');
     }
 
-    this.logger.log(
-      `Đang chunk hóa tài liệu "${input.title}" thành ${chunks.length} chunks...`,
-    );
+    // 1. Đọc các chunk hiện có của tài liệu này
+    const existingRows: ExistingChunkRow[] =
+      typeof this.prisma.$queryRaw === 'function'
+        ? ((await this.prisma.$queryRaw<ExistingChunkRow[]>`
+            SELECT "id"::text AS "id",
+                   "chunk_index" AS "chunkIndex",
+                   "content",
+                   ("embedding" IS NOT NULL) AS "hasEmbedding"
+            FROM "kb_documents"
+            WHERE "title" = ${title}
+              AND "doc_type" = ${docType}
+              AND "is_active" = true
+            ORDER BY "chunk_index" ASC;
+          `) ?? [])
+        : [];
 
-    // Sinh embedding đồng loạt cho các chunk bằng Voyage AI (voyage-3)
-    const { vectors, totalTokens } =
-      await this.embeddingService.embedDocuments(chunks);
-
-    for (let i = 0; i < chunks.length; i++) {
-      const text = chunks[i];
-      const vector = vectors[i];
-      const vectorLiteral = toVectorLiteral(vector);
-      const estimatedTokens = Math.ceil(text.length / 4);
-
-      // Dùng executeRaw để insert đúng kiểu unsupported("vector(1024)") của pgvector
-      await this.prisma.$executeRaw`
-        INSERT INTO "kb_documents" (
-          "id",
-          "title",
-          "doc_type",
-          "chunk_index",
-          "content",
-          "embedding",
-          "token_count",
-          "source_url",
-          "is_active",
-          "created_at",
-          "updated_at"
-        ) VALUES (
-          gen_random_uuid(),
-          ${input.title},
-          ${input.docType},
-          ${i},
-          ${text},
-          ${vectorLiteral}::vector,
-          ${estimatedTokens},
-          ${input.sourceUrl || null},
-          true,
-          NOW(),
-          NOW()
-        );
-      `;
+    const existingByIndex = new Map<number, ExistingChunkRow>();
+    for (const row of existingRows) {
+      if (!existingByIndex.has(row.chunkIndex)) {
+        existingByIndex.set(row.chunkIndex, row);
+      }
     }
 
+    // 2. Xác định những chunk cần sinh vector mới (chunk mới, nội dung thay đổi, hoặc thiếu vector)
+    const dirtyIndices: number[] = [];
+    const dirtyTexts: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const existing = existingByIndex.get(i);
+      if (
+        !existing ||
+        existing.content !== chunks[i] ||
+        !existing.hasEmbedding
+      ) {
+        dirtyIndices.push(i);
+        dirtyTexts.push(chunks[i]);
+      }
+    }
+
+    const hasTrailingExtraRows = existingRows.length > chunks.length;
+
+    // Nếu mọi chunk đều giống hệt và đã có vector đủ -> No-op idempotent
+    if (dirtyIndices.length === 0 && !hasTrailingExtraRows) {
+      this.logger.log(
+        `Tài liệu "${title}" (${docType}) không thay đổi (${chunks.length} chunks). Bỏ qua re-ingest.`,
+      );
+      return {
+        title,
+        docType,
+        chunksCreated: 0,
+        chunksUpdated: 0,
+        chunksUnchanged: chunks.length,
+        totalTokens: 0,
+      };
+    }
+
+    // 3. Sinh embedding đồng loạt cho các chunk thay đổi và kiểm tra chặt chẽ chiều vector (1024) TRƯỚC khi ghi DB
+    let totalTokens = 0;
+    const vectorLiteralByIndex = new Map<number, string>();
+    if (dirtyTexts.length > 0) {
+      this.logger.log(
+        `Đang sinh embedding cho ${dirtyTexts.length}/${chunks.length} chunks của "${title}"...`,
+      );
+      const embedRes = await this.embeddingService.embedDocuments(dirtyTexts);
+      if (
+        !embedRes ||
+        !Array.isArray(embedRes.vectors) ||
+        embedRes.vectors.length !== dirtyTexts.length
+      ) {
+        throw new Error(
+          `Số lượng vector trả về (${embedRes?.vectors?.length ?? 0}) không khớp số lượng chunk (${dirtyTexts.length}).`,
+        );
+      }
+      totalTokens = embedRes.totalTokens ?? 0;
+      for (let k = 0; k < dirtyIndices.length; k++) {
+        // toVectorLiteral sẽ ném lỗi ngay nếu vector thiếu hoặc khác 1024 chiều
+        const literal = toVectorLiteral(embedRes.vectors[k]);
+        vectorLiteralByIndex.set(dirtyIndices[k], literal);
+      }
+    }
+
+    // 4. Thực thi cập nhật/thêm mới nguyên tử trong 1 transaction
+    let chunksCreated = 0;
+    let chunksUpdated = 0;
+
+    const runWrites = async (
+      tx: Pick<PrismaService, '$executeRaw'>,
+    ): Promise<void> => {
+      for (let i = 0; i < chunks.length; i++) {
+        const text = chunks[i];
+        const existing = existingByIndex.get(i);
+        const vectorLiteral = vectorLiteralByIndex.get(i);
+        const estimatedTokens = Math.ceil(text.length / 4);
+
+        if (!existing) {
+          await tx.$executeRaw`
+            INSERT INTO "kb_documents" (
+              "id",
+              "title",
+              "doc_type",
+              "chunk_index",
+              "content",
+              "embedding",
+              "token_count",
+              "source_url",
+              "is_active",
+              "created_at",
+              "updated_at"
+            ) VALUES (
+              gen_random_uuid(),
+              ${title},
+              ${docType},
+              ${i},
+              ${text},
+              ${vectorLiteral}::vector,
+              ${estimatedTokens},
+              ${input.sourceUrl || null},
+              true,
+              NOW(),
+              NOW()
+            );
+          `;
+          chunksCreated++;
+        } else if (vectorLiteral !== undefined) {
+          await tx.$executeRaw`
+            UPDATE "kb_documents"
+            SET "content" = ${text},
+                "embedding" = ${vectorLiteral}::vector,
+                "token_count" = ${estimatedTokens},
+                "source_url" = ${input.sourceUrl || null},
+                "updated_at" = NOW()
+            WHERE "id" = ${existing.id}::uuid;
+          `;
+          chunksUpdated++;
+        }
+      }
+
+      // Vô hiệu hóa các chunk thừa nếu phiên bản mới ngắn hơn phiên bản cũ hoặc có bản ghi trùng chunk_index
+      if (hasTrailingExtraRows) {
+        await tx.$executeRaw`
+          UPDATE "kb_documents"
+          SET "is_active" = false,
+              "updated_at" = NOW()
+          WHERE "title" = ${title}
+            AND "doc_type" = ${docType}
+            AND "is_active" = true
+            AND "chunk_index" >= ${chunks.length};
+        `;
+      }
+    };
+
+    if (typeof this.prisma.$transaction === 'function') {
+      await this.prisma.$transaction((tx) => runWrites(tx));
+    } else {
+      await runWrites(this.prisma);
+    }
+
+    const chunksUnchanged = chunks.length - chunksCreated - chunksUpdated;
     this.logger.log(
-      `Đã nạp thành công "${input.title}" (${chunks.length} chunks, ~${totalTokens} tokens).`,
+      `Đã đồng bộ "${title}" (tạo mới: ${chunksCreated}, cập nhật: ${chunksUpdated}, giữ nguyên: ${chunksUnchanged}, ~${totalTokens} tokens).`,
     );
 
     return {
-      title: input.title,
-      docType: input.docType,
-      chunksCreated: chunks.length,
+      title,
+      docType,
+      chunksCreated,
+      chunksUpdated,
+      chunksUnchanged,
       totalTokens,
     };
   }

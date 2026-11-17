@@ -354,5 +354,179 @@ describe('ChatbotService', () => {
       expect(create.mock.calls[3][0].tools).toBeUndefined();
       expect(create.mock.calls[0][0].tools).toBeDefined();
     });
+
+    it('Gemini multi-turn (F089/F100): truyền lịch sử hội thoại đã xác minh với role user/model đúng chuẩn API', async () => {
+      const session = {
+        id: 'sess-gemini',
+        sessionToken: 'tok_gemini',
+        userId: USER_A,
+        escalatedToHuman: false,
+      };
+      prisma.chatSession.findUnique.mockResolvedValue(session);
+      prisma.chatSession.update.mockResolvedValue(session);
+      // findMany trả theo createdAt desc (tin mới nhất trước) rồi service đảo ngược
+      prisma.chatMessage.findMany.mockResolvedValue([
+        { role: 'USER', content: 'Đơn đó bao nhiêu tiền?' },
+        {
+          role: 'ASSISTANT',
+          content: 'Mã đơn ORD-AAAA1111 của bạn đang giao hàng.',
+        },
+        { role: 'USER', content: 'Kiểm tra đơn ORD-AAAA1111' },
+      ]);
+
+      const generateContent = jest.fn().mockResolvedValue({
+        text: 'Đơn ORD-AAAA1111 có tổng tiền 350.000 VND.',
+        usageMetadata: { totalTokenCount: 42 },
+        functionCalls: [],
+      });
+      (service as unknown as { geminiClient: unknown }).geminiClient = {
+        models: { generateContent },
+      };
+
+      const res = await service.processUserMessage({
+        sessionToken: 'tok_gemini',
+        message: 'Đơn đó bao nhiêu tiền?',
+        userId: USER_A,
+        role: UserRole.CUSTOMER,
+      });
+
+      expect(generateContent).toHaveBeenCalledTimes(1);
+      const callArg = (
+        generateContent.mock.calls as Array<
+          [
+            {
+              contents: Array<{
+                role: string;
+                parts: Array<{ text?: string }>;
+              }>;
+            },
+          ]
+        >
+      )[0][0];
+      expect(callArg.contents).toHaveLength(3);
+      expect(callArg.contents[0]).toEqual({
+        role: 'user',
+        parts: [{ text: 'Kiểm tra đơn ORD-AAAA1111' }],
+      });
+      expect(callArg.contents[1]).toEqual({
+        role: 'model',
+        parts: [{ text: 'Mã đơn ORD-AAAA1111 của bạn đang giao hàng.' }],
+      });
+      expect(callArg.contents[2].role).toBe('user');
+      expect(res.reply).toContain('ORD-AAAA1111');
+    });
+
+    it('Local multi-turn (F089/F100): hiểu "đơn đó" khi lịch sử phiên có mã đơn, và hỏi lại khi thiếu context hoặc vừa đổi tài khoản', async () => {
+      const sessionA = {
+        id: 'sess-a',
+        sessionToken: 'tok_a',
+        userId: USER_A,
+        escalatedToHuman: false,
+      };
+      prisma.chatSession.findUnique.mockResolvedValueOnce(sessionA);
+      prisma.chatSession.update.mockResolvedValue(sessionA);
+      prisma.chatMessage.findMany.mockResolvedValueOnce([
+        { role: 'USER', content: 'Xem giúp tôi đơn đó' },
+        {
+          role: 'ASSISTANT',
+          content: 'Đơn ORD-AAAA1111 của quý khách đang chờ thanh toán.',
+        },
+        { role: 'USER', content: 'Kiểm tra đơn ORD-AAAA1111' },
+      ]);
+      toolsService.execute.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          orders: [
+            {
+              orderCode: 'ORD-AAAA1111',
+              statusLabel: 'Chờ thanh toán',
+              grandTotal: '500000.00',
+              currency: 'VND',
+              items: [{ productName: 'Tai nghe Sony', quantity: 1 }],
+            },
+          ],
+        },
+      });
+
+      const turn2 = await service.processUserMessage({
+        sessionToken: 'tok_a',
+        message: 'Xem giúp tôi đơn đó',
+        userId: USER_A,
+        role: UserRole.CUSTOMER,
+      });
+
+      expect(toolsService.execute).toHaveBeenCalledWith(
+        'lookupOrder',
+        { orderCode: 'ORD-AAAA1111' },
+        { userId: USER_A, role: UserRole.CUSTOMER },
+      );
+      expect(turn2.reply).toContain('ORD-AAAA1111');
+
+      // Khi USER_B cố dùng lại sessionToken của USER_A và hỏi "Xem giúp tôi đơn đó":
+      // Hệ thống tạo phiên mới cho USER_B (lịch sử rỗng) -> yêu cầu cung cấp mã đơn, tuyệt đối không lấy lịch sử của USER_A
+      toolsService.execute.mockClear();
+      prisma.chatSession.findUnique.mockResolvedValueOnce(sessionA);
+      prisma.chatSession.create.mockResolvedValueOnce({
+        id: 'sess-b-new',
+        sessionToken: 'tok_b_new',
+        userId: USER_B,
+        escalatedToHuman: false,
+      });
+      prisma.chatMessage.findMany.mockResolvedValueOnce([
+        { role: 'USER', content: 'Xem giúp tôi đơn đó' },
+      ]);
+
+      const crossTurn = await service.processUserMessage({
+        sessionToken: 'tok_a',
+        message: 'Xem giúp tôi đơn đó',
+        userId: USER_B,
+        role: UserRole.CUSTOMER,
+      });
+
+      expect(crossTurn.sessionToken).toBe('tok_b_new');
+      expect(toolsService.execute).not.toHaveBeenCalled();
+      expect(crossTurn.reply).toContain('cung cấp mã đơn hàng');
+      expect(crossTurn.reply).not.toContain('ORD-AAAA1111');
+    });
+
+    it('Timeout / lỗi kết nối LLM provider: tự động fallback sang bộ xử lý nội bộ mà không crash', async () => {
+      const session = {
+        id: 'sess-timeout',
+        sessionToken: 'tok_timeout',
+        userId: USER_A,
+        escalatedToHuman: false,
+      };
+      prisma.chatSession.findUnique.mockResolvedValue(session);
+      prisma.chatSession.update.mockResolvedValue(session);
+      retrievalService.searchKnowledgeBase.mockResolvedValueOnce({
+        query: 'Đổi trả trong mấy ngày?',
+        documents: [
+          {
+            id: 'd1',
+            title: 'Chính sách đổi trả',
+            docType: 'POLICY',
+            chunkIndex: 0,
+            content: 'Quý khách được đổi trả hàng trong vòng 7 ngày.',
+            similarity: 0.85,
+          },
+        ],
+        hasHighConfidence: true,
+      });
+
+      (service as unknown as { anthropicClient: unknown }).anthropicClient = {
+        messages: {
+          create: jest.fn().mockRejectedValue(new Error('Request timed out')),
+        },
+      };
+
+      const res = await service.processUserMessage({
+        sessionToken: 'tok_timeout',
+        message: 'Đổi trả trong mấy ngày?',
+        userId: USER_A,
+      });
+
+      expect(res.isFallback).toBe(false);
+      expect(res.reply).toContain('7 ngày');
+    });
   });
 });

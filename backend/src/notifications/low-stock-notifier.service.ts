@@ -28,7 +28,10 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { NotificationType, UserRole } from '@prisma/client';
 import { InventoryPubSubService } from '../inventory/inventory-pubsub.service';
-import type { LowStockEvent } from '../inventory/inventory-pubsub.service';
+import type {
+  InventoryChangedEvent,
+  LowStockEvent,
+} from '../inventory/inventory-pubsub.service';
 import {
   InventoryService,
   type StockAlertView,
@@ -40,12 +43,15 @@ export const STOCK_ALERT_REFERENCE_TYPE = 'StockAlert';
 // Khóa advisory của riêng job này (số tùy ý, không trùng khóa khác trong dự án).
 const NOTIFIER_LOCK_KEY = 47004001;
 const TITLE_MAX = 255;
+const ALERT_BATCH_SIZE = 500;
+const PAGE_FETCH_LIMIT = 100;
 
 @Injectable()
 export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LowStockNotifierService.name);
   private running = false;
   private unsubscribe?: () => void;
+  private unsubscribeInventoryChanged?: () => void;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -59,10 +65,17 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
     this.unsubscribe = this.pubsub.onLowStock((event) =>
       this.gateway.emitLowStockAlert({ ...event }),
     );
+    // Forward kênh inventory.changed từ Redis sang WebSocket room quản trị.
+    if (typeof this.pubsub.onInventoryChanged === 'function') {
+      this.unsubscribeInventoryChanged = this.pubsub.onInventoryChanged(
+        (event) => this.gateway.emitInventoryChanged?.({ ...event }),
+      );
+    }
   }
 
   onModuleDestroy(): void {
     this.unsubscribe?.();
+    this.unsubscribeInventoryChanged?.();
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -79,12 +92,28 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Phát sự kiện biến động tồn kho SAU khi DB transaction đã commit.
+   * Best-effort: lỗi Redis không bao giờ làm hỏng giao dịch đã commit; tự động fallback sang Gateway cục bộ.
+   */
+  async notifyInventoryChanged(event: InventoryChangedEvent): Promise<void> {
+    try {
+      if (typeof this.pubsub.publishInventoryChanged === 'function') {
+        const receivers = await this.pubsub.publishInventoryChanged(event);
+        if (receivers > 0) return;
+      }
+    } catch {
+      this.logger.warn('publishInventoryChanged failed, emitting locally');
+    }
+    this.gateway.emitInventoryChanged?.({ ...event });
+  }
+
   /** Trả về số Notification đã tạo ở lượt này. */
   async dispatchOpenAlerts(): Promise<number> {
     if (this.running) return 0; // chống chạy chồng trong 1 process
     this.running = true;
     try {
-      const openAlerts = await this.inventoryService.findOpenAlerts();
+      const openAlerts = await this.loadAllOpenAlerts();
       if (openAlerts.length === 0) return 0;
 
       const activeWarehouses = await this.prisma.warehouse.findMany({
@@ -121,7 +150,47 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Tạo Notification chưa có, trả về các cảnh báo vừa được thông báo lần đầu.
+  /**
+   * Tải toàn bộ cảnh báo đang mở, tự động phân trang tiếp nếu vượt ngưỡng 500 để tránh bỏ đói các cảnh báo mới.
+   */
+  private async loadAllOpenAlerts(): Promise<StockAlertView[]> {
+    const firstBatch =
+      await this.inventoryService.findOpenAlerts(ALERT_BATCH_SIZE);
+    if (
+      firstBatch.length < ALERT_BATCH_SIZE ||
+      typeof (
+        this.inventoryService as {
+          findAlerts?: InventoryService['findAlerts'];
+        }
+      ).findAlerts !== 'function'
+    ) {
+      return firstBatch;
+    }
+
+    const seenIds = new Set(firstBatch.map((a) => a.id));
+    const allAlerts = [...firstBatch];
+    let offset = firstBatch.length;
+
+    while (offset < 5000) {
+      const page = await this.inventoryService.findAlerts(
+        { status: 'OPEN', limit: PAGE_FETCH_LIMIT, offset },
+        UserRole.ADMIN,
+      );
+      if (!page.items || page.items.length === 0) break;
+      for (const item of page.items) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          allAlerts.push(item);
+        }
+      }
+      if (page.items.length < PAGE_FETCH_LIMIT) break;
+      offset += page.items.length;
+    }
+
+    return allAlerts;
+  }
+
+  // Tạo Notification chưa có (hoặc khi nâng mức cảnh báo WARNING -> CRITICAL), trả về các cảnh báo vừa được thông báo.
   private async saveNotifications(
     alerts: StockAlertView[],
     recipients: { id: string }[],
@@ -138,9 +207,25 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
           referenceType: STOCK_ALERT_REFERENCE_TYPE,
           referenceId: { in: alerts.map((a) => a.id) },
         },
-        select: { userId: true, referenceId: true },
+        select: { userId: true, referenceId: true, title: true },
       });
-      const done = new Set(existing.map((n) => `${n.userId}:${n.referenceId}`));
+
+      const done = new Set<string>();
+      for (const n of existing as Array<{
+        userId: string;
+        referenceId: string | null;
+        title?: string;
+      }>) {
+        const refId = n.referenceId ?? '';
+        if (!n.title || n.title.startsWith('Hết hàng:')) {
+          // Không có title (mock cũ) hoặc đã gửi thông báo mức CRITICAL -> đánh dấu hoàn tất cả 2 mức
+          done.add(`${n.userId}:${refId}:WARNING`);
+          done.add(`${n.userId}:${refId}:CRITICAL`);
+        } else {
+          // Đã gửi thông báo mức WARNING -> nếu sau đó nâng lên CRITICAL vẫn được gửi thêm
+          done.add(`${n.userId}:${refId}:WARNING`);
+        }
+      }
 
       const data: {
         userId: string;
@@ -153,9 +238,13 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
       const fresh: StockAlertView[] = [];
       for (const alert of alerts) {
         const { title, body } = this.buildMessage(alert);
+        const levelKey =
+          alert.alertLevel === 'CRITICAL' ? 'CRITICAL' : 'WARNING';
         let isFresh = false;
         for (const user of recipients) {
-          if (done.has(`${user.id}:${alert.id}`)) continue;
+          const dedupKey = `${user.id}:${alert.id}:${levelKey}`;
+          if (done.has(dedupKey)) continue;
+          done.add(dedupKey);
           isFresh = true;
           data.push({
             userId: user.id,
@@ -168,7 +257,13 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
         }
         if (isFresh) fresh.push(alert);
       }
-      if (data.length > 0) await tx.notification.createMany({ data });
+
+      // Chia theo batch 500 để tránh vượt giới hạn parameter của PostgreSQL khi số lượng thông báo lớn
+      for (let i = 0; i < data.length; i += ALERT_BATCH_SIZE) {
+        await tx.notification.createMany({
+          data: data.slice(i, i + ALERT_BATCH_SIZE),
+        });
+      }
       return { fresh, created: data.length };
     });
   }

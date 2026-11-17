@@ -1,6 +1,8 @@
+import { NotFoundException } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { ChatbotToolsService } from './chatbot-tools.service';
 import { CHATBOT_TOOLS } from './chatbot-tools.definition';
+import { InternalOrdersService } from '../../orders/internal-orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
@@ -165,6 +167,72 @@ describe('ChatbotToolsService', () => {
       const select = prisma.order.findMany.mock.calls[0][0].select;
       expect(select.shippingPhone).toBeUndefined();
       expect(select.shippingAddress).toBeUndefined();
+    });
+    it('tích hợp InternalOrdersService (F086/F088): dùng userId từ JWT context, chặn lộ PII và xử lý NotFoundException', async () => {
+      const internalOrdersMock = {
+        findForUser: jest.fn().mockResolvedValueOnce({
+          orders: [
+            {
+              orderCode: 'ORD-INT12345',
+              status: 'SHIPPING',
+              statusLabel: 'Đang giao hàng',
+              grandTotal: '350000.00',
+              shippingFee: '30000.00',
+              currency: 'VND',
+              shippingRegion: 'Hà Nội',
+              cancelledReason: null,
+              createdAt: '2026-11-01T02:00:00.000Z',
+              confirmedAt: '2026-11-01T02:05:00.000Z',
+              cancelledAt: null,
+              lastStatusChangeAt: '2026-11-02T00:00:00.000Z',
+              // Giả sử dữ liệu có trường thừa nhạy cảm -> allowlist phải loại bỏ
+              shippingPhone: '0999888777',
+              shippingAddress: 'Số 1 Đại Cồ Việt',
+              items: [
+                {
+                  productName: 'Chuột G102',
+                  sku: 'SKU-1',
+                  quantity: 1,
+                  lineTotal: '320000.00',
+                  inventoryId: '999',
+                },
+              ],
+            },
+          ],
+        }),
+      };
+      const svcWithInternal = new ChatbotToolsService(
+        prisma as unknown as PrismaService,
+        internalOrdersMock as unknown as InternalOrdersService,
+      );
+
+      const res = await svcWithInternal.execute(
+        'lookupOrder',
+        { orderCode: 'ord-int12345', userId: USER_B },
+        { userId: USER_A, role: UserRole.CUSTOMER },
+      );
+
+      expect(internalOrdersMock.findForUser).toHaveBeenCalledWith(USER_A, {
+        orderCode: 'ORD-INT12345',
+        limit: 3,
+      });
+      expect(res.ok).toBe(true);
+      const serialized = JSON.stringify(res);
+      expect(serialized).toContain('ORD-INT12345');
+      expect(serialized).not.toContain('0999888777');
+      expect(serialized).not.toContain('Số 1 Đại Cồ Việt');
+      expect(serialized).not.toContain('inventoryId');
+
+      // Khi hỏi đơn người khác -> InternalOrdersService ném NotFoundException -> trả NOT_FOUND
+      internalOrdersMock.findForUser.mockRejectedValueOnce(
+        new NotFoundException('Không tìm thấy đơn hàng'),
+      );
+      const resNotFound = await svcWithInternal.execute(
+        'lookupOrder',
+        { orderCode: 'ORD-OTHER999' },
+        { userId: USER_A, role: UserRole.CUSTOMER },
+      );
+      expect(resNotFound).toMatchObject({ ok: false, error: 'NOT_FOUND' });
     });
   });
 
@@ -363,14 +431,35 @@ describe('ChatbotToolsService', () => {
 
     it('không tìm thấy sản phẩm -> trả NOT_FOUND kèm mô tả rõ ràng', async () => {
       prisma.product.findMany.mockResolvedValue([]);
-      const res = await service.execute('browseCategory', {
-        maxPrice: 10000,
-      });
+      const res = await service.execute(
+        'browseCategory',
+        {
+          maxPrice: 10000,
+        },
+        {},
+      );
       expect(res.ok).toBe(false);
       expect((res as { error: string }).error).toBe('NOT_FOUND');
       expect((res as { message: string }).message).toContain(
         'có giá dưới 10.000 đ',
       );
+    });
+
+    it('từ chối khoảng giá không hợp lệ khi minPrice > maxPrice hoặc giá âm -> INVALID_INPUT', async () => {
+      const resInverted = await service.execute(
+        'browseCategory',
+        { minPrice: 50_000_000, maxPrice: 10_000_000 },
+        {},
+      );
+      expect(resInverted).toMatchObject({ ok: false, error: 'INVALID_INPUT' });
+      expect(prisma.product.findMany).not.toHaveBeenCalled();
+
+      const resNegative = await service.execute(
+        'browseCategory',
+        { minPrice: -1000 },
+        {},
+      );
+      expect(resNegative).toMatchObject({ ok: false, error: 'INVALID_INPUT' });
     });
   });
 

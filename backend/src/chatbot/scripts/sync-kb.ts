@@ -38,6 +38,8 @@ async function bootstrap() {
     logger: ['log', 'error', 'warn'],
   });
 
+  let exitCode = 0;
+
   try {
     const kbService = app.get(KnowledgeBaseService);
     const statsBefore = await kbService.getStats();
@@ -53,7 +55,10 @@ async function bootstrap() {
     }
 
     let remaining = statsBefore.pendingChunks;
-    while (remaining > 0) {
+    const maxRounds = Math.ceil(statsBefore.pendingChunks / 20) + 5;
+    let round = 0;
+    while (remaining > 0 && round < maxRounds) {
+      round++;
       const res = await kbService.syncMissingEmbeddings(20);
       if (res.processed === 0) break;
       remaining = res.remaining;
@@ -63,13 +68,25 @@ async function bootstrap() {
     }
 
     const statsAfter = await kbService.getStats();
+    if (statsAfter.pendingChunks > 0) {
+      console.error(
+        `Chưa đồng bộ hết vector: còn ${statsAfter.pendingChunks}/${statsAfter.totalChunks} chunks thiếu embedding.`,
+      );
+      exitCode = 1;
+      return;
+    }
+
     console.log(
       `Đồng bộ hoàn tất! Tổng cộng: ${statsAfter.embeddedChunks}/${statsAfter.totalChunks} chunks đã có vector.`,
     );
   } catch (error) {
     console.error('Lỗi khi đồng bộ embeddings:', error);
+    exitCode = 1;
   } finally {
     await app.close();
+    if (exitCode !== 0) {
+      process.exit(exitCode);
+    }
   }
 }
 

@@ -127,6 +127,50 @@ describe('RetrievalService', () => {
     // Khi fallback keyword không tìm thấy dữ liệu mẫu, trả về documents rỗng an toàn, không ném exception
     expect(result.documents).toHaveLength(0);
     expect(result.hasHighConfidence).toBe(false);
+    expect(result.mode).toBe('NONE');
+    expect(result.scoreType).toBe('keyword_match');
+  });
+
+  it('keyword fallback (F095/F096): trả về mode=KEYWORD, scoreType=keyword_match, similarity=0 (không giả lập cosine .55+.05*score) và lọc theo ngưỡng score', async () => {
+    embeddingService.embedQuery.mockRejectedValueOnce(
+      new Error('Voyage AI unavailable'),
+    );
+    (prisma as unknown as { kbDocument: { findMany: jest.Mock } }).kbDocument =
+      {
+        findMany: jest.fn().mockResolvedValueOnce([
+          {
+            id: 'kb-1',
+            title: 'Chính sách đổi trả',
+            docType: 'POLICY',
+            chunkIndex: 0,
+            content: 'Khách hàng được đổi trả trong 7 ngày.',
+            sourceUrl: null,
+          },
+          {
+            id: 'kb-weak',
+            title: 'Giới thiệu chung',
+            docType: 'FAQ',
+            chunkIndex: 0,
+            // Chỉ khớp 1 lần trong content -> score = 1 < MIN_KEYWORD_SCORE (2) -> bị loại
+            content: 'Có nhắc tới đổi trả một lần.',
+            sourceUrl: null,
+          },
+        ]),
+      };
+
+    const result = await service.searchKnowledgeBase('Chính sách đổi trả hàng');
+    expect(result.mode).toBe('KEYWORD');
+    expect(result.scoreType).toBe('keyword_match');
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].id).toBe('kb-1');
+    expect(result.documents[0].scoreType).toBe('keyword_match');
+    expect(result.documents[0].keywordScore).toBe(4); // title (+3) + content (+1)
+    expect(result.documents[0].similarity).toBe(0);
+    expect(result.hasHighConfidence).toBe(true);
+
+    const formatted = service.formatContextForPrompt(result.documents);
+    expect(formatted).toContain('Khớp từ khóa (score=4)');
+    expect(formatted).not.toContain('Độ phù hợp:');
   });
 
   it('truy vấn với tùy chọn docType truyền điều kiện lọc vào CSDL', async () => {

@@ -345,7 +345,7 @@ export class ChatbotService {
     const wantsHuman = checkHumanEscalationIntent(userMessage);
     if (wantsHuman) {
       const escalationReply =
-        'Dạ, em đã ghi nhận yêu cầu của quý khách. Em đang kết nối bạn với chuyên viên tư vấn của hệ thống. Quý khách vui lòng đợi trong giây lát ạ!';
+        'Dạ, em đã ghi nhận yêu cầu kết nối bạn với chuyên viên tư vấn. Phiên chat đã được đánh dấu cần hỗ trợ (hiện chưa xác nhận có nhân viên trực tuyến tiếp nhận ngay).';
 
       await this.prisma.chatSession.update({
         where: { id: session.id },
@@ -425,12 +425,13 @@ export class ChatbotService {
     let isFallback = false;
     let tokenUsage = 0;
     let toolCalls: ToolCallRecord[] = [];
+    const priorHistory = formattedHistory.slice(0, -1);
 
     if (this.anthropicClient) {
       try {
-        const claudeMessages: Anthropic.MessageParam[] = formattedHistory
-          .slice(0, -1)
-          .map((m) => ({ role: m.role, content: m.content }));
+        const claudeMessages: Anthropic.MessageParam[] = priorHistory.map(
+          (m) => ({ role: m.role, content: m.content }),
+        );
         claudeMessages.push({ role: 'user', content: augmentedUserPrompt });
 
         const generation = await this.generateWithClaudeTools(
@@ -457,6 +458,7 @@ export class ChatbotService {
           userMessage,
           retrievedDocs,
           toolCtx,
+          priorHistory,
         );
         replyText = localGen.replyText;
         isFallback = localGen.isFallback;
@@ -468,6 +470,7 @@ export class ChatbotService {
           this.geminiClient,
           augmentedUserPrompt,
           toolCtx,
+          priorHistory,
         );
         replyText = generation.replyText;
         tokenUsage = generation.tokenUsage;
@@ -489,6 +492,7 @@ export class ChatbotService {
           userMessage,
           retrievedDocs,
           toolCtx,
+          priorHistory,
         );
         replyText = localGen.replyText;
         isFallback = localGen.isFallback;
@@ -500,6 +504,7 @@ export class ChatbotService {
         userMessage,
         retrievedDocs,
         toolCtx,
+        priorHistory,
       );
       replyText = localGen.replyText;
       isFallback = localGen.isFallback;
@@ -567,6 +572,7 @@ export class ChatbotService {
     ai: GoogleGenAI,
     prompt: string,
     toolCtx: ToolExecutionContext,
+    priorHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   ): Promise<GenerationResult> {
     const toolCalls: ToolCallRecord[] = [];
     let tokenUsage = 0;
@@ -648,9 +654,11 @@ export class ChatbotService {
       },
     ];
 
-    const contents: GeminiContent[] = [
-      { role: 'user', parts: [{ text: prompt }] },
-    ];
+    const contents: GeminiContent[] = priorHistory.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     const candidateModels = [
       this.defaultGeminiModel,
@@ -769,6 +777,7 @@ export class ChatbotService {
     userMessage: string,
     retrievedDocs: RetrievedDocument[],
     toolCtx: ToolExecutionContext,
+    priorHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   ): Promise<{
     replyText: string;
     isFallback: boolean;
@@ -777,12 +786,17 @@ export class ChatbotService {
     const toolCalls: ToolCallRecord[] = [];
     const normalized = userMessage.trim();
 
-    // 1. Kiểm tra ý định tra cứu đơn hàng (STT 27 - lookupOrder)
+    // 1. Kiểm tra ý định tra cứu đơn hàng (STT 27 - lookupOrder) và tham chiếu đa lượt ("đơn đó", "đơn vừa rồi")
     const hasOrderCode = /\b(ORD-[A-Z0-9]{4,28})\b/i.test(normalized);
-    const isPersonalOrderLookup =
-      /(tra\s*cứu.*đơn|kiểm\s*tra.*đơn|xem.*đơn|đơn\s*(?:hàng)?\s*của\s*(?:tôi|mình|em|bạn)|đơn\s*(?:hàng)?\s*(?:gần\s*đây|mới\s*nhất|vừa\s*đặt)|lịch\s*sử\s*mua|tình\s*trạng\s*đơn)/i.test(
+    const isPronounOrderRef =
+      /(?:^|\s)đơn\s*(?:hàng\s*)?(?:đó|đấy|này|vừa\s*rồi|trên)(?:\s|[.,?!]|$)/i.test(
         normalized,
-      ) &&
+      );
+    const isPersonalOrderLookup =
+      (isPronounOrderRef ||
+        /(tra\s*cứu.*đơn|kiểm\s*tra.*đơn|xem.*đơn|đơn\s*(?:hàng)?\s*của\s*(?:tôi|mình|em|bạn)|đơn\s*(?:hàng)?\s*(?:gần\s*đây|mới\s*nhất|vừa\s*đặt)|lịch\s*sử\s*mua|tình\s*trạng\s*đơn)/i.test(
+          normalized,
+        )) &&
       !/(làm\s*sao|cách\s*(?:nào|để)|hướng\s*dẫn|chính\s*sách|quy\s*định|bao\s*nhiêu|miễn\s*phí|điều\s*kiện)/i.test(
         normalized,
       );
@@ -790,8 +804,34 @@ export class ChatbotService {
 
     if (isOrderQuery) {
       const codeMatch = normalized.match(/\b(ORD-[A-Z0-9]{4,28})\b/i);
-      const orderInput: Record<string, unknown> = codeMatch
-        ? { orderCode: codeMatch[1].toUpperCase() }
+      let resolvedOrderCode = codeMatch
+        ? codeMatch[1].toUpperCase()
+        : undefined;
+
+      // Nếu người dùng hỏi "đơn đó" mà không ghi mã đơn trong câu hiện tại -> dò từ lịch sử đã xác minh của chính phiên này
+      if (!resolvedOrderCode && isPronounOrderRef) {
+        for (let i = priorHistory.length - 1; i >= 0; i--) {
+          const histMatch = priorHistory[i].content.match(
+            /\b(ORD-[A-Z0-9]{4,28})\b/i,
+          );
+          if (histMatch) {
+            resolvedOrderCode = histMatch[1].toUpperCase();
+            break;
+          }
+        }
+        // Nếu lịch sử không có ngữ cảnh mã đơn -> hỏi lại mã đơn thay vì đoán mò
+        if (!resolvedOrderCode) {
+          return {
+            replyText:
+              'Dạ, hiện trong cuộc trò chuyện chưa có thông tin về đơn hàng nào trước đó. Quý khách vui lòng cung cấp mã đơn hàng (ví dụ: ORD-...) để em kiểm tra chính xác giúp mình nhé!',
+            isFallback: false,
+            toolCalls,
+          };
+        }
+      }
+
+      const orderInput: Record<string, unknown> = resolvedOrderCode
+        ? { orderCode: resolvedOrderCode }
         : { limit: 3 };
       const orderRes = await this.toolsService.execute(
         TOOL_LOOKUP_ORDER,

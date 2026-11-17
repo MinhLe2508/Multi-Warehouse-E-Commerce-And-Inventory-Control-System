@@ -16,9 +16,15 @@
 // truy vấn Prisma trong lookupOrder bằng lời gọi service nội bộ đó; hợp đồng phân quyền giữ nguyên.
 // =============================================================================
 
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { isUUID } from 'class-validator';
+import { InternalOrdersService } from '../../orders/internal-orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CHATBOT_TOOL_NAMES,
@@ -73,7 +79,10 @@ const STATUS_LABELS: Record<string, string> = {
 export class ChatbotToolsService {
   private readonly logger = new Logger(ChatbotToolsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly internalOrders?: InternalOrdersService,
+  ) {}
 
   isKnownTool(name: string): name is ChatbotToolName {
     return (CHATBOT_TOOL_NAMES as readonly string[]).includes(name);
@@ -146,7 +155,60 @@ export class ChatbotToolsService {
       DEFAULT_ORDER_LIMIT,
     );
 
-    // Điều kiện userId luôn có mặt -> không bao giờ đọc được đơn của người khác.
+    // Ưu tiên dùng InternalOrdersService đã được export từ OrdersModule (F086),
+    // đồng thời áp dụng allowlist nghiêm ngặt để không bao giờ lộ PII (shippingPhone, shippingAddress...).
+    if (this.internalOrders) {
+      try {
+        const res = await this.internalOrders.findForUser(ctx.userId, {
+          orderCode,
+          limit,
+        });
+        const orders = res.orders ?? [];
+        if (orders.length === 0) {
+          return this.fail(
+            'NOT_FOUND',
+            orderCode
+              ? 'Không tìm thấy đơn hàng với mã này trong tài khoản của người dùng.'
+              : 'Người dùng chưa có đơn hàng nào.',
+          );
+        }
+        return {
+          ok: true,
+          data: {
+            orders: orders.map((o) => ({
+              orderCode: o.orderCode,
+              status: o.status,
+              statusLabel: o.statusLabel ?? STATUS_LABELS[o.status] ?? o.status,
+              grandTotal: o.grandTotal,
+              shippingFee: o.shippingFee,
+              currency: o.currency,
+              shippingRegion: o.shippingRegion,
+              cancelledReason: o.cancelledReason,
+              createdAt: o.createdAt,
+              confirmedAt: o.confirmedAt,
+              cancelledAt: o.cancelledAt,
+              lastStatusChangeAt: o.lastStatusChangeAt,
+              items: (o.items ?? []).map((i) => ({
+                productName: i.productName,
+                sku: i.sku,
+                quantity: i.quantity,
+                lineTotal: i.lineTotal,
+              })),
+            })),
+          },
+        };
+      } catch (err: unknown) {
+        if (err instanceof NotFoundException) {
+          return this.fail(
+            'NOT_FOUND',
+            'Không tìm thấy đơn hàng với mã này trong tài khoản của người dùng.',
+          );
+        }
+        throw err;
+      }
+    }
+
+    // Fallback truy vấn trực tiếp qua Prisma khi chạy độc lập không inject InternalOrdersService
     const where: Prisma.OrderWhereInput = { userId: ctx.userId };
     if (orderCode) where.orderCode = orderCode;
 
@@ -368,16 +430,42 @@ export class ChatbotToolsService {
     const minPrice =
       typeof input.minPrice === 'number'
         ? input.minPrice
-        : typeof input.minPrice === 'string' && !isNaN(Number(input.minPrice))
+        : typeof input.minPrice === 'string' &&
+            input.minPrice.trim() !== '' &&
+            !isNaN(Number(input.minPrice))
           ? Number(input.minPrice)
           : undefined;
 
     const maxPrice =
       typeof input.maxPrice === 'number'
         ? input.maxPrice
-        : typeof input.maxPrice === 'string' && !isNaN(Number(input.maxPrice))
+        : typeof input.maxPrice === 'string' &&
+            input.maxPrice.trim() !== '' &&
+            !isNaN(Number(input.maxPrice))
           ? Number(input.maxPrice)
           : undefined;
+
+    if (
+      (minPrice !== undefined &&
+        (!Number.isFinite(minPrice) || minPrice < 0)) ||
+      (maxPrice !== undefined && (!Number.isFinite(maxPrice) || maxPrice < 0))
+    ) {
+      return this.fail(
+        'INVALID_INPUT',
+        'Mức giá lọc phải là số không âm hợp lệ.',
+      );
+    }
+
+    if (
+      minPrice !== undefined &&
+      maxPrice !== undefined &&
+      minPrice > maxPrice
+    ) {
+      return this.fail(
+        'INVALID_INPUT',
+        'Khoảng giá không hợp lệ: giá tối thiểu không được lớn hơn giá tối đa.',
+      );
+    }
 
     const rawWarehouse =
       typeof input.warehouse === 'string' ? input.warehouse.trim() : undefined;

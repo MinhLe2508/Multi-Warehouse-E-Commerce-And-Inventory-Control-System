@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OrdersModule } from '../orders/orders.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EmbeddingService } from './rag/embedding.service';
 import { KnowledgeBaseService } from './rag/knowledge-base.service';
@@ -10,7 +11,7 @@ import { ChatbotController } from './chatbot.controller';
 // Xác thực JWT dùng lại JwtStrategy ('jwt') do AuthModule đăng ký với Passport,
 // nên module này không cần tự cấu hình JwtModule/secret riêng.
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, OrdersModule],
   controllers: [ChatbotController],
   providers: [
     EmbeddingService,
