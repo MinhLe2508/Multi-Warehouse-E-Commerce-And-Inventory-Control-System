@@ -40,6 +40,7 @@ import {
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryAlertService } from './inventory-alert.service';
+import { readSqlError } from '../stock-reservation/pg-error.util';
 import { type CreateInventoryDto } from './dto/create-inventory.dto';
 import {
   type QueryInventoryDto,
@@ -754,7 +755,8 @@ export class InventoryService {
   /**
    * Chuyển lỗi CSDL còn sót (lớp chặn cuối cùng) thành lỗi HTTP dễ hiểu.
    * Lỗi HTTP của chính Service (404/409/400...) được giữ nguyên.
-   * Mã SQLSTATE nằm ở "code" (driver trực tiếp) hoặc "meta.code" (PrismaClientKnownRequestError P2010).
+   * Dùng cùng bộ đọc SQLSTATE với StockReservationService, gồm cả lỗi Prisma 7
+   * bọc trong meta.driverAdapterError.cause.originalCode.
    */
   private translateDbError(error: unknown): unknown {
     if (
@@ -765,14 +767,7 @@ export class InventoryService {
       return error;
     }
 
-    const candidate = error as {
-      code?: unknown;
-      meta?: { code?: unknown };
-    } | null;
-    const sqlState =
-      (typeof candidate?.meta?.code === 'string' && candidate.meta.code) ||
-      (typeof candidate?.code === 'string' && candidate.code) ||
-      '';
+    const { sqlState } = readSqlError(error);
 
     // 23514: vi phạm CHECK (stock/reserved/threshold âm hoặc reserved > stock).
     if (sqlState === '23514') {

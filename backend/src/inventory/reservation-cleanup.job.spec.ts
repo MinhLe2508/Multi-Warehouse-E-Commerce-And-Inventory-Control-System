@@ -1,428 +1,211 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ReservationCleanupJob } from './reservation-cleanup.job';
+import { Prisma } from '@prisma/client';
+import {
+  ReservationCleanupJob,
+  RESERVATION_CLEANUP_CANDIDATES_SQL,
+} from './reservation-cleanup.job';
 
 const ORDER_1 = '11111111-1111-4111-8111-111111111111';
-const ORDER_2 = '22222222-2222-4222-8222-222222222222';
+const DB_TIME = '2026-11-17 12:00:00.123456+00';
+const reservation = (id = 101n, inventoryId = 1n, quantity = 1) => ({
+  id,
+  order_id: ORDER_1,
+  inventory_id: inventoryId,
+  quantity,
+  status: 'HOLDING',
+});
 
-interface StatefulFixtureOptions {
-  initialStock?: number;
-  initialReserved?: number;
-  reservations?: Array<{
-    id: bigint;
-    inventoryId: bigint;
-    orderId: string;
-    quantity: number;
-    status: 'HOLDING' | 'EXPIRED' | 'COMMITTED' | 'RELEASED';
-    expired: boolean;
-  }>;
-  orders?: Array<{
-    id: string;
-    status: 'PENDING_PAYMENT' | 'CONFIRMED' | 'CANCELLED';
-    cancelledReason?: string | null;
-  }>;
-}
-
-function createStatefulCleanupHarness(opts: StatefulFixtureOptions = {}) {
-  const inventoryState = new Map<
-    bigint,
-    { id: bigint; stock: number; reserved_stock: number }
-  >([
-    [
-      1n,
-      {
-        id: 1n,
-        stock: opts.initialStock ?? 10,
-        reserved_stock: opts.initialReserved ?? 1,
-      },
-    ],
-  ]);
-
-  const reservationsState = (
-    opts.reservations ?? [
-      {
-        id: 101n,
-        inventoryId: 1n,
-        orderId: ORDER_1,
-        quantity: 1,
-        status: 'HOLDING' as const,
-        expired: true,
-      },
-    ]
-  ).map((r) => ({ ...r, releasedAt: null as Date | null }));
-
-  const ordersState = new Map(
-    (opts.orders ?? [{ id: ORDER_1, status: 'PENDING_PAYMENT' as const }]).map(
-      (o) => [
-        o.id,
-        {
-          id: o.id,
-          status: o.status,
-          cancelledReason: o.cancelledReason ?? null,
-          cancelledAt: null as Date | null,
-        },
-      ],
-    ),
-  );
-
-  const auditLogs: Array<Record<string, unknown>> = [];
-  const statusHistory: Array<Record<string, unknown>> = [];
-  const rawQueries: string[] = [];
-
+// These are unit doubles for the service's decisions. They do NOT simulate
+// PostgreSQL locks/rollback; those are exercised by the live integration suite.
+function harness(
+  options: {
+    orders?: { id: string }[];
+    inventories?: { id: bigint; stock: number; reserved_stock: number }[];
+    reservations?: ReturnType<typeof reservation>[];
+    expiredIds?: bigint[];
+  } = {},
+) {
   const tx = {
-    $queryRaw: jest.fn(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        const sql = strings.join(' ? ').replace(/\s+/g, ' ').trim();
-        rawQueries.push(sql);
-
-        // Bước 1: Quét partial index idx_res_cleanup
-        if (sql.includes('SELECT DISTINCT r.inventory_id')) {
-          const ids = [
-            ...new Set(
-              reservationsState
-                .filter((r) => r.status === 'HOLDING' && r.expired)
-                .map((r) => r.inventoryId),
-            ),
-          ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-          return Promise.resolve(ids.map((inventory_id) => ({ inventory_id })));
-        }
-
-        // Bước 2: Khóa dòng inventory theo thứ tự ID tăng dần
-        if (sql.includes('FROM inventory i')) {
-          const candidateIds = (values[0] as bigint[]) ?? [];
-          return Promise.resolve(
-            candidateIds
-              .map((id) => inventoryState.get(id))
-              .filter((row): row is NonNullable<typeof row> => Boolean(row))
-              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              .map((row) => ({ ...row })),
-          );
-        }
-
-        // Bước 3: Khóa các reservation HOLDING đã quá hạn của inventory
-        if (sql.includes('SELECT id, order_id, quantity')) {
-          const invId = values[0] as bigint;
-          return Promise.resolve(
-            reservationsState
-              .filter(
-                (r) =>
-                  r.inventoryId === invId &&
-                  r.status === 'HOLDING' &&
-                  r.expired,
-              )
-              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              .map((r) => ({
-                id: r.id,
-                order_id: r.orderId,
-                quantity: r.quantity,
-              })),
-          );
-        }
-
-        // Bước 4: Tìm các đơn PENDING_PAYMENT đã hết sạch HOLDING để hủy
-        if (sql.includes('FROM orders o')) {
-          const orderIds = (values[0] as string[]) ?? [];
-          return Promise.resolve(
-            orderIds
-              .filter((id) => {
-                const order = ordersState.get(id);
-                if (!order || order.status !== 'PENDING_PAYMENT') return false;
-                const stillHolding = reservationsState.some(
-                  (r) => r.orderId === id && r.status === 'HOLDING',
-                );
-                return !stillHolding;
-              })
-              .sort()
-              .map((id) => ({ id })),
-          );
-        }
-
-        return Promise.resolve([]);
-      },
-    ),
-    stockReservation: {
-      update: jest.fn(
-        ({
-          where,
-          data,
-        }: {
-          where: { id: bigint };
-          data: { status: 'EXPIRED'; releasedAt: Date };
-        }) => {
-          const row = reservationsState.find((r) => r.id === where.id);
-          if (!row) return Promise.reject(new Error('Reservation not found'));
-          row.status = data.status;
-          row.releasedAt = data.releasedAt;
-          return Promise.resolve(row);
-        },
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValueOnce(options.orders ?? [{ id: ORDER_1 }])
+      .mockResolvedValueOnce(
+        options.inventories ?? [{ id: 1n, stock: 10, reserved_stock: 1 }],
+      )
+      .mockResolvedValueOnce(options.reservations ?? [reservation()])
+      .mockResolvedValueOnce([{ at: DB_TIME }])
+      .mockResolvedValueOnce(
+        (options.expiredIds ?? [101n]).map((id) => ({ id })),
       ),
-    },
-    inventory: {
-      update: jest.fn(
-        ({
-          where,
-          data,
-        }: {
-          where: { id: bigint };
-          data: { reservedStock: { decrement: number } };
-        }) => {
-          const inv = inventoryState.get(where.id);
-          if (!inv) return Promise.reject(new Error('Inventory not found'));
-          inv.reserved_stock -= data.reservedStock.decrement;
-          return Promise.resolve(inv);
-        },
-      ),
-    },
-    inventoryAuditLog: {
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
-        auditLogs.push(data);
-        return Promise.resolve(data);
-      }),
-    },
-    order: {
-      updateMany: jest.fn(
-        ({
-          where,
-          data,
-        }: {
-          where: { id: string; status: string };
-          data: {
-            status: 'CANCELLED';
-            cancelledReason: string;
-            cancelledAt: Date;
-          };
-        }) => {
-          const order = ordersState.get(where.id);
-          if (!order || order.status !== where.status) {
-            return Promise.resolve({ count: 0 });
-          }
-          order.status = data.status;
-          order.cancelledReason = data.cancelledReason;
-          order.cancelledAt = data.cancelledAt;
-          return Promise.resolve({ count: 1 });
-        },
-      ),
-    },
-    orderStatusHistory: {
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
-        statusHistory.push(data);
-        return Promise.resolve(data);
-      }),
-    },
+    stockReservation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    inventory: { update: jest.fn().mockResolvedValue({}) },
+    inventoryAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    order: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
   };
-
   const prisma = {
-    $transaction: jest.fn((fn: (client: typeof tx) => Promise<unknown>) =>
-      fn(tx),
+    $transaction: jest.fn((run: (client: typeof tx) => Promise<number>) =>
+      run(tx),
     ),
   };
-
-  const alertService = {
+  const alerts = {
     evaluate: jest.fn().mockResolvedValue({ raised: 0, resolved: 0 }),
   };
-
-  const job = new ReservationCleanupJob(prisma as never, alertService as never);
-
   return {
-    job,
     tx,
     prisma,
-    alertService,
-    inventoryState,
-    reservationsState,
-    ordersState,
-    auditLogs,
-    statusHistory,
-    rawQueries,
+    alerts,
+    job: new ReservationCleanupJob(prisma as never, alerts as never),
   };
 }
 
-describe('ReservationCleanupJob — Tuần 6 (STT 33 & Mục 9.3)', () => {
-  it('giải phóng reserved_stock (1 -> 0), chuyển HOLDING -> EXPIRED, hủy đơn PENDING_PAYMENT -> CANCELLED (EXPIRED) và ghi lịch sử', async () => {
-    const {
-      job,
-      inventoryState,
-      reservationsState,
-      ordersState,
-      auditLogs,
-      statusHistory,
-      alertService,
-    } = createStatefulCleanupHarness({
-      initialStock: 10,
-      initialReserved: 1,
+describe('ReservationCleanupJob — transaction decisions (DB semantics tested live)', () => {
+  it('does nothing when no unlocked order can be claimed', async () => {
+    const { job, tx, alerts } = harness({ orders: [] });
+    await expect(job.cleanupExpired()).resolves.toBe(0);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.inventory.update).not.toHaveBeenCalled();
+    expect(tx.order.updateMany).not.toHaveBeenCalled();
+    expect(alerts.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('expires stock, cancels the order and records audit/history in the same tx', async () => {
+    const { job, tx, prisma, alerts } = harness();
+    await expect(job.cleanupExpired()).resolves.toBe(1);
+    expect(tx.stockReservation.updateMany).toHaveBeenCalledWith({
+      where: { id: 101n, status: 'HOLDING' },
+      data: { status: 'EXPIRED', releasedAt: new Date(DB_TIME) },
     });
-
-    const expiredCount = await job.cleanupExpired();
-
-    expect(expiredCount).toBe(1);
-    expect(inventoryState.get(1n)).toEqual({
-      id: 1n,
-      stock: 10,
-      reserved_stock: 0,
+    expect(tx.inventory.update).toHaveBeenCalledWith({
+      where: { id: 1n },
+      data: { reservedStock: { decrement: 1 } },
     });
-    expect(reservationsState[0].status).toBe('EXPIRED');
-    expect(reservationsState[0].releasedAt).toBeInstanceOf(Date);
-
-    const order = ordersState.get(ORDER_1)!;
-    expect(order.status).toBe('CANCELLED');
-    expect(order.cancelledReason).toBe('EXPIRED');
-    expect(order.cancelledAt).toBeInstanceOf(Date);
-
-    expect(auditLogs).toEqual([
-      expect.objectContaining({
-        inventoryId: 1n,
-        reason: 'EXPIRE',
+    expect(tx.inventoryAuditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
         stockBefore: 10,
         stockAfter: 10,
         reservedBefore: 1,
         reservedAfter: 0,
         quantityDelta: 0,
-        referenceType: 'stock_reservation',
+        reason: 'EXPIRE',
         referenceId: '101',
       }),
-    ]);
-
-    expect(statusHistory).toEqual([
-      {
+    });
+    expect(tx.order.updateMany).toHaveBeenCalledWith({
+      where: { id: ORDER_1, status: 'PENDING_PAYMENT' },
+      data: {
+        status: 'CANCELLED',
+        cancelledReason: 'EXPIRED',
+        cancelledAt: new Date(DB_TIME),
+      },
+    });
+    expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+      data: {
         orderId: ORDER_1,
         fromStatus: 'PENDING_PAYMENT',
         toStatus: 'CANCELLED',
         actorId: null,
         reason: 'EXPIRED',
       },
-    ]);
-
-    expect(alertService.evaluate).toHaveBeenCalledWith(expect.anything(), [1n]);
+    });
+    expect(alerts.evaluate).toHaveBeenCalledWith(tx, [1n]);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 30000,
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    });
   });
 
-  it('tính idempotent: chạy lần 2 trả về 0, không trừ reserved_stock thêm và không ghi trùng audit/history', async () => {
-    const {
-      job,
-      tx,
-      inventoryState,
-      ordersState,
-      auditLogs,
-      statusHistory,
-      alertService,
-    } = createStatefulCleanupHarness({
-      initialStock: 10,
-      initialReserved: 1,
+  it('keeps an order pending while another reservation is still HOLDING', async () => {
+    const { job, tx } = harness({
+      inventories: [{ id: 1n, stock: 10, reserved_stock: 3 }],
+      reservations: [reservation(), reservation(102n, 1n, 2)],
     });
-
-    // Lần chạy 1: giải phóng 1 bản ghi hết hạn
     await expect(job.cleanupExpired()).resolves.toBe(1);
-    expect(inventoryState.get(1n)!.reserved_stock).toBe(0);
-    expect(ordersState.get(ORDER_1)!.status).toBe('CANCELLED');
-    expect(auditLogs).toHaveLength(1);
-    expect(statusHistory).toHaveLength(1);
+    expect(tx.stockReservation.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.order.updateMany).not.toHaveBeenCalled();
+    expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+  });
 
-    // Lần chạy 2 (idempotent): UPDATE 0 dòng, reserved_stock giữ nguyên 0
+  it('recovers a legacy order with all reservations EXPIRED, without decrementing stock again', async () => {
+    const { job, tx } = harness({
+      inventories: [],
+      reservations: [{ ...reservation(), status: 'EXPIRED' }],
+      expiredIds: [],
+    });
     await expect(job.cleanupExpired()).resolves.toBe(0);
-    expect(inventoryState.get(1n)!.reserved_stock).toBe(0);
-    expect(tx.stockReservation.update).toHaveBeenCalledTimes(1);
-    expect(tx.inventory.update).toHaveBeenCalledTimes(1);
+    expect(tx.inventory.update).not.toHaveBeenCalled();
+    expect(tx.inventoryAuditLog.create).not.toHaveBeenCalled();
     expect(tx.order.updateMany).toHaveBeenCalledTimes(1);
-    expect(auditLogs).toHaveLength(1);
-    expect(statusHistory).toHaveLength(1);
-    expect(alertService.evaluate).toHaveBeenCalledTimes(1);
+    expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
   });
 
-  it('chỉ giải phóng giữ chỗ đã quá hạn; giữ nguyên giữ chỗ còn hạn và chưa hủy đơn còn HOLDING', async () => {
-    const {
-      job,
-      inventoryState,
-      reservationsState,
-      ordersState,
-      statusHistory,
-    } = createStatefulCleanupHarness({
-      initialStock: 10,
-      initialReserved: 5,
-      reservations: [
-        {
-          id: 101n,
-          inventoryId: 1n,
-          orderId: ORDER_1,
-          quantity: 3,
-          status: 'HOLDING',
-          expired: true,
-        },
-        {
-          id: 102n,
-          inventoryId: 1n,
-          orderId: ORDER_1,
-          quantity: 2,
-          status: 'HOLDING',
-          expired: false,
-        },
-      ],
-      orders: [{ id: ORDER_1, status: 'PENDING_PAYMENT' }],
+  it('tracks audit balances correctly across multiple rows of the same inventory', async () => {
+    const { job, tx, alerts } = harness({
+      inventories: [{ id: 1n, stock: 10, reserved_stock: 5 }],
+      reservations: [reservation(101n, 1n, 3), reservation(102n, 1n, 2)],
+      expiredIds: [101n, 102n],
     });
-
-    await expect(job.cleanupExpired()).resolves.toBe(1);
-    expect(inventoryState.get(1n)!.reserved_stock).toBe(2);
-    expect(reservationsState[0].status).toBe('EXPIRED');
-    expect(reservationsState[1].status).toBe('HOLDING');
-    // Đơn vẫn còn 1 reservation HOLDING chưa hết hạn nên chưa bị hủy
-    expect(ordersState.get(ORDER_1)!.status).toBe('PENDING_PAYMENT');
-    expect(statusHistory).toHaveLength(0);
+    await expect(job.cleanupExpired()).resolves.toBe(2);
+    expect(
+      tx.inventoryAuditLog.create.mock.calls.map(
+        ([arg]) => arg.data.reservedAfter,
+      ),
+    ).toEqual([2, 0]);
+    expect(alerts.evaluate).toHaveBeenCalledWith(tx, [1n]);
   });
 
-  it('sử dụng truy vấn khớp partial index idx_res_cleanup và khóa FOR UPDATE SKIP LOCKED theo thứ tự tăng dần', async () => {
-    const { job, rawQueries } = createStatefulCleanupHarness({
-      initialStock: 10,
-      initialReserved: 2,
-      reservations: [
-        {
-          id: 201n,
-          inventoryId: 1n,
-          orderId: ORDER_2,
-          quantity: 2,
-          status: 'HOLDING',
-          expired: true,
-        },
-      ],
-      orders: [{ id: ORDER_2, status: 'PENDING_PAYMENT' }],
-    });
-
+  it('claims orders before inventory/reservation locks and skips only unclaimed orders', async () => {
+    const { job, tx } = harness();
     await job.cleanupExpired();
-
-    // Truy vấn đầu tiên phải lọc trực tiếp trên stock_reservations với status = 'HOLDING' AND expires_at <= NOW()
-    // để PostgreSQL Planner chọn Index Scan using idx_res_cleanup.
-    expect(rawQueries[0]).toContain('FROM stock_reservations r');
-    expect(rawQueries[0]).toContain("r.status = 'HOLDING'");
-    expect(rawQueries[0]).toContain('r.expires_at <= NOW()');
-    expect(rawQueries[0]).toContain('ORDER BY r.inventory_id ASC');
-
-    // Truy vấn thứ hai khóa inventory theo i.id tăng dần + FOR UPDATE OF i SKIP LOCKED
-    expect(rawQueries[1]).toContain('FROM inventory i');
-    expect(rawQueries[1]).toContain('ORDER BY i.id');
-    expect(rawQueries[1]).toContain('FOR UPDATE OF i SKIP LOCKED');
-
-    // Truy vấn thứ ba khóa stock_reservations theo id tăng dần + FOR UPDATE SKIP LOCKED
-    expect(rawQueries[2]).toContain('FROM stock_reservations');
-    expect(rawQueries[2]).toContain('ORDER BY id');
-    expect(rawQueries[2]).toContain('FOR UPDATE SKIP LOCKED');
+    expect(tx.$queryRaw.mock.calls[0][0]).toBe(
+      RESERVATION_CLEANUP_CANDIDATES_SQL,
+    );
+    expect(RESERVATION_CLEANUP_CANDIDATES_SQL.text).toContain(
+      'FOR UPDATE OF o SKIP LOCKED',
+    );
+    const lockInventory = (
+      tx.$queryRaw.mock.calls[1][0] as TemplateStringsArray
+    ).join('?');
+    const lockReservations = (
+      tx.$queryRaw.mock.calls[2][0] as TemplateStringsArray
+    ).join('?');
+    expect(lockInventory).toContain('ORDER BY i.id');
+    expect(lockInventory).toContain('FOR UPDATE OF i');
+    expect(lockReservations).toContain('ORDER BY id');
+    expect(lockReservations).toContain('FOR UPDATE');
+    expect(lockInventory + lockReservations).not.toContain('SKIP LOCKED');
   });
 
-  it('ném lỗi để rollback transaction nếu reserved_stock nhỏ hơn quantity cần giải phóng', async () => {
-    const { job } = createStatefulCleanupHarness({
-      initialStock: 10,
-      initialReserved: 1,
-      reservations: [
-        {
-          id: 301n,
-          inventoryId: 1n,
-          orderId: ORDER_1,
-          quantity: 4,
-          status: 'HOLDING',
-          expired: true,
-        },
-      ],
-    });
-
+  it('propagates an invalid reserved balance to the transaction owner', async () => {
+    const { job, tx } = harness({ reservations: [reservation(101n, 1n, 4)] });
     await expect(job.cleanupExpired()).rejects.toThrow(
       'Invalid reserved stock for inventory 1',
     );
+    expect(tx.inventory.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a lost reservation update before decrementing inventory', async () => {
+    const { job, tx } = harness();
+    tx.stockReservation.updateMany.mockResolvedValue({ count: 0 });
+    await expect(job.cleanupExpired()).rejects.toThrow(
+      'Reservation 101 changed under lock',
+    );
+    expect(tx.inventory.update).not.toHaveBeenCalled();
+  });
+
+  it('propagates a history failure after stock writes so PostgreSQL can roll back', async () => {
+    const { job, tx, alerts } = harness();
+    tx.orderStatusHistory.create.mockRejectedValue(new Error('history failed'));
+    await expect(job.cleanupExpired()).rejects.toThrow('history failed');
+    expect(tx.inventory.update).toHaveBeenCalledTimes(1);
+    expect(alerts.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('propagates alert failures instead of committing stock without alert changes', async () => {
+    const { job, alerts } = harness();
+    alerts.evaluate.mockRejectedValue(new Error('alert failed'));
+    await expect(job.cleanupExpired()).rejects.toThrow('alert failed');
   });
 });
 
