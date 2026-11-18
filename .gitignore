@@ -8,3 +8,6 @@ coverage/
 *.log
 *.tsbuildinfo
 *.dump
+tmp/
+outputs/
+backend/tmp/

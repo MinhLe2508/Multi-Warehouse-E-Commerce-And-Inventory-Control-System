@@ -61,6 +61,18 @@ jobs:
         if: matrix.app == 'backend'
         run: npm test -- --ci --passWithNoTests --coverage --runInBand
 
+      - name: Chạy kiểm thử hậu kiểm chống Oversell (NFR-04.1)
+        if: matrix.app == 'backend'
+        run: npm run test:oversell
+
+      - name: Chạy kiểm thử E2E Cảnh báo Tồn kho (F121)
+        if: matrix.app == 'backend'
+        run: npm run test:e2e
+
+      - name: Chạy kiểm thử tĩnh DDL & Cleanup tuần 6 (STT 31, 33)
+        if: matrix.app == 'backend'
+        run: npm run test:week6:static
+
       - name: Build ứng dụng
         run: npm run build
 
