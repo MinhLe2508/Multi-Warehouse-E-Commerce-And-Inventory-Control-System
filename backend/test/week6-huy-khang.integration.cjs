@@ -1258,6 +1258,126 @@ test(
     );
 
     await scenario(
+      'Kho: PUT lặp và DELETE lặp giữ nguyên dấu thời gian, giữ patch từng phần',
+      async (f) => {
+        const warehouses = new WarehousesService(prisma, alerts, changes);
+        await assert.rejects(
+          warehouses.update(f.whId, {}),
+          (error) => error.getStatus?.() === 400,
+        );
+        const modified = await warehouses.update(f.whId, {
+          capacity: 10,
+          address: 'Hà Nội',
+        });
+        const cleared = await warehouses.update(f.whId, {
+          capacity: null,
+          defaultLowStockThreshold: 0,
+        });
+        assert.equal(cleared.address, modified.address);
+        assert.equal(cleared.capacity, null);
+        assert.equal(cleared.defaultLowStockThreshold, 0);
+        await warehouses.deactivate(f.whId);
+        const state = async () =>
+          (
+            await pool.query(
+              'SELECT is_active, updated_at, xmin::text AS revision FROM warehouses WHERE id=$1',
+              [f.whId],
+            )
+          ).rows[0];
+        const before = await state();
+        assert.equal(before.is_active, false);
+        await warehouses.deactivate(f.whId);
+        await warehouses.update(f.whId, { capacity: null });
+        assert.deepEqual(await state(), before);
+        await assert.rejects(
+          warehouses.findOne(f.whId, false),
+          (error) => error.getStatus?.() === 404,
+        );
+        assert.equal((await warehouses.findOne(f.whId, true)).isActive, false);
+        assert.equal(
+          (await warehouses.update(f.whId, { isActive: true })).isActive,
+          true,
+        );
+      },
+    );
+
+    await scenario(
+      'Kho: tổng tồn vật lý vượt INTEGER vẫn từ chối giảm capacity bằng HTTP 409',
+      async (f) => {
+        const warehouses = new WarehousesService(prisma, alerts, changes);
+        await f.inventory(2147483647);
+        await f.inventory(3);
+        await assert.rejects(
+          warehouses.update(f.whId, { capacity: 2147483647 }),
+          (error) =>
+            error.getStatus?.() === 409 && /2147483650/.test(error.message),
+        );
+        assert.equal((await warehouses.findOne(f.whId, true)).capacity, null);
+        assert.equal(emitted.length, 0);
+      },
+    );
+
+    await scenario(
+      'Kho: giảm capacity chờ nhập hàng đang chạy rồi kiểm tra tổng tồn đã commit',
+      async (f) => {
+        const inv = await f.inventory(5);
+        const warehouses = new WarehousesService(prisma, alerts, changes);
+        const lock = await blocker();
+        let restock;
+        let reduction;
+        let reductionFinished = false;
+        try {
+          await lock.c.query(
+            'SELECT id FROM inventory WHERE id=$1 FOR UPDATE',
+            [inv],
+          );
+          // Restock locks the warehouse first and then waits for this inventory row.
+          restock = inventoryService
+            .restock(inv, { quantity: 4 }, f.userId)
+            .then(
+              (value) => ({ value }),
+              (error) => ({ error }),
+            );
+          await waitBlocked(lock.pid);
+          reduction = warehouses
+            .update(f.whId, { capacity: 6 })
+            .then(
+              (value) => ({ value }),
+              (error) => ({ error }),
+            )
+            .finally(() => {
+              reductionFinished = true;
+            });
+          // Confirm that the capacity update is queued behind the restock transaction.
+          await waitUntil(
+            async () =>
+              reductionFinished ||
+              (
+                await pool.query(
+                  `SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity w
+              JOIN pg_stat_activity r ON r.pid = ANY(pg_blocking_pids(w.pid))
+              WHERE w.datname = current_database()
+                AND $1 = ANY(pg_blocking_pids(r.pid))
+            ) AS waiting`,
+                  [lock.pid],
+                )
+              ).rows[0].waiting,
+            'Thao tác sức chứa chưa chờ khóa của thao tác nhập hàng',
+          );
+          assert.equal(reductionFinished, false);
+        } finally {
+          await lock.release();
+          await Promise.all([restock, reduction]);
+        }
+        assert.equal((await restock).value?.stock, 9);
+        assert.equal((await reduction).error?.getStatus?.(), 409);
+        assert.equal((await warehouses.findOne(f.whId, true)).capacity, null);
+        assert.equal(emitted.length, 1);
+      },
+    );
+
+    await scenario(
       'Đổi ngưỡng kho: đánh giá lại các dòng kế thừa, giữ ngưỡng riêng và phát đúng snapshot',
       async (f) => {
         const inherited = await f.inventory(5);
@@ -1275,14 +1395,15 @@ test(
         );
         assert.equal(emitted.length, 1);
         assert.equal(emitted[0].effectiveThreshold, 5);
-        await warehouses.update(f.whId, { defaultLowStockThreshold: 0 });
-        assert.equal(
-          (
-            await pool.query(
-              "SELECT count(*)::int AS n FROM stock_alerts WHERE status='OPEN'",
-            )
-          ).rows[0].n,
-          0,
+        await warehouses.update(
+          f.whId,
+          { defaultLowStockThreshold: 0 },
+          f.userId,
+        );
+        assert.deepEqual(
+          (await pool.query('SELECT status, resolved_by FROM stock_alerts'))
+            .rows,
+          [{ status: 'RESOLVED', resolved_by: f.userId }],
         );
         assert.equal(emitted.length, 2);
         await warehouses.update(f.whId, { defaultLowStockThreshold: 0 });
@@ -1295,6 +1416,38 @@ test(
           ).rows[0].threshold,
           2,
         );
+      },
+    );
+
+    await scenario(
+      'Đổi ngưỡng kho gặp lỗi đánh giá: rollback kho và cảnh báo, không phát realtime',
+      async (f) => {
+        await f.inventory(5);
+        const failingAlerts = {
+          async evaluate(tx, ids, actorId) {
+            const result = await alerts.evaluate(tx, ids, actorId);
+            assert.equal(result.raised, 1);
+            throw new Error('WAREHOUSE_ALERT_EVALUATION_FAILED');
+          },
+        };
+        const warehouses = new WarehousesService(
+          prisma,
+          failingAlerts,
+          changes,
+        );
+        await assert.rejects(
+          warehouses.update(f.whId, { defaultLowStockThreshold: 5 }, f.userId),
+          /WAREHOUSE_ALERT_EVALUATION_FAILED/,
+        );
+        assert.equal(
+          (await warehouses.findOne(f.whId, true)).defaultLowStockThreshold,
+          0,
+        );
+        assert.equal(
+          (await pool.query('SELECT id FROM stock_alerts')).rowCount,
+          0,
+        );
+        assert.equal(emitted.length, 0);
       },
     );
 

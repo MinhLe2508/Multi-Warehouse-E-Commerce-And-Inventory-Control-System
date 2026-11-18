@@ -156,47 +156,59 @@ export class WarehousesService {
    * 3. Nếu ĐỔI SỨC CHỨA sang số hữu hạn: từ chối khi nhỏ hơn tổng tồn kho hiện có.
    * 4. Ghi cập nhật.
    */
-  async update(id: string, input: UpdateWarehouseDto): Promise<Warehouse> {
+  async update(
+    id: string,
+    input: UpdateWarehouseDto,
+    actorId: string | null = null,
+  ): Promise<Warehouse> {
     const data = this.buildUpdateData(input);
+    const fields = Object.keys(data) as (keyof UpdateWarehouseDto)[];
 
-    if (Object.keys(data).length === 0) {
+    if (fields.length === 0) {
       throw new BadRequestException(
         'Cần cung cấp ít nhất một trường để cập nhật.',
       );
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      await this.lockWarehouse(tx, id);
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        await this.lockWarehouse(tx, id);
+        const current = await tx.warehouse.findUniqueOrThrow({ where: { id } });
 
-      const current = await tx.warehouse.findUniqueOrThrow({ where: { id } });
+        if (fields.every((field) => data[field] === current[field])) {
+          return { warehouse: current, inventoryIds: [] };
+        }
 
-      // Chỉ kiểm tra khi thực sự chuyển từ "hoạt động" sang "ngừng hoạt động".
-      // Gọi lại trên kho đã ngừng hoạt động là thao tác lặp, vô hại (idempotent).
-      if (input.isActive === false && current.isActive) {
-        await this.assertNoActiveReservations(tx, current);
-      }
+        if (data.isActive === false && current.isActive) {
+          await this.assertNoActiveReservations(tx, current);
+        }
 
-      // capacity = null nghĩa là bỏ giới hạn: luôn hợp lệ, không cần kiểm tra.
-      if (typeof input.capacity === 'number') {
-        await this.assertCapacityEnough(tx, current, input.capacity);
-      }
+        // capacity = null bỏ giới hạn. Tổng tồn được đọc sau khi khóa kho.
+        if (typeof data.capacity === 'number') {
+          await this.assertCapacityEnough(tx, current, data.capacity);
+        }
 
-      const warehouse = await tx.warehouse.update({ where: { id }, data });
-      const thresholdChanged =
-        input.defaultLowStockThreshold !== undefined &&
-        input.defaultLowStockThreshold !== current.defaultLowStockThreshold;
-      let inventoryIds: bigint[] = [];
-      if (thresholdChanged) {
-        // Only inherited thresholds change. Lock warehouse -> inventory, as in restock.
-        const rows = await tx.$queryRaw<{ id: bigint }[]>`
-          SELECT id FROM inventory WHERE warehouse_id = ${id}::uuid AND threshold IS NULL
-           ORDER BY id FOR UPDATE
-        `;
-        inventoryIds = rows.map((row) => row.id);
-        await this.alerts.evaluate(tx, inventoryIds);
-      }
-      return { warehouse, inventoryIds };
-    });
+        const warehouse = await tx.warehouse.update({ where: { id }, data });
+        if (
+          warehouse.defaultLowStockThreshold ===
+          current.defaultLowStockThreshold
+        ) {
+          return { warehouse, inventoryIds: [] };
+        }
+
+        // Khóa kho ngăn lần ghi tồn kho khác thay đổi ngưỡng riêng. evaluate()
+        // khóa các dòng kế thừa theo id và đọc tồn khả dụng sau khi lấy khóa.
+        const rows = await tx.inventory.findMany({
+          where: { warehouseId: id, threshold: null },
+          select: { id: true },
+        });
+        const inventoryIds = rows.map((row) => row.id);
+        await this.alerts.evaluate(tx, inventoryIds, actorId);
+        return { warehouse, inventoryIds };
+      },
+      // Mỗi lần đọc thấy dữ liệu đã commit mới nhất, kể cả sau khi chờ khóa nhập hàng.
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
     if (result.inventoryIds.length)
       await this.changes.publishInventory(result.inventoryIds);
     return result.warehouse;
@@ -219,10 +231,8 @@ export class WarehousesService {
    * Phân biệt undefined (không đổi) với null (xóa giá trị) — xem chú thích
    * đầu file update-warehouse.dto.ts.
    */
-  private buildUpdateData(
-    input: UpdateWarehouseDto,
-  ): Prisma.WarehouseUpdateInput {
-    const data: Prisma.WarehouseUpdateInput = {};
+  private buildUpdateData(input: UpdateWarehouseDto): UpdateWarehouseDto {
+    const data: UpdateWarehouseDto = {};
 
     if (input.name !== undefined) data.name = input.name;
     if (input.region !== undefined) data.region = input.region;
@@ -287,14 +297,13 @@ export class WarehousesService {
     warehouse: Warehouse,
     newCapacity: number,
   ): Promise<void> {
-    const aggregate = await tx.inventory.aggregate({
-      where: { warehouseId: warehouse.id },
-      _sum: { stock: true },
-    });
+    const [{ totalStock }] = await tx.$queryRaw<{ totalStock: bigint }[]>`
+      SELECT COALESCE(SUM(stock), 0)::bigint AS "totalStock"
+        FROM inventory
+       WHERE warehouse_id = ${warehouse.id}::uuid
+    `;
 
-    const totalStock = aggregate._sum.stock ?? 0;
-
-    if (totalStock > newCapacity) {
+    if (totalStock > BigInt(newCapacity)) {
       throw new ConflictException(
         `Không thể đặt sức chứa kho "${warehouse.name}" là ${newCapacity} vì tổng tồn kho hiện có là ${totalStock}.`,
       );

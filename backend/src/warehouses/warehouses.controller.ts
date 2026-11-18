@@ -10,9 +10,7 @@
 // PHÂN QUYỀN:
 // - Không có endpoint công khai: khách hàng (CUSTOMER) không cần xem danh sách kho
 // - Việc chọn kho giao hàng do hệ thống đặt hàng tự quyết định
-// - Guard gắn ở mức CLASS: JwtAuthGuard (xác thực) chạy trước RolesGuard (kiểm tra vai trò)
-// - Gắn trực tiếp nên đúng cả khi chưa đăng ký Guard toàn cục.
-// - Nếu sau này đăng ký APP_GUARD toàn cục, có thể bỏ @UseGuards ở đây để tránh xác thực hai lần
+// - Thứ tự guard: xác thực JWT, kiểm tra đổi mật khẩu lần đầu, kiểm tra vai trò.
 // - Kho ĐÃ NGỪNG HOẠT ĐỘNG chỉ Admin được xem (?includeInactive=true).
 // - Nhân viên kho yêu cầu xem kho đã ngừng sẽ nhận HTTP 403 (danh sách) hoặc 404 (chi tiết).
 //
@@ -21,17 +19,14 @@
 // =============================================================================
 
 import {
-  BadRequestException,
   Body,
   Controller,
-  DefaultValuePipe,
   Delete,
   ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
   Param,
-  ParseBoolPipe,
   ParseUUIDPipe,
   Post,
   Put,
@@ -42,13 +37,15 @@ import { UserRole, type Warehouse } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import { Roles } from '../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
+import { PasswordChangedGuard } from '../core/guards/password-changed.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
+import { QueryWarehousesDto } from './dto/query-warehouses.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { WarehousesService } from './warehouses.service';
 
 @Controller('warehouses')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
 export class WarehousesController {
   constructor(private readonly warehousesService: WarehousesService) {}
 
@@ -63,9 +60,7 @@ export class WarehousesController {
   @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_STAFF)
   async findAll(
     @CurrentUser('role') role: UserRole,
-    @Query('includeInactive', new DefaultValuePipe(false), ParseBoolPipe)
-    includeInactive: boolean,
-    @Query('region') region?: string | string[],
+    @Query() { includeInactive, region }: QueryWarehousesDto,
   ): Promise<Warehouse[]> {
     if (includeInactive && role !== UserRole.ADMIN) {
       throw new ForbiddenException(
@@ -73,16 +68,7 @@ export class WarehousesController {
       );
     }
 
-    // Express trả mảng khi Client lặp tham số (?region=a&region=b)
-    // Từ chối rõ ràng thay vì để lỗi xảy ra ở bước xử lý chuỗi (HTTP 500).
-    if (region !== undefined && typeof region !== 'string') {
-      throw new BadRequestException('Tham số Region chỉ được truyền một lần.');
-    }
-
-    return this.warehousesService.findAll({
-      includeInactive,
-      region: region?.trim() || undefined,
-    });
+    return this.warehousesService.findAll({ includeInactive, region });
   }
 
   // Chi tiết 1 kho. Nhân viên kho chỉ xem được kho đang hoạt động
@@ -116,8 +102,9 @@ export class WarehousesController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: UpdateWarehouseDto,
+    @CurrentUser('userId') actorId: string,
   ): Promise<Warehouse> {
-    return this.warehousesService.update(id, input);
+    return this.warehousesService.update(id, input, actorId);
   }
 
   // "Xóa" kho = ngừng hoạt động (xóa mềm), KHÔNG xóa dữ liệu. Trả HTTP 204.

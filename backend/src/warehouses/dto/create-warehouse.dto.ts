@@ -59,7 +59,7 @@ export class CreateWarehouseDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   region!: string;
 
-  // Địa chỉ chi tiết của kho, không bắt buộc
+  // Địa chỉ chi tiết của kho, không bắt buộc. Gửi null khi chưa có địa chỉ.
   // Chuỗi rỗng sau khi trim được coi như không gửi trường này
   @IsOptional()
   @IsString({ message: 'Địa chỉ phải là chuỗi ký tự.' })
@@ -72,7 +72,7 @@ export class CreateWarehouseDto {
     const normalized = value.trim();
     return normalized === '' ? undefined : normalized;
   })
-  address?: string;
+  address?: string | null;
 
   // Sức chứa tối đa của kho (tổng số sản phẩm vật lý)
   // Không gửi (hoặc gửi null) nghĩa là không giới hạn. Nếu có giá trị thì phải là số nguyên dương.

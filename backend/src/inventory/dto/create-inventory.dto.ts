@@ -19,6 +19,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 // Giá trị lớn nhất của cột INTEGER trong PostgreSQL (2^31 - 1).
@@ -34,7 +35,7 @@ export class CreateInventoryDto {
   warehouseId!: string;
 
   // Số lượng tồn ban đầu. Không gửi thì mặc định 0 (tạo dòng rỗng, nhập hàng sau).
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt({ message: 'Số lượng tồn ban đầu phải là số nguyên.' })
   @Min(0, { message: 'Số lượng tồn ban đầu không được âm.' })
   @Max(INT4_MAX, {

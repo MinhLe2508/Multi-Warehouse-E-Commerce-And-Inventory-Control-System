@@ -13,7 +13,7 @@
 // - Phân trang dùng limit/offset, cùng kiểu với NotificationQueryDto của module Notifications để Frontend dùng thống nhất.
 // =============================================================================
 
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -27,6 +27,7 @@ import {
 // Giá trị mặc định và trần của phân trang.
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const INT4_MAX = 2147483647;
 
 // Danh sách các trạng thái cảnh báo được phép lọc ("ALL" = không lọc theo trạng thái).
 export const ALERT_STATUS_FILTERS = ['OPEN', 'RESOLVED', 'ALL'] as const;
@@ -35,6 +36,15 @@ export type AlertStatusFilter = (typeof ALERT_STATUS_FILTERS)[number];
 // Chuỗi rỗng -> undefined (coi như không truyền); giá trị khác giữ nguyên.
 const emptyToUndefined = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+// Decimal query integers only; preserve malformed values for IsInt to reject.
+const toInteger = ({ value }: { value: unknown }): unknown => {
+  if (typeof value !== 'string') return value;
+  if (value.trim() === '') return undefined;
+  if (!/^\d+$/.test(value)) return value;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : value;
+};
 
 // "true"/"false" (chuỗi) -> boolean; giá trị khác giữ nguyên để IsBoolean từ chối.
 const toBoolean = ({ value }: { value: unknown }): unknown => {
@@ -65,7 +75,7 @@ export class QueryInventoryDto {
 
   // Số dòng tối đa mỗi trang.
   @IsOptional()
-  @Type(() => Number)
+  @Transform(toInteger)
   @IsInt({ message: 'Limit phải là số nguyên.' })
   @Min(1, { message: 'Limit phải từ 1 trở lên.' })
   @Max(MAX_LIMIT, { message: `Limit tối đa là ${MAX_LIMIT}.` })
@@ -73,9 +83,10 @@ export class QueryInventoryDto {
 
   // Số dòng bỏ qua (bắt đầu từ 0).
   @IsOptional()
-  @Type(() => Number)
+  @Transform(toInteger)
   @IsInt({ message: 'Offset phải là số nguyên.' })
   @Min(0, { message: 'Offset phải từ 0 trở lên.' })
+  @Max(INT4_MAX, { message: `Offset tối đa là ${INT4_MAX}.` })
   offset?: number = 0;
 }
 
@@ -97,15 +108,16 @@ export class QueryStockAlertsDto {
   warehouseId?: string;
 
   @IsOptional()
-  @Type(() => Number)
+  @Transform(toInteger)
   @IsInt({ message: 'Limit phải là số nguyên.' })
   @Min(1, { message: 'Limit phải từ 1 trở lên.' })
   @Max(MAX_LIMIT, { message: `Limit tối đa là ${MAX_LIMIT}.` })
   limit?: number = DEFAULT_LIMIT;
 
   @IsOptional()
-  @Type(() => Number)
+  @Transform(toInteger)
   @IsInt({ message: 'Offset phải là số nguyên.' })
   @Min(0, { message: 'Offset phải từ 0 trở lên.' })
+  @Max(INT4_MAX, { message: `Offset tối đa là ${INT4_MAX}.` })
   offset?: number = 0;
 }
