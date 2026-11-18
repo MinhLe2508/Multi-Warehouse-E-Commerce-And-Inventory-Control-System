@@ -32,6 +32,7 @@ export interface AdminCategoryItem {
 export default function ManageCategories() {
   const [categories, setCategories] = useState<AdminCategoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
@@ -48,59 +49,15 @@ export default function ManageCategories() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchCategories = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
     try {
       const data = await authenticatedRequest<AdminCategoryItem[]>('/categories/manage');
-      setCategories(data || []);
-      setError(null);
-    } catch {
-      // Fallback an toàn nếu backend chưa khởi chạy
-      const mockCategories: AdminCategoryItem[] = [
-        {
-          id: 'cat-root-1',
-          name: 'Điện tử & Công nghệ',
-          slug: 'dien-tu-cong-nghe',
-          parentId: null,
-          isActive: true,
-          createdAt: '2026-01-15T08:00:00.000Z',
-          updatedAt: '2026-01-15T08:00:00.000Z',
-          productCount: 15,
-          childCount: 2,
-        },
-        {
-          id: 'cat-phones',
-          name: 'Điện thoại & Tablet',
-          slug: 'dien-thoai-tablet',
-          parentId: 'cat-root-1',
-          isActive: true,
-          createdAt: '2026-01-16T09:00:00.000Z',
-          updatedAt: '2026-01-16T09:00:00.000Z',
-          productCount: 8,
-          childCount: 0,
-        },
-        {
-          id: 'cat-laptops',
-          name: 'Laptop & Máy tính',
-          slug: 'laptop-may-tinh',
-          parentId: 'cat-root-1',
-          isActive: true,
-          createdAt: '2026-01-16T10:00:00.000Z',
-          updatedAt: '2026-01-16T10:00:00.000Z',
-          productCount: 7,
-          childCount: 0,
-        },
-        {
-          id: 'cat-audio',
-          name: 'Âm thanh & Phụ kiện',
-          slug: 'am-thanh-phu-kien',
-          parentId: null,
-          isActive: true,
-          createdAt: '2026-01-20T11:00:00.000Z',
-          updatedAt: '2026-01-20T11:00:00.000Z',
-          productCount: 4,
-          childCount: 0,
-        },
-      ];
-      setCategories(mockCategories);
+      if (!Array.isArray(data)) throw new Error('Máy chủ trả về danh sách danh mục không hợp lệ.');
+      setCategories(data);
+    } catch (err: unknown) {
+      setCategories([]);
+      setLoadError(err instanceof Error ? err.message : 'Không tải được danh sách danh mục.');
     } finally {
       setLoading(false);
     }
@@ -130,41 +87,68 @@ export default function ManageCategories() {
     return { rootNodes: roots, childrenMap: map };
   }, [categories]);
 
+  const editingItem = editingCategory?.category;
+  const editableParentOptions = useMemo(() => {
+    if (!editingItem) return categories;
+
+    const excluded = new Set<string>();
+    const pending = [editingItem.id];
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (excluded.has(id)) continue;
+      excluded.add(id);
+      for (const child of childrenMap[id] ?? []) pending.push(child.id);
+    }
+    return categories.filter((category) => !excluded.has(category.id));
+  }, [categories, childrenMap, editingItem]);
+
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   // Bật/tắt trạng thái hiển thị của danh mục
   const handleToggleActive = async (cat: AdminCategoryItem) => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
     try {
       await authenticatedRequest(`/categories/${cat.id}`, { isActive: !cat.isActive }, 'PUT');
       setNotice(`Đã ${cat.isActive ? 'ẩn' : 'hiện'} danh mục ${cat.name}.`);
-      fetchCategories();
+      await fetchCategories();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không cập nhật được trạng thái.';
       setError(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   // Xóa danh mục
   const handleDelete = async (cat: AdminCategoryItem) => {
+    if (submitting) return;
     if (!window.confirm(`Xóa danh mục "${cat.name}"? Danh mục chỉ được xóa khi không còn sản phẩm và danh mục con.`)) {
       return;
     }
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
     try {
       await authenticatedRequest(`/categories/${cat.id}`, undefined, 'DELETE');
       setNotice(`Đã xóa danh mục "${cat.name}".`);
-      fetchCategories();
+      await fetchCategories();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không xóa được danh mục.';
       setError(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   // Submit form thêm hoặc sửa danh mục
   const handleSubmitForm = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (submitting || !editingCategory) return;
+    if (loading || loadError || submitting || !editingCategory) return;
     setSubmitting(true);
     setError(null);
     setNotice(null);
@@ -174,18 +158,13 @@ export default function ManageCategories() {
     const slug = String(form.get('slug') || '').trim();
     const parentIdVal = String(form.get('parentId') || '');
     const parentId = parentIdVal === '' ? null : parentIdVal;
-    const isActive = form.get('isActive') === 'on';
+    const payload = { name, ...(slug ? { slug } : {}), parentId };
 
     try {
       if (editingCategory.mode === 'create') {
         await authenticatedRequest(
           '/categories',
-          {
-            name,
-            ...(slug ? { slug } : {}),
-            parentId,
-            isActive,
-          },
+          payload,
           'POST'
         );
         setNotice(`Đã tạo thành công danh mục "${name}".`);
@@ -193,10 +172,8 @@ export default function ManageCategories() {
         await authenticatedRequest(
           `/categories/${editingCategory.category.id}`,
           {
-            name,
-            ...(slug ? { slug } : {}),
-            parentId,
-            isActive,
+            ...payload,
+            isActive: form.get('isActive') === 'on',
           },
           'PUT'
         );
@@ -204,7 +181,7 @@ export default function ManageCategories() {
       }
 
       setEditingCategory(null);
-      fetchCategories();
+      await fetchCategories();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không lưu được danh mục.';
       setError(msg);
@@ -214,8 +191,9 @@ export default function ManageCategories() {
   };
 
   // Render một dòng trong cây danh mục
-  const renderCategoryRow = (cat: AdminCategoryItem, depth = 0) => {
+  const renderCategoryRow = (cat: AdminCategoryItem, depth = 0, parentVisible = true) => {
     const children = childrenMap[cat.id] || [];
+    const isVisible = parentVisible && cat.isActive;
     const hasChildren = children.length > 0;
     const isExpanded = expandedIds[cat.id] ?? true;
 
@@ -267,10 +245,12 @@ export default function ManageCategories() {
 
           {/* Cột 5: Trạng thái */}
           <td className="px-3 py-2.5 text-center">
-            {cat.isActive ? (
+            {isVisible ? (
               <span className="badge bg-success-subtle text-success small">Đang hiển thị</span>
             ) : (
-              <span className="badge bg-secondary-subtle text-secondary small">Đã ẩn</span>
+              <span className="badge bg-secondary-subtle text-secondary small">
+                {cat.isActive ? 'Ẩn theo danh mục cha' : 'Đã ẩn'}
+              </span>
             )}
           </td>
 
@@ -279,6 +259,7 @@ export default function ManageCategories() {
             <div className="d-flex align-items-center justify-content-center gap-1">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() =>
                   setEditingCategory({
                     mode: 'create',
@@ -293,6 +274,7 @@ export default function ManageCategories() {
               </button>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => handleToggleActive(cat)}
                 className="btn btn-outline-secondary btn-sm p-1.5"
                 title={cat.isActive ? 'Ẩn danh mục' : 'Hiện danh mục'}
@@ -302,6 +284,7 @@ export default function ManageCategories() {
               </button>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() =>
                   setEditingCategory({
                     mode: 'edit',
@@ -316,6 +299,7 @@ export default function ManageCategories() {
               </button>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => handleDelete(cat)}
                 className="btn btn-outline-danger btn-sm p-1.5"
                 title="Xóa danh mục"
@@ -328,12 +312,10 @@ export default function ManageCategories() {
         </tr>
 
         {/* Render danh mục con nếu đang mở */}
-        {hasChildren && isExpanded && children.map(child => renderCategoryRow(child, depth + 1))}
+        {hasChildren && isExpanded && children.map(child => renderCategoryRow(child, depth + 1, isVisible))}
       </React.Fragment>
     );
   };
-
-  const editingItem = editingCategory?.category;
 
   return (
     <div className="container-fluid p-0">
@@ -348,6 +330,7 @@ export default function ManageCategories() {
 
         <button
           type="button"
+          disabled={loading || loadError !== null || submitting}
           onClick={() =>
             setEditingCategory({
               mode: 'create',
@@ -396,16 +379,22 @@ export default function ManageCategories() {
             <button
               type="button"
               className="btn-close"
+              disabled={submitting}
               onClick={() => setEditingCategory(null)}
               aria-label="Đóng"
             />
           </div>
 
-          <form onSubmit={handleSubmitForm} className="card-body p-4">
+          <form
+            key={editingItem?.id ?? `create-${editingCategory.presetParentId ?? 'root'}`}
+            onSubmit={handleSubmitForm}
+            className="card-body p-4"
+          >
             <div className="row g-3">
               <div className="col-12 col-md-6">
-                <label className="form-label small fw-semibold text-secondary">Tên danh mục</label>
+                <label htmlFor="categoryName" className="form-label small fw-semibold text-secondary">Tên danh mục</label>
                 <input
+                  id="categoryName"
                   name="name"
                   type="text"
                   required
@@ -416,8 +405,9 @@ export default function ManageCategories() {
               </div>
 
               <div className="col-12 col-md-6">
-                <label className="form-label small fw-semibold text-secondary">Đường dẫn (slug tùy chọn)</label>
+                <label htmlFor="categorySlug" className="form-label small fw-semibold text-secondary">Đường dẫn (slug tùy chọn)</label>
                 <input
+                  id="categorySlug"
                   name="slug"
                   type="text"
                   defaultValue={editingItem?.slug ?? ''}
@@ -427,8 +417,9 @@ export default function ManageCategories() {
               </div>
 
               <div className="col-12 col-md-6">
-                <label className="form-label small fw-semibold text-secondary">Danh mục cha</label>
+                <label htmlFor="categoryParentId" className="form-label small fw-semibold text-secondary">Danh mục cha</label>
                 <select
+                  id="categoryParentId"
                   name="parentId"
                   defaultValue={
                     editingCategory.mode === 'create'
@@ -438,31 +429,30 @@ export default function ManageCategories() {
                   className="form-select form-select-sm"
                 >
                   <option value="">(Không có - Danh mục gốc)</option>
-                  {categories
-                    // Không cho phép chọn chính nó làm cha khi đang sửa
-                    .filter(c => !editingItem || c.id !== editingItem.id)
-                    .map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
+                  {editableParentOptions.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              <div className="col-12 col-md-6 d-flex align-items-center">
-                <div className="form-check mt-3">
-                  <input
-                    name="isActive"
-                    type="checkbox"
-                    id="catIsActive"
-                    defaultChecked={editingItem?.isActive ?? true}
-                    className="form-check-input"
-                  />
-                  <label htmlFor="catIsActive" className="form-check-label small fw-medium text-dark">
-                    Hiển thị trên website ngay
-                  </label>
+              {editingCategory.mode === 'edit' && (
+                <div className="col-12 col-md-6 d-flex align-items-center">
+                  <div className="form-check mt-3">
+                    <input
+                      name="isActive"
+                      type="checkbox"
+                      id="catIsActive"
+                      defaultChecked={editingItem?.isActive ?? true}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="catIsActive" className="form-check-label small fw-medium text-dark">
+                      Cho phép hiển thị trên website
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
@@ -476,7 +466,7 @@ export default function ManageCategories() {
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={loading || loadError !== null || submitting}
                 className="btn btn-primary btn-sm px-4"
               >
                 {submitting ? 'Đang lưu…' : editingCategory.mode === 'create' ? 'Tạo mới' : 'Lưu thay đổi'}
@@ -489,6 +479,13 @@ export default function ManageCategories() {
       {/* Bảng danh sách cây danh mục */}
       {loading ? (
         <p className="text-secondary small">Đang tải danh mục…</p>
+      ) : loadError ? (
+        <div className="alert alert-danger d-flex align-items-center justify-content-between gap-3 small" role="alert">
+          <span>{loadError}</span>
+          <button className="btn btn-outline-danger btn-sm" type="button" onClick={() => void fetchCategories()}>
+            Thử lại
+          </button>
+        </div>
       ) : categories.length === 0 ? (
         <div className="card p-5 text-center text-secondary small bg-white border">
           <FolderTree size={32} className="mx-auto mb-2 text-muted" />

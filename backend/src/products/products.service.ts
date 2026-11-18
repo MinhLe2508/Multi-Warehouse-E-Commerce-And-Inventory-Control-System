@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { isUUID } from 'class-validator';
+import {
+  CategoriesService,
+  type PublicCategory,
+} from '../categories/categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductQueryDto } from './dto/product-query.dto';
 
@@ -14,7 +18,6 @@ const select = {
   discountPercent: true,
   imageUrl: true,
   categoryId: true,
-  category: { select: { name: true, isActive: true } },
   inventory: {
     where: { warehouse: { isActive: true } },
     select: {
@@ -29,7 +32,10 @@ const select = {
 type CatalogProduct = Prisma.ProductGetPayload<{ select: typeof select }>;
 
 // Explicit public response: never serialize the entire Prisma graph or BigInt IDs.
-export function toCatalogProduct(product: CatalogProduct) {
+export function toCatalogProduct(
+  product: CatalogProduct,
+  category?: PublicCategory,
+) {
   const stockByWarehouse = product.inventory.map((row) => ({
     warehouseId: row.warehouseId,
     warehouseName: row.warehouse.name,
@@ -48,8 +54,8 @@ export function toCatalogProduct(product: CatalogProduct) {
     basePrice: product.basePrice.toFixed(2),
     discountPercent: product.discountPercent.toFixed(2),
     imageUrl: product.imageUrl,
-    categoryId: product.categoryId,
-    categoryName: product.category?.isActive ? product.category.name : null,
+    categoryId: category?.id ?? null,
+    categoryName: category?.name ?? null,
     stockByWarehouse,
     availableStock,
     isAvailable: availableStock > 0,
@@ -58,30 +64,15 @@ export function toCatalogProduct(product: CatalogProduct) {
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly categoryService: CategoriesService,
+  ) {}
 
   async findAll(query: ProductQueryDto) {
-    const category = query.category?.trim();
+    const categoryFilter = query.category?.trim();
     const search = query.search?.trim();
-    const where: Prisma.ProductWhereInput = {
-      isActive: true,
-      ...(category && category !== 'all'
-        ? {
-            category: {
-              isActive: true,
-              ...(isUUID(category) ? { id: category } : { slug: category }),
-            },
-          }
-        : {}),
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { sku: { contains: search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    };
+    const { page, pageSize } = query;
     const orderBy: Prisma.ProductOrderByWithRelationInput[] =
       query.sort === 'default'
         ? [{ createdAt: 'desc' }, { id: 'asc' }]
@@ -89,44 +80,82 @@ export class ProductsService {
             { basePrice: query.sort === 'price-asc' ? 'asc' : 'desc' },
             { id: 'asc' },
           ];
-    // Count and page share one snapshot even if another member edits the catalog.
-    const [total, products] = await this.prisma.$transaction(
-      [
-        this.prisma.product.count({ where }),
-        this.prisma.product.findMany({
-          where,
-          select,
-          orderBy,
-          skip: (query.page - 1) * query.pageSize,
-          take: query.pageSize,
-        }),
-      ],
+    // Đọc cây danh mục, tổng sản phẩm và trang kết quả từ cùng một snapshot.
+    return this.prisma.$transaction(
+      async (tx) => {
+        const categories = await this.categoryService.findAllPublic(tx);
+        const publicById = new Map(
+          categories.map((category) => [category.id, category]),
+        );
+        let categoryId: string | undefined;
+        if (categoryFilter && categoryFilter !== 'all') {
+          categoryId = isUUID(categoryFilter)
+            ? publicById.get(categoryFilter.toLowerCase())?.id
+            : categories.find((category) => category.slug === categoryFilter)
+                ?.id;
+          if (!categoryId) {
+            return { items: [], total: 0, page, pageSize, totalPages: 0 };
+          }
+        }
+
+        const where: Prisma.ProductWhereInput = {
+          isActive: true,
+          ...(categoryId ? { categoryId } : {}),
+          ...(search
+            ? {
+                OR: [
+                  { name: { contains: search, mode: 'insensitive' } },
+                  { sku: { contains: search, mode: 'insensitive' } },
+                ],
+              }
+            : {}),
+        };
+        const [total, products] = await Promise.all([
+          tx.product.count({ where }),
+          tx.product.findMany({
+            where,
+            select,
+            orderBy,
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+          }),
+        ]);
+
+        return {
+          items: products.map((product) =>
+            toCatalogProduct(product, publicById.get(product.categoryId ?? '')),
+          ),
+          total,
+          page,
+          pageSize,
+          totalPages: Math.ceil(total / pageSize),
+        };
+      },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    return {
-      items: products.map(toCatalogProduct),
-      total,
-      page: query.page,
-      pageSize: query.pageSize,
-      totalPages: Math.ceil(total / query.pageSize),
-    };
   }
 
   async findOne(id: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { id, isActive: true },
-      select,
-    });
-    if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
-    return toCatalogProduct(product);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const product = await tx.product.findFirst({
+          where: { id, isActive: true },
+          select,
+        });
+        if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
+        const category = product.categoryId
+          ? (await this.categoryService.findAllPublic(tx)).find(
+              (category) => category.id === product.categoryId,
+            )
+          : undefined;
+        return toCatalogProduct(product, category);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   // Read-only catalog facets; /categories CRUD remains owned by P4.
   async categories() {
-    return this.prisma.category.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, slug: true, parentId: true },
-      orderBy: [{ name: 'asc' }, { id: 'asc' }],
-    });
+    return this.categoryService.findAllPublic();
   }
 }

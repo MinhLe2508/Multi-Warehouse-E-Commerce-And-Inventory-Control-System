@@ -57,6 +57,6 @@ export async function fetchProduct(id: string, signal?: AbortSignal): Promise<Pr
 
 export async function fetchCategories(signal?: AbortSignal): Promise<Category[]> {
   if (MOCK_CATALOG) return getCategories();
-  const result = await request<{ id: string; name: string }[]>('/products/categories', signal);
+  const result = await request<{ id: string; name: string }[]>('/categories', signal);
   return result.map((c) => ({ id: c.id, name: { vi: c.name, en: c.name }, icon: '📦' }));
 }

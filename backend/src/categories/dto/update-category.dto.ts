@@ -56,6 +56,9 @@ export class UpdateCategoryDto {
   // Kiểm tra trong CategoriesService.update().
   @IsOptional()
   @IsUUID(undefined, { message: 'ID danh mục cha không đúng định dạng UUID.' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toLowerCase() : value,
+  )
   parentId?: string | null;
 
   // Trạng thái hiển thị:

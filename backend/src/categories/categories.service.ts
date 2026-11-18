@@ -116,8 +116,10 @@ export class CategoriesService {
   // ==========================================================================
 
   // Danh sách PHẲNG các danh mục đang hiển thị, sắp xếp theo tên
-  async findAllPublic(): Promise<PublicCategory[]> {
-    const all = await this.prisma.category.findMany({
+  async findAllPublic(
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<PublicCategory[]> {
+    const all = await client.category.findMany({
       select: {
         id: true,
         name: true,
@@ -219,19 +221,11 @@ export class CategoriesService {
    */
   async create(input: CreateCategoryDto): Promise<Category> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.lockTree(tx);
-
+      return await this.writeTree(async (tx) => {
         const parentId = input.parentId ?? null;
 
         if (parentId !== null) {
-          const parent = await tx.category.findUnique({
-            where: { id: parentId },
-            select: { id: true },
-          });
-          if (!parent) {
-            throw new BadRequestException('Danh mục cha không tồn tại.');
-          }
+          await this.assertValidNewParent(tx, parentId);
         }
 
         await this.assertSiblingNameAvailable(tx, parentId, input.name);
@@ -277,9 +271,7 @@ export class CategoriesService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.lockTree(tx);
-
+      return await this.writeTree(async (tx) => {
         const current = await tx.category.findUnique({ where: { id } });
         if (!current) {
           throw new NotFoundException('Không tìm thấy danh mục.');
@@ -293,11 +285,11 @@ export class CategoriesService {
           input.parentId !== null &&
           input.parentId !== undefined
         ) {
-          await this.assertValidNewParent(tx, id, input.parentId);
+          await this.assertValidNewParent(tx, input.parentId, current.id);
         }
 
         if (input.slug !== undefined && input.slug !== current.slug) {
-          await this.assertSlugAvailable(tx, input.slug, id);
+          await this.assertSlugAvailable(tx, input.slug, current.id);
         }
 
         const isRenaming =
@@ -309,11 +301,11 @@ export class CategoriesService {
             tx,
             targetParentId,
             input.name ?? current.name,
-            id,
+            current.id,
           );
         }
 
-        return tx.category.update({ where: { id }, data });
+        return tx.category.update({ where: { id: current.id }, data });
       });
     } catch (error: unknown) {
       throw this.mapUniqueViolation(error);
@@ -333,8 +325,7 @@ export class CategoriesService {
    * mất danh mục (khóa ngoại Product.category dùng SetNull).
    */
   async remove(id: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await this.lockTree(tx);
+    await this.writeTree(async (tx) => {
       await this.lockCategoryRow(tx, id);
 
       const productCount = await tx.product.count({
@@ -360,6 +351,19 @@ export class CategoriesService {
   // ==========================================================================
   // 6. HÀM NỘI BỘ — DỮ LIỆU
   // ==========================================================================
+
+  private writeTree<T>(
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockTree(tx);
+        return write(tx);
+      },
+      // Các truy vấn kiểm tra phải thấy commit mới nhất sau khi chờ khóa cây.
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+  }
 
   /**
    * Lấy khóa tư vấn (advisory lock) cấp transaction cho cấu trúc cây danh mục:
@@ -455,7 +459,7 @@ export class CategoriesService {
     const visibility = new Map<string, boolean>();
 
     const isVisible = (startId: string): boolean => {
-      const path: string[] = [];
+      const path = new Set<string>();
       let result = true;
       let cursorId: string | null = startId;
 
@@ -467,12 +471,12 @@ export class CategoriesService {
         }
 
         const cursor = byId.get(cursorId);
-        if (!cursor || path.includes(cursorId)) {
+        if (!cursor || path.has(cursorId)) {
           result = false;
           break;
         }
 
-        path.push(cursorId);
+        path.add(cursorId);
 
         if (!cursor.isActive) {
           result = false;
@@ -517,8 +521,8 @@ export class CategoriesService {
    */
   private async assertValidNewParent(
     tx: Prisma.TransactionClient,
-    id: string,
     newParentId: string,
+    id?: string,
   ): Promise<void> {
     if (newParentId === id) {
       throw new BadRequestException(
@@ -542,14 +546,18 @@ export class CategoriesService {
     const visited = new Set<string>();
     let cursorId: string | null = newParentId;
 
-    while (cursorId !== null && !visited.has(cursorId)) {
+    while (cursorId !== null) {
       if (cursorId === id) {
         throw new ConflictException(
           'Không thể chuyển danh mục vào chính danh mục con cháu của nó (tạo vòng lặp).',
         );
       }
+      const parentId = parentOf.get(cursorId);
+      if (parentId === undefined || visited.has(cursorId)) {
+        throw new ConflictException('Nhánh danh mục cha không hợp lệ.');
+      }
       visited.add(cursorId);
-      cursorId = parentOf.get(cursorId) ?? null;
+      cursorId = parentId;
     }
   }
 
@@ -563,16 +571,22 @@ export class CategoriesService {
     name: string,
     excludeId?: string,
   ): Promise<void> {
-    const duplicate = await tx.category.findFirst({
+    const siblings = await tx.category.findMany({
       where: {
         parentId,
-        name: { equals: name, mode: 'insensitive' },
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },
-      select: { id: true },
+      select: { name: true },
     });
 
-    if (duplicate) {
+    // So sánh tên theo ký tự. Dấu % và _ trong tên giữ nguyên nghĩa.
+    const nameKey = name.normalize('NFC').toLocaleLowerCase('vi');
+    if (
+      siblings.some(
+        (sibling) =>
+          sibling.name.normalize('NFC').toLocaleLowerCase('vi') === nameKey,
+      )
+    ) {
       throw new ConflictException(
         `Đã có danh mục tên "${name}" trong cùng danh mục cha.`,
       );

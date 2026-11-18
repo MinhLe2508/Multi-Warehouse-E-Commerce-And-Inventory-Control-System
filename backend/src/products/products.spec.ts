@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import request from 'supertest';
+import { CategoriesService } from '../categories/categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
@@ -20,7 +21,6 @@ const product = {
   imageUrl: null,
   categoryId,
   costPrice: new Prisma.Decimal('123.00'),
-  category: { name: 'Thực phẩm', isActive: true },
   inventory: [
     {
       warehouseId: id,
@@ -34,18 +34,29 @@ const product = {
 
 describe('Products HTTP contract', () => {
   let app: INestApplication;
-  const prisma = {
+  const tx = {
     product: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
     category: { findMany: jest.fn() },
-    $transaction: jest.fn((queries: Promise<unknown>[]) =>
-      Promise.all(queries),
+  };
+  const prisma = {
+    ...tx,
+    $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) =>
+      run(tx),
     ),
+  };
+  const food = {
+    id: categoryId,
+    name: 'Thực phẩm',
+    slug: 'food',
+    parentId: null,
+    isActive: true,
   };
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [ProductsController],
       providers: [
         ProductsService,
+        CategoriesService,
         { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
@@ -64,7 +75,7 @@ describe('Products HTTP contract', () => {
     prisma.product.count.mockResolvedValue(1);
     prisma.product.findMany.mockResolvedValue([product]);
     prisma.product.findFirst.mockResolvedValue(product);
-    prisma.category.findMany.mockResolvedValue([]);
+    prisma.category.findMany.mockResolvedValue([food]);
   });
   afterAll(() => app.close());
 
@@ -108,7 +119,7 @@ describe('Products HTTP contract', () => {
   it('applies search, category UUID, price sorting and page offset in database', async () => {
     await request(app.getHttpServer() as Server)
       .get(
-        `/products?category=${categoryId}&search=Gạo&sort=price-desc&page=2&pageSize=5`,
+        `/products?category=${categoryId.toUpperCase()}&search=Gạo&sort=price-desc&page=2&pageSize=5`,
       )
       .expect(200);
     expect(prisma.product.findMany).toHaveBeenCalledWith(
@@ -116,7 +127,7 @@ describe('Products HTTP contract', () => {
         skip: 5,
         take: 5,
         where: expect.objectContaining({
-          category: { id: categoryId, isActive: true },
+          categoryId,
           OR: expect.arrayContaining([
             { name: { contains: 'Gạo', mode: 'insensitive' } },
           ]) as unknown,
@@ -130,7 +141,7 @@ describe('Products HTTP contract', () => {
       .get('/products?category=food')
       .expect(200);
     expect(prisma.product.count).toHaveBeenCalledWith({
-      where: { isActive: true, category: { isActive: true, slug: 'food' } },
+      where: { isActive: true, categoryId },
     });
   });
   it.each([
@@ -191,9 +202,44 @@ describe('Products HTTP contract', () => {
     await request(app.getHttpServer() as Server)
       .get('/products/categories')
       .expect(200)
-      .expect([]);
-    expect(prisma.category.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: true } }),
-    );
+      .expect([
+        { id: food.id, name: food.name, slug: food.slug, parentId: null },
+      ]);
+  });
+  it('omits a hidden branch from facets and filters while keeping the product available', async () => {
+    prisma.category.findMany.mockResolvedValue([
+      { ...food, id, slug: 'hidden', isActive: false },
+      { ...food, parentId: id },
+    ]);
+    const api = () => request(app.getHttpServer() as Server);
+    await api().get('/products/categories').expect(200).expect([]);
+    for (const filter of [categoryId, food.slug]) {
+      await api().get(`/products?category=${filter}`).expect(200).expect({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 12,
+        totalPages: 0,
+      });
+    }
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
+    await api()
+      .get('/products')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items).toMatchObject([
+          { id, categoryId: null, categoryName: null },
+        ]);
+      });
+    await api()
+      .get(`/products/${id}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          id,
+          categoryId: null,
+          categoryName: null,
+        });
+      });
   });
 });

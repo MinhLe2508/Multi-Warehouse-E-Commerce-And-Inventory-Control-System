@@ -5,8 +5,8 @@
 // QUY TẮC CHUNG:
 // - Chỉ Admin được tạo danh mục, nên hệ thống KHÔNG lưu "người tạo" (người tạo
 //   mặc định là Admin) và KHÔNG có trường mô tả — đúng quyết định thiết kế.
-// - Không có "isActive": danh mục mới luôn hiển thị (mặc định của CSDL). Ẩn /
-//   hiện danh mục đi qua UpdateCategoryDto.
+// - Danh mục mới có trạng thái hoạt động mặc định của CSDL. Việc ẩn/hiện từng
+//   danh mục đi qua UpdateCategoryDto. Danh mục dưới cha đã ẩn vẫn bị ẩn công khai.
 // - Không có "id", "createdAt", "updatedAt": do CSDL tự sinh. Nếu Client gửi
 //   thừa các trường này, ValidationPipe (forbidNonWhitelisted: true trong
 //   main.ts) sẽ từ chối request với HTTP 400.
@@ -59,5 +59,8 @@ export class CreateCategoryDto {
   // Danh mục cha phải tồn tại
   @IsOptional()
   @IsUUID(undefined, { message: 'ID danh mục cha không đúng định dạng UUID.' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toLowerCase() : value,
+  )
   parentId?: string | null;
 }

@@ -14,9 +14,8 @@
 // - Chúng chỉ trả id, name, slug, parentId
 // — Không lộ thông tin quản trị — và chỉ gồm danh mục đang hiển thị.
 // - Mọi endpoint còn lại chỉ ADMIN (Nhân viên kho và Khách hàng nhận HTTP 403).
-// - Guard gắn ở mức CLASS: JwtAuthGuard chạy trước RolesGuard. Endpoint có
-//   @Public() được JwtAuthGuard cho qua; RolesGuard không thấy metadata @Roles
-//   nên cũng cho qua.
+// - JwtAuthGuard và RolesGuard kiểm tra quyền truy cập. Các route quản trị
+//   còn yêu cầu tài khoản đã đổi mật khẩu lần đầu.
 //
 // VÌ SAO ĐƯỜNG DẪN QUẢN TRỊ LÀ "manage":
 // - Nếu dùng "GET /categories/:id" thì "tree" sẽ bị hiểu nhầm là một :id.
@@ -43,6 +42,7 @@ import { UserRole, type Category } from '@prisma/client';
 import { Public } from '../core/decorators/public.decorator';
 import { Roles } from '../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
+import { PasswordChangedGuard } from '../core/guards/password-changed.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import {
   CategoriesService,
@@ -83,6 +83,7 @@ export class CategoriesController {
   // Danh sách đầy đủ, kể cả danh mục đang ẩn, kèm productCount và childCount.
   @Get('manage')
   @Roles(UserRole.ADMIN)
+  @UseGuards(PasswordChangedGuard)
   async findAllForAdmin(): Promise<AdminCategory[]> {
     return this.categoriesService.findAllForAdmin();
   }
@@ -90,6 +91,7 @@ export class CategoriesController {
   // Chi tiết 1 danh mục. Không tồn tại -> HTTP 404.
   @Get('manage/:id')
   @Roles(UserRole.ADMIN)
+  @UseGuards(PasswordChangedGuard)
   async findOneForAdmin(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AdminCategory> {
@@ -104,6 +106,7 @@ export class CategoriesController {
   // Cha không tồn tại -> 400; trùng tên trong cùng cha hoặc trùng slug -> 409.
   @Post()
   @Roles(UserRole.ADMIN)
+  @UseGuards(PasswordChangedGuard)
   async create(@Body() input: CreateCategoryDto): Promise<Category> {
     return this.categoriesService.create(input);
   }
@@ -112,6 +115,7 @@ export class CategoriesController {
   // Dùng PUT theo hợp đồng API nhóm đã thống nhất. Chuyển vào chính nó -> 400; vào con cháu của nó (tạo vòng lặp) hoặc trùng tên / slug -> 409.
   @Put(':id')
   @Roles(UserRole.ADMIN)
+  @UseGuards(PasswordChangedGuard)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: UpdateCategoryDto,
@@ -123,6 +127,7 @@ export class CategoriesController {
   // Trả HTTP 204. Còn sản phẩm hoặc còn danh mục con -> 409 (muốn gỡ khỏi Storefront mà giữ dữ liệu: PUT với { "isActive": false }).
   @Delete(':id')
   @Roles(UserRole.ADMIN)
+  @UseGuards(PasswordChangedGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     await this.categoriesService.remove(id);
