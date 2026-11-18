@@ -7,6 +7,7 @@ import { PaymentMethod, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 import { MockPaymentGatewayService } from './mock-payment-gateway.service';
+import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 
 @Injectable()
 export class PaymentsService {
@@ -14,6 +15,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly stock: StockReservationService,
     private readonly gateway: MockPaymentGatewayService,
+    private readonly changes: InventoryChangeEmitter,
   ) {}
 
   async process(
@@ -25,7 +27,7 @@ export class PaymentsService {
   ) {
     if (method !== 'MOCK_CARD' && method !== 'MOCK_EWALLET')
       throw new ConflictException('Chỉ cho phép thanh toán mock.');
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         // Lock ORDER first, then stock service locks INVENTORY and RESERVATIONS.
         const rows = await tx.$queryRaw<Array<{ id: string }>>`
@@ -102,5 +104,7 @@ export class PaymentsService {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
+    if (!result.duplicate && approved) await this.changes.publishOrder(orderId);
+    return result;
   }
 }

@@ -25,7 +25,8 @@
 //    "uq_alerts_one_open_per_inventory" (inventory_id WHERE status = 'OPEN') bảo
 //    đảm mỗi dòng tồn kho tối đa 1 cảnh báo OPEN. Hàm dùng INSERT ... ON CONFLICT
 //    nên gọi lặp hay gọi đồng thời đều vô hại (idempotent).
-// 4. Xử lý theo lô bằng 2 câu SQL (không lặp từng dòng) để giảm số lượt truy vấn.
+// 4. Khóa Inventory theo ID tăng dần rồi xử lý theo lô. Caller phải giữ cùng
+//    thứ tự khóa Order -> Inventory -> Reservation; khóa lại dòng đã giữ là vô hại.
 // =============================================================================
 
 import { Injectable } from '@nestjs/common';
@@ -58,6 +59,15 @@ export class InventoryAlertService {
     if (ids.length === 0) {
       return { raised: 0, resolved: 0 };
     }
+
+    // Serialize evaluation with writers, including callers that only change a
+    // warehouse threshold. Keep the inventory -> alert lock order everywhere.
+    await tx.$queryRaw`
+      SELECT id FROM inventory
+       WHERE id = ANY(${ids}::bigint[])
+       ORDER BY id
+         FOR UPDATE
+    `;
 
     // — TẠO / NÂNG cảnh báo cho dòng có hàng khả dụng <= ngưỡng.
     // - Chưa có cảnh báo OPEN: INSERT mới (mức CRITICAL nếu hết hàng, ngược lại WARNING).
@@ -95,7 +105,7 @@ export class InventoryAlertService {
     const resolved = await tx.$executeRaw`
       UPDATE "stock_alerts" AS a
          SET "status"      = 'RESOLVED'::"AlertStatus",
-             "resolved_at" = NOW(),
+             "resolved_at" = clock_timestamp(),
              "resolved_by" = ${resolvedBy}::uuid
         FROM "inventory" i
         JOIN "warehouses" w ON w."id" = i."warehouse_id"

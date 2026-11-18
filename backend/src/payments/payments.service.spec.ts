@@ -17,10 +17,12 @@ describe('PaymentsService ACID payment - week 4', () => {
   };
   const stock = { commitForOrder: jest.fn() };
   const gateway = { charge: jest.fn() };
+  const changes = { publishOrder: jest.fn().mockResolvedValue(undefined) };
   const service = new PaymentsService(
     prisma as never,
     stock as never,
     gateway as never,
+    changes as never,
   );
 
   beforeEach(() => {
@@ -101,5 +103,27 @@ describe('PaymentsService ACID payment - week 4', () => {
     await expect(
       service.process(userId, orderId, 'ref-1', 'MOCK_CARD', true),
     ).rejects.toThrow('history failed');
+  });
+  it('does not publish when the transaction fails at commit', async () => {
+    prisma.$transaction.mockRejectedValueOnce(new Error('commit failed'));
+    await expect(
+      service.process(userId, orderId, 'commit-failure', 'MOCK_CARD', true),
+    ).rejects.toThrow('commit failed');
+    expect(changes.publishOrder).not.toHaveBeenCalled();
+  });
+  it('publishes only after the transaction promise has completed', async () => {
+    let committed = false;
+    prisma.$transaction.mockImplementationOnce(async (fn) => {
+      const result = await fn(tx);
+      expect(changes.publishOrder).not.toHaveBeenCalled();
+      committed = true;
+      return result;
+    });
+    changes.publishOrder.mockImplementationOnce(() => {
+      expect(committed).toBe(true);
+      return Promise.resolve();
+    });
+    await service.process(userId, orderId, 'after-commit', 'MOCK_CARD', true);
+    expect(changes.publishOrder).toHaveBeenCalledWith(orderId);
   });
 });

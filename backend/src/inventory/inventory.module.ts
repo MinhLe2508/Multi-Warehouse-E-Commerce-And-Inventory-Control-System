@@ -30,13 +30,13 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { InventoryAlertModule } from './inventory-alert.module';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
-import { InventoryPubSubService } from './inventory-pubsub.service';
+import { InventoryEventsModule } from './inventory-events.module';
 import { ReservationCleanupJob } from './reservation-cleanup.job';
 
 @Module({
-  imports: [PrismaModule, InventoryAlertModule],
+  imports: [PrismaModule, InventoryAlertModule, InventoryEventsModule],
   controllers: [InventoryController],
-  providers: [InventoryService, InventoryPubSubService, ReservationCleanupJob],
-  exports: [InventoryService, InventoryPubSubService, InventoryAlertModule],
+  providers: [InventoryService, ReservationCleanupJob],
+  exports: [InventoryService, InventoryEventsModule, InventoryAlertModule],
 })
 export class InventoryModule {}

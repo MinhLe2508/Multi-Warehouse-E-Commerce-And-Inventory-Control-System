@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { InventoryAlertService } from '../inventory/inventory-alert.service';
 import { InventoryStockPort } from './inventory-stock.port';
 import { readSqlError } from './pg-error.util';
 import {
@@ -21,12 +22,16 @@ interface InventoryLevels {
 
   - Giữ chỗ gọi đúng hàm fn_reserve_stock() của Khang (không viết thêm thuật toán
     giữ chỗ bằng TypeScript chạy song song với SQL).
-  - TẠM THỜI chứa phần ghi tồn kho và audit cho commit/release/expire, vì
-    InventoryService (STT 13) chưa có trong source. Khi InventoryService xong, chuyển
-    phần này sang đó (đổi provider trong StockReservationModule).
+  - Quản lý stock/reserved_stock, audit và cảnh báo cho luồng giữ chỗ.
+    InventoryService quản lý nghiệp vụ nhập hàng/kiểm kê; không thay thế adapter.
+  - Không publish Redis tại đây: transaction do Orders/Payments/Cleanup sở hữu.
  */
 @Injectable()
 export class PrismaInventoryStockAdapter extends InventoryStockPort {
+  constructor(private readonly alerts: InventoryAlertService) {
+    super();
+  }
+
   async reserve(
     tx: TransactionClient,
     input: ReserveStockInput,
@@ -65,6 +70,7 @@ export class PrismaInventoryStockAdapter extends InventoryStockPort {
       },
     });
 
+    await this.alerts.evaluate(tx, [inventoryId], actorId);
     return reservationId;
   }
 
@@ -113,13 +119,18 @@ export class PrismaInventoryStockAdapter extends InventoryStockPort {
           stockAfter: after.stock,
           reservedBefore: after.reserved_stock + quantity,
           reservedAfter: after.reserved_stock,
-          quantityDelta: -stockDelta, // = stockAfter - stockBefore
+          quantityDelta: stockDelta === 0 ? 0 : -stockDelta, // = stockAfter - stockBefore
           referenceType: 'ORDER',
           referenceId: orderId,
           actorId,
         },
       });
     }
+    await this.alerts.evaluate(
+      tx,
+      ordered.map((change) => change.inventoryId),
+      actorId,
+    );
   }
 
   private async readLevels(

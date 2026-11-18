@@ -1,3 +1,4 @@
+import { InventoryAlertService } from '../inventory/inventory-alert.service';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaInventoryStockAdapter } from './prisma-inventory-stock.adapter';
@@ -44,7 +45,7 @@ describeDb('StockReservationService với PostgreSQL thật', () => {
     });
     await prisma.$connect();
     service = new StockReservationService(
-      new PrismaInventoryStockAdapter(),
+      new PrismaInventoryStockAdapter(new InventoryAlertService()),
       new PrismaReservationRepository(),
     );
 
@@ -527,7 +528,9 @@ describeDb('StockReservationService với PostgreSQL thật', () => {
             shippingAddress: 'IT address',
           },
         });
-        const adapter = new PrismaInventoryStockAdapter();
+        const adapter = new PrismaInventoryStockAdapter(
+          new InventoryAlertService(),
+        );
         return adapter.reserve(tx, {
           inventoryId: 9223372036854775001n,
           orderId: order.id,

@@ -52,6 +52,7 @@ const byBigInt = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0);
   - Không viết lại thuật toán giữ chỗ: việc kiểm tra tồn dưới khóa do fn_reserve_stock() làm.
   - Hết hạn được quyết định bằng GIỜ CỦA DATABASE sau khi đã có khóa (không dùng giờ app).
   - Gọi lại thao tác đã hoàn tất với cùng ý nghĩa là no-op (không trừ kho / ghi audit lần 2).
+  - Adapter cập nhật cảnh báo trong cùng tx; caller phát inventory.changed SAU commit.
   - Service này KHÔNG đổi trạng thái đơn, KHÔNG ghi order_status_history, KHÔNG xử lý payment:
     đó là việc của OrdersService / PaymentsService trong cùng transaction.
  */

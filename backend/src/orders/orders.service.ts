@@ -10,6 +10,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 
 @Injectable()
 export class OrdersService {
@@ -17,10 +18,11 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly stockReservation: StockReservationService,
+    private readonly changes: InventoryChangeEmitter,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         const ids = dto.items.map((x) => x.productId);
         const products = await tx.product.findMany({
@@ -167,6 +169,8 @@ export class OrdersService {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
+    await this.changes.publishOrder(result.id);
+    return result;
   }
 
   /** All status changes and their audit rows share the caller's DB transaction. */
@@ -181,7 +185,7 @@ export class OrdersService {
       CONFIRMED: ['SHIPPING'],
       SHIPPING: ['DELIVERED'],
     };
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         const locked = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
@@ -229,6 +233,8 @@ export class OrdersService {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
+    if (target === 'CANCELLED') await this.changes.publishOrder(orderId);
+    return result;
   }
 
   private serialize<

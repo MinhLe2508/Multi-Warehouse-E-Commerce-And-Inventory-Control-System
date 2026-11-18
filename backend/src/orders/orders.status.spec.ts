@@ -15,10 +15,12 @@ describe('OrdersService status history - week 4', () => {
     ),
   };
   const stock = { releaseForOrder: jest.fn() };
+  const changes = { publishOrder: jest.fn().mockResolvedValue(undefined) };
   const service = new OrdersService(
     prisma as never,
     {} as never,
     stock as never,
+    changes as never,
   );
 
   beforeEach(() => {
@@ -107,5 +109,12 @@ describe('OrdersService status history - week 4', () => {
       service.changeStatus(orderId, 'SHIPPING', actorId),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+  });
+  it('does not publish cancelled inventory when the transaction fails at commit', async () => {
+    prisma.$transaction.mockRejectedValueOnce(new Error('commit failed'));
+    await expect(
+      service.changeStatus(orderId, 'CANCELLED', actorId),
+    ).rejects.toThrow('commit failed');
+    expect(changes.publishOrder).not.toHaveBeenCalled();
   });
 });

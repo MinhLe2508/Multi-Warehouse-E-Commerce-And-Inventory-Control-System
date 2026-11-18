@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { InventoryEventsModule } from '../inventory/inventory-events.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StockReservationModule } from '../stock-reservation/stock-reservation.module';
@@ -9,7 +10,12 @@ import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
-  imports: [PrismaModule, PricingModule, StockReservationModule],
+  imports: [
+    PrismaModule,
+    PricingModule,
+    StockReservationModule,
+    InventoryEventsModule,
+  ],
   controllers: [
     OrdersController,
     AdminOrdersController,

@@ -89,7 +89,8 @@ test('cleanup against real PostgreSQL with project constraints and triggers', as
     ]);
     return inv;
   }
-  const job = new ReservationCleanupJob(prisma);
+  const changes = { publishInventory: async () => {} };
+  const job = new ReservationCleanupJob(prisma, changes);
   await t.test(
     'expire only overdue HOLDING, preserve stock, audit, rerun is idempotent',
     async () => {
@@ -138,7 +139,7 @@ test('cleanup against real PostgreSQL with project constraints and triggers', as
     await fixture();
     const counts = await Promise.all([
       job.cleanupExpired(),
-      new ReservationCleanupJob(prisma).cleanupExpired(),
+      new ReservationCleanupJob(prisma, changes).cleanupExpired(),
     ]);
     assert.equal(
       counts.reduce((a, b) => a + b, 0),
@@ -146,24 +147,58 @@ test('cleanup against real PostgreSQL with project constraints and triggers', as
     );
   });
   for (const target of ['inventory', 'stock_reservations']) {
-    await t.test(`skip locked ${target}, process after unlock`, async () => {
-      const id = await fixture();
-      const blocker = await pool.connect();
-      try {
-        await blocker.query('BEGIN');
-        await blocker.query(
-          target === 'inventory'
-            ? 'SELECT id FROM inventory WHERE id=$1 FOR UPDATE'
-            : 'SELECT id FROM stock_reservations WHERE inventory_id=$1 AND expires_at<NOW() FOR UPDATE',
-          [id],
-        );
+    await t.test(
+      `wait for locked ${target}, settle the claimed order after unlock`,
+      async () => {
+        const id = await fixture();
+        const blocker = await pool.connect();
+        let run;
+        try {
+          await blocker.query('BEGIN');
+          const pid = (await blocker.query('SELECT pg_backend_pid() AS pid'))
+            .rows[0].pid;
+          await blocker.query(
+            target === 'inventory'
+              ? 'SELECT id FROM inventory WHERE id=$1 FOR UPDATE'
+              : 'SELECT id FROM stock_reservations WHERE inventory_id=$1 AND expires_at<NOW() FOR UPDATE',
+            [id],
+          );
+          run = job.cleanupExpired().then(
+            (count) => ({ count }),
+            (error) => ({ error }),
+          );
+          let waiting = false;
+          const deadline = Date.now() + 3000;
+          while (Date.now() < deadline) {
+            waiting = (
+              await pool.query(
+                'SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid))) AS waiting',
+                [pid],
+              )
+            ).rows[0].waiting;
+            if (waiting) break;
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          assert.equal(waiting, true, 'Worker phải chờ khóa trước khi đổi tồn');
+          assert.equal(
+            (
+              await pool.query(
+                'SELECT reserved_stock FROM inventory WHERE id=$1',
+                [id],
+              )
+            ).rows[0].reserved_stock,
+            5,
+          );
+        } finally {
+          await blocker.query('ROLLBACK');
+          blocker.release();
+        }
+        const result = await run;
+        if (result.error) throw result.error;
+        assert.equal(result.count, 1);
         assert.equal(await job.cleanupExpired(), 0);
-      } finally {
-        await blocker.query('ROLLBACK');
-        blocker.release();
-      }
-      assert.equal(await job.cleanupExpired(), 1);
-    });
+      },
+    );
   }
   await t.test(
     'audit failure rolls back reservation and inventory',
@@ -215,8 +250,8 @@ test('real Redis publisher and subscriber lifecycle', async (t) => {
   await subscriber.subscribe('inventory.low_stock');
   const event = {
     inventoryId: '1',
-    productId: 'test-product',
-    warehouseId: 'test-warehouse',
+    productId: '11111111-1111-4111-8111-111111111111',
+    warehouseId: '22222222-2222-4222-8222-222222222222',
     availableStock: 2,
     threshold: 5,
   };
@@ -230,7 +265,15 @@ test('real Redis publisher and subscriber lifecycle', async (t) => {
       resolve({ channel, payload });
     });
   });
-  assert.ok((await service.publishLowStock(event)) >= 2);
+  let receivers = 0;
+  const readyDeadline = Date.now() + 2500;
+  while (receivers < 2 && Date.now() < readyDeadline) {
+    try {
+      receivers = await service.publishLowStock(event);
+    } catch {}
+    if (receivers < 2) await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(receivers >= 2, 'Redis clients chưa sẵn sàng');
   assert.deepEqual(await received, {
     channel: 'inventory.low_stock',
     payload: JSON.stringify(event),

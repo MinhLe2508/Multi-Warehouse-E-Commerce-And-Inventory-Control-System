@@ -6,7 +6,11 @@ const ACTOR = '11111111-1111-4111-8111-111111111111';
 function serviceRejecting(error: unknown) {
   const prisma = { $transaction: jest.fn().mockRejectedValue(error) };
   const alerts = { evaluate: jest.fn() };
-  return new InventoryService(prisma as never, alerts as never);
+  return new InventoryService(
+    prisma as never,
+    alerts as never,
+    { publishInventory: jest.fn() } as never,
+  );
 }
 
 describe('InventoryService — database error translation', () => {

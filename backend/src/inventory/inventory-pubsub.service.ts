@@ -4,6 +4,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { isUUID } from 'class-validator';
 import Redis from 'ioredis';
 
 export const LOW_STOCK_CHANNEL = 'inventory.low_stock';
@@ -39,75 +41,90 @@ export interface InventoryChangedEvent {
   occurredAt?: string;
 }
 
-export type LowStockHandler = (event: LowStockEvent) => void;
-export type InventoryChangedHandler = (event: InventoryChangedEvent) => void;
+export type LowStockHandler = (event: LowStockEvent) => void | Promise<void>;
+export type InventoryChangedHandler = (
+  event: InventoryChangedEvent,
+) => void | Promise<void>;
+const INT4_MAX = 2147483647;
+const MAX_BIGINT = 9223372036854775807n;
+const quantity = (v: unknown): v is number =>
+  Number.isInteger(v) && (v as number) >= 0 && (v as number) <= INT4_MAX;
+const bigId = (v: unknown): v is string =>
+  typeof v === 'string' &&
+  /^[1-9][0-9]{0,18}$/.test(v) &&
+  BigInt(v) <= MAX_BIGINT;
+const uuid = (v: unknown): v is string => typeof v === 'string' && isUUID(v);
+const timestamp = (v: unknown): v is string =>
+  typeof v === 'string' &&
+  /^\d{4}-\d{2}-\d{2}T/.test(v) &&
+  Number.isFinite(Date.parse(v));
+const object = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
 
 export function isLowStockEvent(value: unknown): value is LowStockEvent {
-  if (!value || typeof value !== 'object') return false;
-  const event = value as Record<string, unknown>;
-  if ('costPrice' in event || 'productCostPrice' in event) return false;
-  const optionalStringsOk = [
+  if (!object(value) || 'costPrice' in value || 'productCostPrice' in value)
+    return false;
+  return (
+    bigId(value.inventoryId) &&
+    uuid(value.productId) &&
+    uuid(value.warehouseId) &&
+    quantity(value.availableStock) &&
+    quantity(value.threshold) &&
+    value.availableStock <= value.threshold &&
+    (value.alertId === undefined || bigId(value.alertId)) &&
+    (value.alertLevel === undefined ||
+      value.alertLevel === 'WARNING' ||
+      value.alertLevel === 'CRITICAL') &&
+    ['sku', 'productName', 'warehouseCode'].every(
+      (key) => value[key] === undefined || typeof value[key] === 'string',
+    ) &&
+    (value.triggeredAt === undefined || timestamp(value.triggeredAt))
+  );
+}
+
+function cleanLowStock(raw: LowStockEvent): LowStockEvent {
+  const clean: LowStockEvent = {
+    inventoryId: raw.inventoryId,
+    productId: raw.productId,
+    warehouseId: raw.warehouseId,
+    availableStock: raw.availableStock,
+    threshold: raw.threshold,
+  };
+  for (const key of [
     'alertId',
+    'alertLevel',
     'sku',
     'productName',
     'warehouseCode',
     'triggeredAt',
-  ].every((key) => event[key] === undefined || typeof event[key] === 'string');
-  const levelOk =
-    event.alertLevel === undefined ||
-    event.alertLevel === 'WARNING' ||
-    event.alertLevel === 'CRITICAL';
-  return (
-    optionalStringsOk &&
-    levelOk &&
-    ['inventoryId', 'productId', 'warehouseId'].every(
-      (key) => typeof event[key] === 'string' && event[key].length > 0,
-    ) &&
-    Number.isSafeInteger(event.availableStock) &&
-    Number.isSafeInteger(event.threshold) &&
-    (event.availableStock as number) >= 0 &&
-    (event.threshold as number) >= 0 &&
-    (event.availableStock as number) <= (event.threshold as number)
-  );
+  ] as const) {
+    if (raw[key] !== undefined) Object.assign(clean, { [key]: raw[key] });
+  }
+  return clean;
 }
 
-export function sanitizeInventoryChangedEvent(
-  raw: InventoryChangedEvent & Record<string, unknown>,
+// Whitelist fields; never coerce null/boolean/string quantities into valid stock.
+export function sanitizeInventoryChangedEvent<T extends InventoryChangedEvent>(
+  raw: T,
 ): InventoryChangedEvent {
-  const occurredAt =
-    typeof raw.occurredAt === 'string' && raw.occurredAt.length > 0
-      ? raw.occurredAt
-      : new Date().toISOString();
-  const eventId =
-    typeof raw.eventId === 'string' && raw.eventId.length > 0
-      ? raw.eventId
-      : `${String(raw.inventoryId)}:${raw.version ?? ''}:${raw.stock}:${raw.reservedStock}:${raw.availableStock}`;
-
   const clean: InventoryChangedEvent = {
-    eventId,
-    inventoryId: String(raw.inventoryId),
-    stock: Number(raw.stock),
-    reservedStock: Number(raw.reservedStock),
-    availableStock: Number(raw.availableStock),
-    occurredAt,
+    inventoryId: raw.inventoryId,
+    stock: raw.stock,
+    reservedStock: raw.reservedStock,
+    availableStock: raw.availableStock,
+    eventId: raw.eventId === undefined ? randomUUID() : raw.eventId,
+    occurredAt:
+      raw.occurredAt === undefined ? new Date().toISOString() : raw.occurredAt,
   };
-  if (typeof raw.productId === 'string' && raw.productId.length > 0) {
-    clean.productId = raw.productId;
-  }
-  if (typeof raw.warehouseId === 'string' && raw.warehouseId.length > 0) {
-    clean.warehouseId = raw.warehouseId;
-  }
-  if (raw.threshold === null || Number.isSafeInteger(raw.threshold)) {
-    clean.threshold = raw.threshold;
-  }
-  if (Number.isSafeInteger(raw.effectiveThreshold)) {
-    clean.effectiveThreshold = raw.effectiveThreshold;
-  }
-  if (typeof raw.isLowStock === 'boolean') {
-    clean.isLowStock = raw.isLowStock;
-  }
-  if (Number.isSafeInteger(raw.version)) {
-    clean.version = raw.version;
+  for (const key of [
+    'productId',
+    'warehouseId',
+    'threshold',
+    'effectiveThreshold',
+    'isLowStock',
+    'version',
+  ] as const) {
+    if (raw[key] !== undefined) Object.assign(clean, { [key]: raw[key] });
   }
   return clean;
 }
@@ -115,63 +132,54 @@ export function sanitizeInventoryChangedEvent(
 export function isInventoryChangedEvent(
   value: unknown,
 ): value is InventoryChangedEvent {
-  if (!value || typeof value !== 'object') return false;
-  const event = value as Record<string, unknown>;
-  // Tuyệt đối không cho phép costPrice lọt vào kênh broadcast
-  if ('costPrice' in event || 'productCostPrice' in event) return false;
-  const optionalStringsOk = [
-    'eventId',
-    'productId',
-    'warehouseId',
-    'occurredAt',
-  ].every((key) => event[key] === undefined || typeof event[key] === 'string');
-  const thresholdOk =
-    event.threshold === undefined ||
-    event.threshold === null ||
-    (Number.isSafeInteger(event.threshold) && (event.threshold as number) >= 0);
-  const effectiveThresholdOk =
-    event.effectiveThreshold === undefined ||
-    (Number.isSafeInteger(event.effectiveThreshold) &&
-      (event.effectiveThreshold as number) >= 0);
-  const versionOk =
-    event.version === undefined ||
-    (Number.isSafeInteger(event.version) && (event.version as number) >= 0);
-  const isLowStockOk =
-    event.isLowStock === undefined || typeof event.isLowStock === 'boolean';
-
+  if (!object(value) || 'costPrice' in value || 'productCostPrice' in value)
+    return false;
   return (
-    optionalStringsOk &&
-    thresholdOk &&
-    effectiveThresholdOk &&
-    versionOk &&
-    isLowStockOk &&
-    typeof event.inventoryId === 'string' &&
-    event.inventoryId.trim().length > 0 &&
-    Number.isSafeInteger(event.stock) &&
-    Number.isSafeInteger(event.reservedStock) &&
-    Number.isSafeInteger(event.availableStock) &&
-    (event.stock as number) >= 0 &&
-    (event.reservedStock as number) >= 0 &&
-    (event.availableStock as number) >= 0 &&
-    (event.availableStock as number) <= (event.stock as number)
+    bigId(value.inventoryId) &&
+    quantity(value.stock) &&
+    quantity(value.reservedStock) &&
+    quantity(value.availableStock) &&
+    value.reservedStock <= value.stock &&
+    value.availableStock === value.stock - value.reservedStock &&
+    (value.eventId === undefined ||
+      (typeof value.eventId === 'string' &&
+        value.eventId.trim().length > 0 &&
+        value.eventId.length <= 128)) &&
+    (value.productId === undefined || uuid(value.productId)) &&
+    (value.warehouseId === undefined || uuid(value.warehouseId)) &&
+    (value.occurredAt === undefined || timestamp(value.occurredAt)) &&
+    (value.threshold === undefined ||
+      value.threshold === null ||
+      quantity(value.threshold)) &&
+    (value.effectiveThreshold === undefined ||
+      quantity(value.effectiveThreshold)) &&
+    (value.version === undefined || quantity(value.version)) &&
+    (value.isLowStock === undefined ||
+      (typeof value.isLowStock === 'boolean' &&
+        (value.effectiveThreshold === undefined ||
+          value.isLowStock ===
+            value.availableStock <= value.effectiveThreshold)))
   );
 }
 
 @Injectable()
 export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(InventoryPubSubService.name);
-  private publisher: Redis;
-  private subscriber: Redis;
+  private publisher?: Redis;
+  private subscriber?: Redis;
   private readonly handlers = new Set<LowStockHandler>();
   private readonly inventoryChangedHandlers =
     new Set<InventoryChangedHandler>();
+  private readonly seenChanges = new Map<string, number>();
 
   onModuleInit(): void {
+    if (this.publisher || this.subscriber) return;
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     const options = {
       connectTimeout: 2000,
       commandTimeout: 3000,
       maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
     };
     this.publisher = new Redis(url, options);
     this.subscriber = new Redis(url, options);
@@ -182,64 +190,36 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn('Redis subscriber unavailable'),
     );
     this.subscriber.on('message', (channel, message) => {
-      if (channel === LOW_STOCK_CHANNEL) {
-        try {
-          const event: unknown = JSON.parse(message);
-          if (!isLowStockEvent(event))
-            throw new Error('Invalid low-stock event');
-          for (const handler of this.handlers) {
-            try {
-              handler(event);
-            } catch {
-              this.logger.warn('A low-stock handler failed');
-            }
-          }
-          this.logger.log(
-            `Low stock: inventory=${event.inventoryId}, available=${event.availableStock}, threshold=${event.threshold}`,
-          );
-        } catch {
-          this.logger.warn('Ignored invalid inventory.low_stock payload');
-        }
-        return;
-      }
-
-      if (channel === INVENTORY_CHANGED_CHANNEL) {
-        try {
+      try {
+        if (channel === LOW_STOCK_CHANNEL) {
           const parsed: unknown = JSON.parse(message);
-          if (!isInventoryChangedEvent(parsed)) {
+          if (!isLowStockEvent(parsed))
+            throw new Error('Invalid low-stock event');
+          this.deliver(this.handlers, cleanLowStock(parsed));
+        } else if (channel === INVENTORY_CHANGED_CHANNEL) {
+          const parsed: unknown = JSON.parse(message);
+          if (!isInventoryChangedEvent(parsed))
             throw new Error('Invalid inventory.changed event');
-          }
-          for (const handler of this.inventoryChangedHandlers) {
-            try {
-              handler(parsed);
-            } catch {
-              this.logger.warn('An inventory.changed handler failed');
-            }
-          }
-        } catch {
-          this.logger.warn('Ignored invalid inventory.changed payload');
+          this.deliverChange(sanitizeInventoryChangedEvent(parsed));
         }
+      } catch {
+        this.logger.warn(`Ignored invalid ${channel} payload`);
       }
     });
-    // Đăng ký kênh mỗi khi kết nối sẵn sàng (lần đầu và cả khi Redis khởi động chậm / kết nối lại).
-    // Lỗi chỉ ghi cảnh báo, KHÔNG làm sập backend.
     this.subscriber.on('ready', () => {
       this.subscriber
-        .subscribe(LOW_STOCK_CHANNEL, INVENTORY_CHANGED_CHANNEL)
+        ?.subscribe(LOW_STOCK_CHANNEL, INVENTORY_CHANGED_CHANNEL)
         .then(() =>
           this.logger.log(
             `Subscribed to ${LOW_STOCK_CHANNEL}, ${INVENTORY_CHANGED_CHANNEL}`,
           ),
         )
         .catch(() =>
-          this.logger.warn(
-            `Cannot subscribe to ${LOW_STOCK_CHANNEL}/${INVENTORY_CHANGED_CHANNEL}`,
-          ),
+          this.logger.warn('Cannot subscribe to inventory channels'),
         );
     });
   }
 
-  // Đăng ký nhận sự kiện tồn thấp. Trả về hàm hủy đăng ký.
   onLowStock(handler: LowStockHandler): () => void {
     this.handlers.add(handler);
     return () => {
@@ -247,7 +227,6 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  // Đăng ký nhận sự kiện biến động tồn kho sau commit. Trả về hàm hủy đăng ký.
   onInventoryChanged(handler: InventoryChangedHandler): () => void {
     this.inventoryChangedHandlers.add(handler);
     return () => {
@@ -255,28 +234,86 @@ export class InventoryPubSubService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  // Call AFTER the inventory transaction commits. Redis is not the stock ledger.
   async publishLowStock(event: LowStockEvent): Promise<number> {
     if (!isLowStockEvent(event)) throw new Error('Invalid low-stock event');
-    return this.publisher.publish(LOW_STOCK_CHANNEL, JSON.stringify(event));
+    return this.readyPublisher().publish(
+      LOW_STOCK_CHANNEL,
+      JSON.stringify(cleanLowStock(event)),
+    );
   }
 
-  // Call AFTER the inventory transaction commits. Strips costPrice and validates payload.
   async publishInventoryChanged(event: InventoryChangedEvent): Promise<number> {
-    const clean = sanitizeInventoryChangedEvent(
-      event as InventoryChangedEvent & Record<string, unknown>,
-    );
-    if (!isInventoryChangedEvent(clean)) {
+    const clean = sanitizeInventoryChangedEvent(event);
+    if (!isInventoryChangedEvent(clean))
       throw new Error('Invalid inventory.changed event');
-    }
-    return this.publisher.publish(
+    return this.readyPublisher().publish(
       INVENTORY_CHANGED_CHANNEL,
       JSON.stringify(clean),
     );
   }
 
+  // Called AFTER commit. Deliver locally even if our Redis subscription is down;
+  // deduplicate the echo when Redis subsequently delivers this same eventId.
+  async notifyInventoryChanged(event: InventoryChangedEvent): Promise<void> {
+    const clean = sanitizeInventoryChangedEvent(event);
+    if (!isInventoryChangedEvent(clean))
+      throw new Error('Invalid inventory.changed event');
+    this.deliverChange(clean);
+    try {
+      await this.publishInventoryChanged(clean);
+    } catch {
+      this.logger.warn(
+        'Inventory committed; Redis publish unavailable, delivered locally',
+      );
+    }
+  }
+
+  private readyPublisher(): Redis {
+    if (this.publisher?.status !== 'ready')
+      throw new Error('Redis publisher is not ready');
+    return this.publisher;
+  }
+
+  private deliver<T extends LowStockEvent | InventoryChangedEvent>(
+    handlers: Set<(event: T) => void | Promise<void>>,
+    event: T,
+  ): void {
+    for (const handler of handlers) {
+      try {
+        const pending = handler({ ...event });
+        if (pending)
+          void Promise.resolve(pending).catch(() =>
+            this.logger.warn('A realtime handler failed'),
+          );
+      } catch {
+        this.logger.warn('A realtime handler failed');
+      }
+    }
+  }
+
+  private deliverChange(event: InventoryChangedEvent): void {
+    const now = Date.now();
+    const id = event.eventId!;
+    const previous = this.seenChanges.get(id);
+    if (previous !== undefined && now - previous < 300000) return;
+    this.seenChanges.delete(id);
+    this.seenChanges.set(id, now);
+    // Bound deduplication memory. Pub/Sub is a refresh hint, not a durable log.
+    while (this.seenChanges.size > 1000) {
+      const oldest = this.seenChanges.keys().next();
+      if (oldest.done) break;
+      this.seenChanges.delete(oldest.value);
+    }
+    this.deliver(this.inventoryChangedHandlers, event);
+  }
+
   onModuleDestroy(): void {
     this.publisher?.disconnect();
     this.subscriber?.disconnect();
+    this.publisher = undefined;
+    this.subscriber = undefined;
+    this.handlers.clear();
+    this.inventoryChangedHandlers.clear();
+    this.seenChanges.clear();
   }
 }

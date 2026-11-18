@@ -4,10 +4,13 @@
 // =============================================================================
 
 import { Module } from '@nestjs/common';
+import { InventoryAlertModule } from '../inventory/inventory-alert.module';
+import { InventoryEventsModule } from '../inventory/inventory-events.module';
 import { WarehousesController } from './warehouses.controller';
 import { WarehousesService } from './warehouses.service';
 
 @Module({
+  imports: [InventoryAlertModule, InventoryEventsModule],
   controllers: [WarehousesController],
   providers: [WarehousesService],
 

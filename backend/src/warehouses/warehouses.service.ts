@@ -23,6 +23,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, type Warehouse } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { InventoryAlertService } from '../inventory/inventory-alert.service';
+import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 import { type CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { type UpdateWarehouseDto } from './dto/update-warehouse.dto';
 
@@ -36,7 +38,11 @@ export interface FindWarehousesOptions {
 
 @Injectable()
 export class WarehousesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alerts: InventoryAlertService,
+    private readonly changes: InventoryChangeEmitter,
+  ) {}
 
   // ==========================================================================
   // 1. TRUY VẤN
@@ -159,7 +165,7 @@ export class WarehousesService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await this.lockWarehouse(tx, id);
 
       const current = await tx.warehouse.findUniqueOrThrow({ where: { id } });
@@ -175,8 +181,25 @@ export class WarehousesService {
         await this.assertCapacityEnough(tx, current, input.capacity);
       }
 
-      return tx.warehouse.update({ where: { id }, data });
+      const warehouse = await tx.warehouse.update({ where: { id }, data });
+      const thresholdChanged =
+        input.defaultLowStockThreshold !== undefined &&
+        input.defaultLowStockThreshold !== current.defaultLowStockThreshold;
+      let inventoryIds: bigint[] = [];
+      if (thresholdChanged) {
+        // Only inherited thresholds change. Lock warehouse -> inventory, as in restock.
+        const rows = await tx.$queryRaw<{ id: bigint }[]>`
+          SELECT id FROM inventory WHERE warehouse_id = ${id}::uuid AND threshold IS NULL
+           ORDER BY id FOR UPDATE
+        `;
+        inventoryIds = rows.map((row) => row.id);
+        await this.alerts.evaluate(tx, inventoryIds);
+      }
+      return { warehouse, inventoryIds };
     });
+    if (result.inventoryIds.length)
+      await this.changes.publishInventory(result.inventoryIds);
+    return result.warehouse;
   }
 
   /**
@@ -238,6 +261,12 @@ export class WarehousesService {
     tx: Prisma.TransactionClient,
     warehouse: Warehouse,
   ): Promise<void> {
+    // Writers reserve under inventory locks. Wait before counting so a reserve
+    // already in progress cannot slip between this check and deactivation.
+    await tx.$queryRaw`
+      SELECT id FROM inventory WHERE warehouse_id = ${warehouse.id}::uuid
+       ORDER BY id FOR UPDATE
+    `;
     const reservedRows = await tx.inventory.count({
       where: { warehouseId: warehouse.id, reservedStock: { gt: 0 } },
     });

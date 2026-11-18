@@ -256,7 +256,8 @@ describe('LowStockNotifierService', () => {
     expect(
       (sanitized as Record<string, unknown>).productCostPrice,
     ).toBeUndefined();
-    expect(sanitized.eventId).toBe('100:3:50:5:45');
+    // A fresh event ID also distinguishes threshold-only changes at the same stock version.
+    expect(sanitized.eventId).toEqual(expect.any(String));
     expect(isInventoryChangedEvent(sanitized)).toBe(true);
     expect(
       isInventoryChangedEvent({

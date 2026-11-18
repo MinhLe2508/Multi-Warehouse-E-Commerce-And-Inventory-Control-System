@@ -6,7 +6,7 @@
 // Lý do tách thành Module riêng thay vì gộp vào InventoryModule:
 // - InventoryAlertService không có phụ thuộc nào (không cần PrismaService): mọi truy vấn chạy trên transaction do người gọi truyền vào.
 // - Module này vì thế dựng được trong test của StockReservationModule mà không cần PrismaModule.
-// - InventoryModule còn chứa InventoryService (cần PrismaService, WarehousesService), nếu StockReservationModule import cả InventoryModule sẽ kéo theo các phụ thuộc đó và làm vỡ spec module của Huy.
+// - InventoryModule còn chứa InventoryService (cần PrismaService và InventoryChangeEmitter), nếu StockReservationModule import cả InventoryModule sẽ kéo theo các phụ thuộc đó và làm vỡ spec module của Huy.
 // =============================================================================
 
 import { Module } from '@nestjs/common';

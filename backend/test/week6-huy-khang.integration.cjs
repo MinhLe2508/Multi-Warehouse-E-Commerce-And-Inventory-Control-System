@@ -247,9 +247,18 @@ test(
       statement_timeout: 15000,
     });
     prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-    const job = new ReservationCleanupJob(prisma);
+    const {
+      InventoryChangeEmitter,
+    } = require('../dist/inventory/inventory-change-emitter.service');
+    const emitted = [];
+    const changes = new InventoryChangeEmitter(prisma, {
+      notifyInventoryChanged: async (event) => {
+        emitted.push(event);
+      },
+    });
+    const job = new ReservationCleanupJob(prisma, changes);
     const alerts = new InventoryAlertService();
-    const inventoryService = new InventoryService(prisma, alerts);
+    const inventoryService = new InventoryService(prisma, alerts, changes);
 
     await t.test(
       'DDL baseline: 18 tables / 10 ENUM / 25 FK / 62 indexes / 20 CHECK / 11 updated_at triggers, fn_reserve_stock runs',
@@ -349,6 +358,7 @@ test(
     t.diagnostic(`Migrations: ${migrations.join(', ')}`);
 
     async function fresh() {
+      emitted.length = 0;
       await pool.query('TRUNCATE users, warehouses, products CASCADE');
       const userId = (
         await pool.query(
@@ -414,6 +424,8 @@ test(
     async function snapshot() {
       const tables = [
         'orders',
+        'order_items',
+        'notifications',
         'inventory',
         'stock_reservations',
         'inventory_audit_log',
@@ -629,7 +641,7 @@ test(
           await waitBlocked(lock.pid);
           assert.equal(
             await bounded(
-              new ReservationCleanupJob(prisma).cleanupExpired(),
+              new ReservationCleanupJob(prisma, changes).cleanupExpired(),
               3000,
             ),
             0,
@@ -748,7 +760,7 @@ test(
         const inv = await f.inventory();
         await f.order([[inv, 1]]);
         const before = await snapshot();
-        const failing = new ReservationCleanupJob(prisma, {
+        const failing = new ReservationCleanupJob(prisma, changes, {
           evaluate: async () => {
             throw new Error('W6_ALERT_FAILURE');
           },
@@ -813,13 +825,14 @@ test(
         const inv = await f.inventory();
         const id = await f.order([[inv, 1]], 15);
         const stock = new StockReservationService(
-          new PrismaInventoryStockAdapter(),
+          new PrismaInventoryStockAdapter(alerts),
           new PrismaReservationRepository(),
         );
         const payment = new PaymentsService(
           prisma,
           stock,
           new MockPaymentGatewayService(),
+          changes,
         );
         assert.equal(
           (await payment.process(f.userId, id, randomUUID(), 'MOCK_CARD', true))
@@ -850,7 +863,7 @@ test(
           "UPDATE stock_reservations SET expires_at=clock_timestamp()+interval '300 milliseconds'",
         );
         const stock = new StockReservationService(
-          new PrismaInventoryStockAdapter(),
+          new PrismaInventoryStockAdapter(alerts),
           new PrismaReservationRepository(),
         );
         let unblock;
@@ -871,6 +884,7 @@ test(
           prisma,
           stock,
           new MockPaymentGatewayService(),
+          changes,
         );
         // Attach a rejection handler immediately, before waiting on the barrier.
         const result = payment
@@ -991,6 +1005,508 @@ test(
       },
     );
 
+    const { OrdersService } = require('../dist/orders/orders.service');
+    const { PricingService } = require('../dist/pricing/pricing.service');
+    const {
+      WarehousesService,
+    } = require('../dist/warehouses/warehouses.service');
+    const {
+      LowStockNotifierService,
+    } = require('../dist/notifications/low-stock-notifier.service');
+    function owners(emitter = changes) {
+      const stock = new StockReservationService(
+        new PrismaInventoryStockAdapter(alerts),
+        new PrismaReservationRepository(),
+      );
+      return {
+        stock,
+        orders: new OrdersService(prisma, new PricingService(), stock, emitter),
+        payments: new PaymentsService(
+          prisma,
+          stock,
+          new MockPaymentGatewayService(),
+          emitter,
+        ),
+      };
+    }
+    async function buy(f, owner, inv, quantity) {
+      const productId = (
+        await pool.query('SELECT product_id FROM inventory WHERE id=$1', [inv])
+      ).rows[0].product_id;
+      return owner.create(f.userId, {
+        items: [{ productId, quantity }],
+        shippingRecipient: 'Week6',
+        shippingPhone: '0900000000',
+        shippingAddress: 'VN',
+        shippingRegion: 'VN',
+      });
+    }
+
+    await scenario(
+      'Orders thật: WARNING -> CRITICAL cùng alert, hủy trả hàng -> RESOLVED, giữ lại mở episode mới',
+      async (f) => {
+        const inv = await f.inventory(10);
+        await pool.query(
+          'UPDATE warehouses SET default_low_stock_threshold=3 WHERE id=$1',
+          [f.whId],
+        );
+        const { orders } = owners();
+        const first = await buy(f, orders, inv, 7);
+        const warning = (
+          await pool.query("SELECT * FROM stock_alerts WHERE status='OPEN'")
+        ).rows[0];
+        assert.equal(warning.alert_level, 'WARNING');
+        assert.equal(emitted.length, 1);
+        assert.equal(emitted[0].availableStock, 3);
+        const second = await buy(f, orders, inv, 3);
+        const critical = (
+          await pool.query("SELECT * FROM stock_alerts WHERE status='OPEN'")
+        ).rows[0];
+        assert.equal(critical.id, warning.id);
+        assert.equal(critical.alert_level, 'CRITICAL');
+        assert.deepEqual(critical.triggered_at, warning.triggered_at);
+        await orders.changeStatus(second.id, 'CANCELLED', f.userId);
+        await orders.changeStatus(first.id, 'CANCELLED', f.userId);
+        assert.equal(
+          (
+            await pool.query(
+              "SELECT count(*)::int AS n FROM stock_alerts WHERE status='OPEN'",
+            )
+          ).rows[0].n,
+          0,
+        );
+        await buy(f, orders, inv, 8);
+        const reopened = (
+          await pool.query(
+            "SELECT id,alert_level FROM stock_alerts WHERE status='OPEN'",
+          )
+        ).rows[0];
+        assert.notEqual(reopened.id, warning.id);
+        assert.equal(reopened.alert_level, 'WARNING');
+        assert.equal(emitted.length, 5);
+        assert.ok(emitted.every((event) => !Object.hasOwn(event, 'costPrice')));
+      },
+    );
+
+    await scenario(
+      'Payments thật: commit giữ available, duplicate không audit/cảnh báo/realtime thêm',
+      async (f) => {
+        const inv = await f.inventory(10);
+        const { orders, payments } = owners();
+        const order = await buy(f, orders, inv, 10);
+        const ref = randomUUID();
+        await payments.process(f.userId, order.id, ref, 'MOCK_CARD', true);
+        assert.deepEqual(
+          (
+            await pool.query(
+              'SELECT stock,reserved_stock,available_stock FROM inventory WHERE id=$1',
+              [inv],
+            )
+          ).rows[0],
+          { stock: 0, reserved_stock: 0, available_stock: 0 },
+        );
+        assert.equal(emitted.length, 2);
+        assert.equal(emitted[1].stock, 0);
+        const before = await snapshot();
+        const count = emitted.length;
+        assert.equal(
+          (await payments.process(f.userId, order.id, ref, 'MOCK_CARD', true))
+            .duplicate,
+          true,
+        );
+        assert.deepEqual(await snapshot(), before);
+        assert.equal(emitted.length, count);
+      },
+    );
+
+    await scenario(
+      'Cleanup thật: expire đơn đã tạo qua Orders cập nhật cảnh báo và phát snapshot sau commit',
+      async (f) => {
+        const inv = await f.inventory();
+        const { orders } = owners();
+        const order = await buy(f, orders, inv, 10);
+        await pool.query(
+          "UPDATE stock_reservations SET expires_at=clock_timestamp()-interval '1 second' WHERE order_id=$1",
+          [order.id],
+        );
+        assert.equal(await job.cleanupExpired(), 1);
+        assert.equal(emitted.length, 2);
+        assert.equal(emitted[1].reservedStock, 0);
+        assert.equal(emitted[1].availableStock, 10);
+        assert.equal(
+          (
+            await pool.query('SELECT status FROM orders WHERE id=$1', [
+              order.id,
+            ])
+          ).rows[0].status,
+          'CANCELLED',
+        );
+        assert.equal(
+          (await pool.query('SELECT status FROM stock_alerts')).rows[0].status,
+          'RESOLVED',
+        );
+      },
+    );
+
+    await scenario(
+      'Lỗi tạo cảnh báo khi reserve: rollback cả Order/Items/Reservation/Audit, không phát sự kiện',
+      async (f) => {
+        const inv = await f.inventory();
+        const { orders } = owners();
+        const before = await snapshot();
+        await pool.query(
+          "CREATE FUNCTION w6_fail_reserve_alert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'W6_RESERVE_ALERT_FAILURE'; END $$; CREATE TRIGGER w6_fail_reserve_alert BEFORE INSERT ON stock_alerts FOR EACH ROW EXECUTE FUNCTION w6_fail_reserve_alert()",
+        );
+        try {
+          await assert.rejects(
+            buy(f, orders, inv, 10),
+            /W6_RESERVE_ALERT_FAILURE/,
+          );
+          assert.deepEqual(await snapshot(), before);
+          assert.equal(emitted.length, 0);
+        } finally {
+          await pool.query(
+            'DROP TRIGGER w6_fail_reserve_alert ON stock_alerts; DROP FUNCTION w6_fail_reserve_alert()',
+          );
+        }
+      },
+    );
+
+    await scenario(
+      'Lỗi cuối payment: rollback cả stock, payment và cảnh báo; không phát sự kiện',
+      async (f) => {
+        const inv = await f.inventory();
+        const { orders, payments } = owners();
+        const order = await buy(f, orders, inv, 10);
+        const before = await snapshot();
+        emitted.length = 0;
+        await pool.query(
+          "CREATE FUNCTION w6_fail_pay_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'W6_PAY_HISTORY_FAILURE'; END $$; CREATE TRIGGER w6_fail_pay_history BEFORE INSERT ON order_status_history FOR EACH ROW EXECUTE FUNCTION w6_fail_pay_history()",
+        );
+        try {
+          await assert.rejects(
+            payments.process(
+              f.userId,
+              order.id,
+              randomUUID(),
+              'MOCK_CARD',
+              true,
+            ),
+            /W6_PAY_HISTORY_FAILURE/,
+          );
+          assert.deepEqual(await snapshot(), before);
+          assert.equal(emitted.length, 0);
+        } finally {
+          await pool.query(
+            'DROP TRIGGER w6_fail_pay_history ON order_status_history; DROP FUNCTION w6_fail_pay_history()',
+          );
+        }
+      },
+    );
+
+    await scenario(
+      'Đổi ngưỡng kho: đánh giá lại các dòng kế thừa, giữ ngưỡng riêng và phát đúng snapshot',
+      async (f) => {
+        const inherited = await f.inventory(5);
+        const own = await f.inventory(5);
+        await pool.query('UPDATE inventory SET threshold=2 WHERE id=$1', [own]);
+        const warehouses = new WarehousesService(prisma, alerts, changes);
+        await warehouses.update(f.whId, { defaultLowStockThreshold: 5 });
+        assert.equal(
+          (
+            await pool.query(
+              "SELECT inventory_id FROM stock_alerts WHERE status='OPEN'",
+            )
+          ).rows[0].inventory_id,
+          inherited,
+        );
+        assert.equal(emitted.length, 1);
+        assert.equal(emitted[0].effectiveThreshold, 5);
+        await warehouses.update(f.whId, { defaultLowStockThreshold: 0 });
+        assert.equal(
+          (
+            await pool.query(
+              "SELECT count(*)::int AS n FROM stock_alerts WHERE status='OPEN'",
+            )
+          ).rows[0].n,
+          0,
+        );
+        assert.equal(emitted.length, 2);
+        await warehouses.update(f.whId, { defaultLowStockThreshold: 0 });
+        assert.equal(emitted.length, 2);
+        assert.equal(
+          (
+            await pool.query('SELECT threshold FROM inventory WHERE id=$1', [
+              own,
+            ])
+          ).rows[0].threshold,
+          2,
+        );
+      },
+    );
+
+    await scenario(
+      'Không ngừng kho trong lúc một transaction khác đang giữ chỗ',
+      async (f) => {
+        const inv = await f.inventory();
+        const warehouses = new WarehousesService(prisma, alerts, changes);
+        const lock = await blocker();
+        let outcome;
+        try {
+          await lock.c.query(
+            'SELECT id FROM inventory WHERE id=$1 FOR UPDATE',
+            [inv],
+          );
+          outcome = warehouses.update(f.whId, { isActive: false }).then(
+            (value) => ({ value }),
+            (error) => ({ error }),
+          );
+          await waitBlocked(lock.pid);
+          const id = (
+            await lock.c.query(
+              "INSERT INTO orders(order_code,user_id,shipping_recipient,shipping_phone,shipping_address,updated_at) VALUES('W6-DEACTIVATE',$1,'Test','0900000000','VN',NOW()) RETURNING id",
+              [f.userId],
+            )
+          ).rows[0].id;
+          await lock.c.query(
+            'SELECT fn_reserve_stock($1::bigint,$2::uuid,1,15)',
+            [inv, id],
+          );
+          await lock.c.query('COMMIT');
+        } finally {
+          await lock.release();
+        }
+        assert.equal((await bounded(outcome)).error.getStatus(), 409);
+        assert.equal(
+          (
+            await pool.query('SELECT is_active FROM warehouses WHERE id=$1', [
+              f.whId,
+            ])
+          ).rows[0].is_active,
+          true,
+        );
+      },
+    );
+
+    await scenario(
+      'Inventory ghi sau commit: đổi ngưỡng, no-op, restock và đóng cảnh báo',
+      async (f) => {
+        const inv = await f.inventory(2);
+        await inventoryService.updateStock(inv, { threshold: 5 }, f.userId);
+        assert.equal(emitted.length, 1);
+        assert.equal(emitted[0].isLowStock, true);
+        await inventoryService.updateStock(inv, { threshold: 5 }, f.userId);
+        assert.equal(emitted.length, 1);
+        await inventoryService.restock(inv, { quantity: 10 }, f.userId);
+        assert.equal(emitted.length, 2);
+        assert.equal(emitted[1].availableStock, 12);
+        assert.equal(
+          (await pool.query('SELECT status FROM stock_alerts')).rows[0].status,
+          'RESOLVED',
+        );
+      },
+    );
+
+    await scenario(
+      'Notifier mới của Minh: lưu notification trước publish, WARNING/CRITICAL mỗi mức một lần',
+      async (f) => {
+        const inv = await f.inventory();
+        await pool.query(
+          'UPDATE warehouses SET default_low_stock_threshold=3 WHERE id=$1',
+          [f.whId],
+        );
+        const { orders } = owners();
+        const published = [];
+        const gateway = { emitLowStockAlert: (event) => published.push(event) };
+        const notifier = new LowStockNotifierService(
+          prisma,
+          inventoryService,
+          {
+            publishLowStock: async () => {
+              assert.ok(
+                (
+                  await pool.query(
+                    'SELECT count(*)::int AS n FROM notifications',
+                  )
+                ).rows[0].n > 0,
+              );
+              return 0;
+            },
+          },
+          gateway,
+        );
+        await buy(f, orders, inv, 7);
+        assert.equal(await notifier.dispatchOpenAlerts(), 1);
+        assert.equal(await notifier.dispatchOpenAlerts(), 0);
+        await buy(f, orders, inv, 3);
+        assert.equal(await notifier.dispatchOpenAlerts(), 1);
+        assert.equal(await notifier.dispatchOpenAlerts(), 0);
+        assert.equal(published.length, 2);
+        assert.equal(
+          (await pool.query('SELECT count(*)::int AS n FROM notifications'))
+            .rows[0].n,
+          2,
+        );
+      },
+    );
+
+    const redisUrl = process.env.WEEK6_TEST_REDIS_URL;
+    let redisValidated = false;
+    await t.test(
+      'Redis thật: hai instance, snapshot sau commit tới Gateway đúng room và không nhận echo trùng',
+      {
+        skip:
+          !redisUrl && !process.argv.includes('--require-redis')
+            ? 'Đặt WEEK6_TEST_REDIS_URL để kiểm thử Redis thật'
+            : false,
+      },
+      async (sub) => {
+        assert.ok(redisUrl, 'Thiếu WEEK6_TEST_REDIS_URL');
+        const f = await fresh();
+        const previous = process.env.REDIS_URL;
+        process.env.REDIS_URL = redisUrl;
+        const Redis = require('ioredis');
+        const {
+          InventoryPubSubService,
+          INVENTORY_CHANGED_CHANNEL,
+        } = require('../dist/inventory/inventory-pubsub.service');
+        const {
+          NotificationsGateway,
+        } = require('../dist/notifications/notifications.gateway');
+        const a = new InventoryPubSubService();
+        const b = new InventoryPubSubService();
+        const control = new Redis(redisUrl);
+        const receivedA = [];
+        const receivedB = [];
+        let notifier;
+        try {
+          const beforeSubscribers = await control.pubsub(
+            'NUMSUB',
+            'inventory.low_stock',
+            INVENTORY_CHANGED_CHANNEL,
+          );
+          assert.equal(
+            Number(beforeSubscribers[1]) + Number(beforeSubscribers[3]),
+            0,
+            'Dùng Redis test riêng, không dùng Redis đang phục vụ ứng dụng',
+          );
+          redisValidated = true;
+          a.onModuleInit();
+          b.onModuleInit();
+          await waitUntil(
+            async () =>
+              Number(
+                (await control.pubsub('NUMSUB', INVENTORY_CHANGED_CHANNEL))[1],
+              ) === 2,
+            'Redis chưa đủ 2 subscriber',
+          );
+          await waitUntil(async () => {
+            try {
+              await a.publishInventoryChanged({
+                inventoryId: '1',
+                stock: 0,
+                reservedStock: 0,
+                availableStock: 0,
+              });
+              return true;
+            } catch {
+              return false;
+            }
+          }, 'Publisher chưa ready');
+          a.onInventoryChanged((event) => {
+            receivedA.push(event);
+          });
+          b.onInventoryChanged((event) => {
+            receivedB.push(event);
+          });
+          const rooms = [];
+          const gateway = new NotificationsGateway({}, prisma);
+          gateway.server = {
+            to: (room) => ({
+              emit: (event, payload) => {
+                rooms.push({ room, event, payload });
+              },
+            }),
+          };
+          const realChanges = new InventoryChangeEmitter(prisma, a);
+          notifier = new LowStockNotifierService(
+            prisma,
+            inventoryService,
+            a,
+            gateway,
+          );
+          notifier.onModuleInit();
+          const inv = await f.inventory();
+          const { orders } = owners(realChanges);
+          await buy(f, orders, inv, 3);
+          await waitUntil(
+            async () => receivedB.some((event) => event.inventoryId === inv),
+            'Instance B chưa nhận sự kiện',
+          );
+          const event = receivedB.find((event) => event.inventoryId === inv);
+          const marker = randomUUID();
+          await a.publishInventoryChanged({ ...event, eventId: marker });
+          await waitUntil(
+            async () =>
+              receivedA.some((e) => e.eventId === marker) &&
+              receivedB.some((e) => e.eventId === marker),
+            'Chưa nhận marker barrier',
+          );
+          assert.equal(
+            receivedA.filter((e) => e.eventId === event.eventId).length,
+            1,
+          );
+          assert.equal(
+            receivedB.filter((e) => e.eventId === event.eventId).length,
+            1,
+          );
+          assert.deepEqual([...new Set(rooms.map((r) => r.room))].sort(), [
+            'role:ADMIN',
+            'role:WAREHOUSE_STAFF',
+          ]);
+          assert.ok(rooms.every((r) => !Object.hasOwn(r.payload, 'costPrice')));
+          assert.equal(event.reservedStock, 3);
+          assert.equal(
+            (
+              await pool.query(
+                'SELECT reserved_stock FROM inventory WHERE id=$1',
+                [inv],
+              )
+            ).rows[0].reserved_stock,
+            3,
+          );
+          const before = receivedB.length;
+          await control.publish(
+            INVENTORY_CHANGED_CHANNEL,
+            JSON.stringify({
+              ...event,
+              eventId: randomUUID(),
+              availableStock: 999,
+            }),
+          );
+          const final = randomUUID();
+          await a.publishInventoryChanged({ ...event, eventId: final });
+          await waitUntil(
+            async () => receivedB.some((e) => e.eventId === final),
+            'Chưa nhận final barrier',
+          );
+          assert.equal(receivedB.length, before + 1);
+          sub.diagnostic(
+            (await control.info('server'))
+              .split('\r\n')
+              .find((line) => line.startsWith('redis_version:')),
+          );
+        } finally {
+          notifier?.onModuleDestroy();
+          a.onModuleDestroy();
+          b.onModuleDestroy();
+          control.disconnect();
+          if (previous === undefined) delete process.env.REDIS_URL;
+          else process.env.REDIS_URL = previous;
+        }
+      },
+    );
+
     await scenario(
       'EXPLAIN JSON của chính query cron: Index Scan using idx_res_cleanup trên dữ liệu lịch sử chọn lọc',
       async (f, sub) => {
@@ -1038,6 +1554,96 @@ test(
             JSON.stringify(plan, null, 2) + '\n',
           );
         assert.equal(await job.cleanupExpired(), 1);
+      },
+    );
+    await t.test(
+      'Bộ 12 integration test StockReservation có sẵn chạy trên PostgreSQL thật',
+      async (sub) => {
+        await fresh();
+        const { spawnSync } = require('node:child_process');
+        const run = spawnSync(
+          process.execPath,
+          [
+            require.resolve('jest/bin/jest'),
+            '--runInBand',
+            '--runTestsByPath',
+            'src/stock-reservation/stock-reservation.integration.spec.ts',
+          ],
+          {
+            cwd: path.resolve(__dirname, '..'),
+            env: {
+              ...process.env,
+              RESERVATION_TEST_DATABASE_URL: connectionString,
+            },
+            encoding: 'utf8',
+            timeout: 60000,
+          },
+        );
+        const log = (run.stdout ?? '') + (run.stderr ?? '');
+        if (process.env.WEEK6_STOCK_TEST_LOG)
+          fs.writeFileSync(process.env.WEEK6_STOCK_TEST_LOG, log);
+        assert.equal(run.status, 0, log || String(run.error));
+        sub.diagnostic(
+          log
+            .split('\n')
+            .filter((line) => /^Test Suites:|^Tests:/.test(line))
+            .join('; '),
+        );
+      },
+    );
+    await t.test(
+      'Script tuần 3 tương thích constructor mới và Redis payload UUID',
+      {
+        skip:
+          !process.env.WEEK6_TEST_REDIS_URL &&
+          !process.argv.includes('--require-redis')
+            ? 'Cần Redis thật'
+            : false,
+      },
+      async (sub) => {
+        assert.ok(
+          process.env.WEEK6_TEST_REDIS_URL,
+          'Thiếu WEEK6_TEST_REDIS_URL',
+        );
+        assert.ok(
+          redisValidated,
+          'Chưa xác nhận Redis kiểm thử riêng; không phát payload tuần 3',
+        );
+        const legacyDb = 'cnpm_week3_' + randomUUID().replaceAll('-', '');
+        await admin.query(`CREATE DATABASE "${legacyDb}" TEMPLATE template0`);
+        const legacyUrl = new URL(dbUrl);
+        legacyUrl.pathname = '/' + legacyDb;
+        legacyUrl.searchParams.delete('schema');
+        legacyUrl.searchParams.delete('options');
+        try {
+          const { spawnSync } = require('node:child_process');
+          const run = spawnSync(
+            process.execPath,
+            ['test/week3.integration.cjs'],
+            {
+              cwd: path.resolve(__dirname, '..'),
+              env: {
+                ...process.env,
+                WEEK3_TEST_DATABASE_URL: legacyUrl.toString(),
+                WEEK3_TEST_REDIS_URL: process.env.WEEK6_TEST_REDIS_URL,
+              },
+              encoding: 'utf8',
+              timeout: 30000,
+            },
+          );
+          const log = (run.stdout ?? '') + (run.stderr ?? '');
+          if (process.env.WEEK6_LEGACY_TEST_LOG)
+            fs.writeFileSync(process.env.WEEK6_LEGACY_TEST_LOG, log);
+          assert.equal(run.status, 0, log || String(run.error));
+          sub.diagnostic(
+            log
+              .split('\n')
+              .filter((line) => /tests |pass |fail /.test(line))
+              .join('; '),
+          );
+        } finally {
+          await admin.query(`DROP DATABASE "${legacyDb}" WITH (FORCE)`);
+        }
       },
     );
   },

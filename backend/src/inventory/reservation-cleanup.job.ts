@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, type ReservationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryAlertService } from './inventory-alert.service';
+import { InventoryChangeEmitter } from './inventory-change-emitter.service';
 
 // Test EXPLAINs this actual query. Skip a locked order BEFORE any stock writes.
 export const RESERVATION_CLEANUP_CANDIDATES_SQL = Prisma.sql`
@@ -57,6 +58,7 @@ export class ReservationCleanupJob {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly changes: InventoryChangeEmitter,
     @Optional() alertService?: InventoryAlertService,
   ) {
     this.alertService = alertService ?? new InventoryAlertService();
@@ -79,14 +81,15 @@ export class ReservationCleanupJob {
   }
 
   async cleanupExpired(): Promise<number> {
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         // Claim ALL orders before locking ANY inventory/reservation, matching
         // PaymentsService and StockReservationService. Batch by whole orders.
         const orders = await tx.$queryRaw<{ id: string }[]>(
           RESERVATION_CLEANUP_CANDIDATES_SQL,
         );
-        if (orders.length === 0) return 0;
+        if (orders.length === 0)
+          return { count: 0, inventoryIds: [] as bigint[] };
         const orderIds = orders.map((order) => order.id);
 
         const inventories = await tx.$queryRaw<
@@ -203,12 +206,15 @@ export class ReservationCleanupJob {
           });
         }
         await this.alertService.evaluate(tx, [...touched]);
-        return expired.length;
+        return { count: expired.length, inventoryIds: [...touched] };
       },
       {
         timeout: 30000,
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
+    if (result.inventoryIds.length)
+      await this.changes.publishInventory(result.inventoryIds);
+    return result.count;
   }
 }

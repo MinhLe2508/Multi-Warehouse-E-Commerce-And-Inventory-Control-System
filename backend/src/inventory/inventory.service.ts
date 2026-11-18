@@ -40,6 +40,7 @@ import {
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryAlertService } from './inventory-alert.service';
+import { InventoryChangeEmitter } from './inventory-change-emitter.service';
 import { readSqlError } from '../stock-reservation/pg-error.util';
 import { type CreateInventoryDto } from './dto/create-inventory.dto';
 import {
@@ -227,6 +228,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly alertService: InventoryAlertService,
+    private readonly changes: InventoryChangeEmitter,
   ) {}
 
   // ==========================================================================
@@ -375,7 +377,7 @@ export class InventoryService {
     const threshold = dto.threshold ?? null;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const warehouse = await this.lockWarehouse(tx, dto.warehouseId);
         if (!warehouse || !warehouse.isActive) {
           throw new NotFoundException(
@@ -438,6 +440,8 @@ export class InventoryService {
 
         return this.readInventoryViewOrThrow(tx, inventoryId);
       });
+      await this.changes.publishInventory([BigInt(result.id)]);
+      return result;
     } catch (error) {
       throw this.translateDbError(error);
     }
@@ -458,7 +462,7 @@ export class InventoryService {
     const id = this.parseInventoryId(rawId);
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const { warehouse, row } = await this.lockWarehouseAndRow(tx, id);
 
         if (!warehouse.isActive) {
@@ -499,6 +503,8 @@ export class InventoryService {
 
         return this.readInventoryViewOrThrow(tx, id);
       });
+      await this.changes.publishInventory([BigInt(result.id)]);
+      return result;
     } catch (error) {
       throw this.translateDbError(error);
     }
@@ -528,7 +534,7 @@ export class InventoryService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const { warehouse, row } = await this.lockWarehouseAndRow(tx, id);
 
         const newStock = dto.stock ?? row.stock;
@@ -546,7 +552,10 @@ export class InventoryService {
 
         // Không có gì thay đổi: trả lại dòng hiện tại, không ghi nhật ký.
         if (!stockChanged && !thresholdChanged) {
-          return this.readInventoryViewOrThrow(tx, id);
+          return {
+            view: await this.readInventoryViewOrThrow(tx, id),
+            changed: false,
+          };
         }
 
         if (stockChanged && newStock > row.stock) {
@@ -589,8 +598,14 @@ export class InventoryService {
 
         await this.alertService.evaluate(tx, [BigInt(id)], actorId);
 
-        return this.readInventoryViewOrThrow(tx, id);
+        return {
+          view: await this.readInventoryViewOrThrow(tx, id),
+          changed: true,
+        };
       });
+      if (result.changed)
+        await this.changes.publishInventory([BigInt(result.view.id)]);
+      return result.view;
     } catch (error) {
       throw this.translateDbError(error);
     }

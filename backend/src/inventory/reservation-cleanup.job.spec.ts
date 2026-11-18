@@ -56,7 +56,11 @@ function harness(
     tx,
     prisma,
     alerts,
-    job: new ReservationCleanupJob(prisma as never, alerts as never),
+    job: new ReservationCleanupJob(
+      prisma as never,
+      { publishInventory: jest.fn().mockResolvedValue(undefined) } as never,
+      alerts as never,
+    ),
   };
 }
 
