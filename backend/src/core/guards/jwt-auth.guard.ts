@@ -62,7 +62,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     ]);
 
     // Endpoint công khai: bỏ qua JWT Authentication.
-    if (isPublic) {
+    if (isPublic === true) {
       return true;
     }
 
@@ -86,9 +86,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (err instanceof Error) {
       throw err;
     } else if (err) {
-      throw new UnauthorizedException(
-        typeof err === 'string' ? err : 'Lỗi xác thực người dùng.',
-      );
+      throw new UnauthorizedException('Không thể xác thực Access Token.');
     }
 
     // Không xác thực được người dùng.

@@ -125,7 +125,8 @@ test('STT 31 (Static) — Đối chiếu script DDL và migrations với mục 9
 // Source checks above are only baseline checks. They do not prove locking,
 // planner choices or rollback; the following tests use a real PostgreSQL server.
 const dbUrl = process.env.WEEK6_TEST_DATABASE_URL;
-const requireDb = process.argv.includes('--require-db');
+const requireDb =
+  process.argv.includes('--require-db') || process.argv.includes('--http-only');
 const { randomUUID } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 
@@ -215,8 +216,19 @@ test(
         await pool?.end();
       } finally {
         try {
-          if (created)
-            await admin.query(`DROP DATABASE "${dbName}" WITH (FORCE)`);
+          if (created) {
+            // pg Pool.end() can resolve before idle sockets finish closing.
+            // Wait for the server to observe their termination before dropping
+            // our database; FORCE here can emit errors after a subtest ends.
+            await waitUntil(async () => {
+              const active = await admin.query(
+                'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1',
+                [dbName],
+              );
+              return active.rows[0].n === 0;
+            }, 'Database connections did not close after driver disconnect');
+            await admin.query(`DROP DATABASE "${dbName}"`);
+          }
         } finally {
           await admin.end();
         }
@@ -356,6 +368,47 @@ test(
         ),
       );
     t.diagnostic(`Migrations: ${migrations.join(', ')}`);
+
+    async function runHttpDatabaseTests(sub) {
+      const { spawnSync } = require('node:child_process');
+      const run = spawnSync(
+        process.execPath,
+        [
+          require.resolve('jest/bin/jest'),
+          '--runInBand',
+          '--config',
+          'test/jest-e2e.json',
+          '--runTestsByPath',
+          'test/e2e/inventory-http-db.e2e-spec.ts',
+        ],
+        {
+          cwd: path.resolve(__dirname, '..'),
+          env: {
+            ...process.env,
+            INVENTORY_HTTP_TEST_DATABASE_URL: connectionString,
+          },
+          encoding: 'utf8',
+          timeout: 60000,
+        },
+      );
+      const log = (run.stdout ?? '') + (run.stderr ?? '');
+      if (process.env.INVENTORY_HTTP_TEST_LOG)
+        fs.writeFileSync(process.env.INVENTORY_HTTP_TEST_LOG, log);
+      assert.equal(run.status, 0, log || String(run.error));
+      sub.diagnostic(
+        log
+          .split('\n')
+          .filter((line) => /^Test Suites:|^Tests:/.test(line))
+          .join('; '),
+      );
+    }
+    if (process.argv.includes('--http-only')) {
+      await t.test(
+        'Inventory HTTP với JWT thật và PostgreSQL thật',
+        runHttpDatabaseTests,
+      );
+      return;
+    }
 
     async function fresh() {
       emitted.length = 0;
@@ -1645,6 +1698,10 @@ test(
           await admin.query(`DROP DATABASE "${legacyDb}" WITH (FORCE)`);
         }
       },
+    );
+    await t.test(
+      'Inventory HTTP với JWT thật và PostgreSQL thật',
+      runHttpDatabaseTests,
     );
   },
 );

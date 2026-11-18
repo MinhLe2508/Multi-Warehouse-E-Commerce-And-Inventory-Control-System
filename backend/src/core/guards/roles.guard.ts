@@ -25,7 +25,7 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { type UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { type AuthenticatedUser } from '../decorators/current-user.decorator';
 
@@ -63,7 +63,11 @@ export class RolesGuard implements CanActivate {
     }
 
     // Có metadata nhưng không có role được phép.
-    if (requiredRoles.length === 0) {
+    if (
+      !Array.isArray(requiredRoles) ||
+      requiredRoles.length === 0 ||
+      !requiredRoles.every((role) => Object.values(UserRole).includes(role))
+    ) {
       return false;
     }
 

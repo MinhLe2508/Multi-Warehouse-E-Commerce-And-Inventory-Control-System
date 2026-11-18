@@ -40,6 +40,7 @@ import {
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryAlertService } from './inventory-alert.service';
+import { parseInventoryId } from './pipes/inventory-id.pipe';
 import { InventoryChangeEmitter } from './inventory-change-emitter.service';
 import { readSqlError } from '../stock-reservation/pg-error.util';
 import { type CreateInventoryDto } from './dto/create-inventory.dto';
@@ -56,9 +57,6 @@ import { type UpdateStockDto } from './dto/update-stock.dto';
 
 // Giá trị lớn nhất của cột INTEGER trong PostgreSQL.
 const INT4_MAX = 2147483647;
-
-// Giá trị lớn nhất của cột BIGINT.
-const BIGINT_MAX = 9223372036854775807n;
 
 // Phân trang mặc định khi người gọi không truyền.
 const DEFAULT_LIMIT = 20;
@@ -620,15 +618,7 @@ export class InventoryService {
    * Trả về chính chuỗi đó (chuỗi an toàn để truyền vào ::bigint, không mất độ chính xác như number).
    */
   private parseInventoryId(raw: string): string {
-    if (
-      typeof raw !== 'string' ||
-      !/^[1-9][0-9]{0,18}$/.test(raw) ||
-      BigInt(raw) > BIGINT_MAX
-    ) {
-      throw new BadRequestException('ID tồn kho không hợp lệ.');
-    }
-
-    return raw;
+    return parseInventoryId(raw);
   }
 
   /**
