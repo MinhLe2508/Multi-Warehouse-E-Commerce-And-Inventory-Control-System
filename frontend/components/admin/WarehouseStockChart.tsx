@@ -57,7 +57,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
             </div>
           </div>
           <div className="text-xl font-extrabold text-slate-800">{kpis.totalProducts}</div>
-          <span className="text-[10px] text-slate-400">200 SKU kiểm kê</span>
+          <span className="text-[10px] text-slate-400">SKU theo bộ lọc</span>
         </div>
 
         {/* KPI 2 */}
@@ -71,7 +71,9 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
           <div className="text-xl font-extrabold text-blue-700">
             {kpis.totalStock.toLocaleString()}
           </div>
-          <span className="text-[10px] text-slate-400">Toàn bộ 3 kho</span>
+          <span className="text-[10px] text-slate-400">
+            {warehouseDistribution.length} kho trong phạm vi
+          </span>
         </div>
 
         {/* KPI 3 */}
@@ -85,7 +87,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
           <div className="text-xl font-extrabold text-amber-600">
             {kpis.totalReserved.toLocaleString()}
           </div>
-          <span className="text-[10px] text-amber-600 font-medium">Đơn chờ giao</span>
+          <span className="text-[10px] text-amber-600 font-medium">Đơn chờ thanh toán</span>
         </div>
 
         {/* KPI 4 */}
@@ -182,7 +184,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
               </ResponsiveContainer>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                Đang tải biểu đồ...
+                {mounted ? 'Không có dữ liệu kho theo bộ lọc' : 'Đang tải biểu đồ...'}
               </div>
             )}
           </div>
@@ -203,24 +205,29 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
                 >
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
                     <span>{wh.warehouseCode}</span>
-                    <span className="text-purple-700">{wh.capacityRate}% dung lượng</span>
+                    <span className="text-purple-700">
+                      {wh.capacityRate === null
+                        ? 'Không giới hạn sức chứa'
+                        : `${wh.capacityRate.toLocaleString('vi-VN')}% dung lượng kho`}
+                    </span>
                   </div>
                   <div className="text-[11px] text-slate-500 mb-1.5 truncate">
                     {wh.warehouseName}
                   </div>
-                  {/* Thanh tiến trình sức chứa */}
-                  <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        wh.capacityRate > 85
-                          ? 'bg-rose-500'
-                          : wh.capacityRate > 60
-                          ? 'bg-amber-500'
-                          : 'bg-purple-600'
-                      }`}
-                      style={{ width: `${Math.min(100, wh.capacityRate)}%` }}
-                    />
-                  </div>
+                  {wh.capacityRate !== null && (
+                    <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          wh.capacityRate > 85
+                            ? 'bg-rose-500'
+                            : wh.capacityRate > 60
+                            ? 'bg-amber-500'
+                            : 'bg-purple-600'
+                        }`}
+                        style={{ width: `${Math.min(100, wh.capacityRate)}%` }}
+                      />
+                    </div>
+                  )}
                   <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
                     <span>Tồn: {wh.totalStock.toLocaleString()} cái</span>
                     <span>Khả dụng: {wh.totalAvailable.toLocaleString()} cái</span>

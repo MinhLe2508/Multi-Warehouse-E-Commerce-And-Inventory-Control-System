@@ -1,25 +1,25 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  ProductInventoryItem,
-  WarehouseStockDetail,
+  AdminInventorySummaryApi,
   InventorySummaryResponse,
+  ProductInventoryItem,
   StockAdjustPayload,
+  WarehouseStockDetail,
 } from '../shared/types/admin';
-import { filterInventoryProducts, determineProductStatus } from '../shared/lib/inventoryStatus';
-import { apiGet, apiPost, apiPut, extractErrorMessage } from '../shared/lib/apiClient';
+import { determineProductStatus, filterInventoryProducts } from '../shared/lib/inventoryStatus';
+import { apiGet, apiPost, apiPut, AuthError, extractErrorMessage } from '../shared/lib/apiClient';
+import { useAuthStore } from '../store/useAuthStore';
 import {
   useInventoryRealtime,
-  type InventoryChangedEvent,
   type LowStockRealtimeEvent,
   type RealtimeStatus,
 } from './useInventoryRealtime';
 
 interface ApiInventoryRow {
-  id: string; // BIGINT dạng chuỗi
+  id: string;
   productId: string;
-  warehouseId: string;
   stock: number;
   reservedStock: number;
   availableStock: number;
@@ -27,39 +27,45 @@ interface ApiInventoryRow {
   effectiveThreshold: number;
   isLowStock: boolean;
   version: number;
-  lastRestockedAt: string | null;
-  createdAt: string;
   updatedAt: string;
   product: {
-    id: string;
     sku: string;
     name: string;
-    imageUrl: string | null;
-    basePrice: string | number;
-    costPrice?: string | number;
-    isActive: boolean;
-    category?: { id: string; name: string } | null;
+    category: { id: string; name: string } | null;
   };
-  warehouse: {
-    id: string;
-    code: string;
-    name: string;
-    region: string;
-    isActive: boolean;
-  };
+  warehouse: WarehouseOption;
 }
 
-interface ApiInventoryResponse {
+interface ApiInventoryPage {
   items: ApiInventoryRow[];
   total: number;
-  limit: number;
-  offset: number;
 }
 
 export interface WarehouseOption {
   id: string;
   code: string;
   name: string;
+}
+
+interface InventoryCatalog {
+  products: ProductInventoryItem[];
+  warehouses: WarehouseOption[];
+  categories: string[];
+}
+
+interface InventorySnapshot {
+  scope: string;
+  filters: string;
+  catalog: InventoryCatalog;
+  summary: AdminInventorySummaryApi;
+}
+
+interface CatalogRequest {
+  scope: string;
+  revision: number;
+  promise: Promise<InventoryCatalog>;
+  pending: boolean;
+  refreshAfter: boolean;
 }
 
 export interface UseAdminInventoryReturn {
@@ -94,414 +100,352 @@ export interface UseAdminInventoryReturn {
   resetFilters: () => void;
   openAdjustModal: (product: ProductInventoryItem, detail: WarehouseStockDetail) => void;
   closeAdjustModal: () => void;
-  submitStockAdjustment: (payload: StockAdjustPayload) => Promise<{ success: boolean; error?: string }>;
+  submitStockAdjustment: (
+    payload: StockAdjustPayload
+  ) => Promise<{ success: boolean; error?: string }>;
   refreshData: () => void;
 }
 
-function computeSummary(
-  groupedList: ProductInventoryItem[],
-  warehousesList: WarehouseOption[],
-): InventorySummaryResponse {
-  const totalStock = groupedList.reduce((acc, p) => acc + p.totalStock, 0);
-  const totalReserved = groupedList.reduce((acc, p) => acc + p.totalReserved, 0);
-  const totalAvailable = groupedList.reduce((acc, p) => acc + p.totalAvailable, 0);
-  const lowStockCount = groupedList.filter((p) => p.status === 'LOW_STOCK').length;
-  const outOfStockCount = groupedList.filter((p) => p.status === 'OUT_OF_STOCK').length;
+const API_PAGE_SIZE = 100;
+const ALL_CATEGORIES = 'Tất cả danh mục';
+const EMPTY_CATALOG: InventoryCatalog = {
+  products: [],
+  warehouses: [],
+  categories: [ALL_CATEGORIES],
+};
 
-  const whMap: Record<
-    string,
-    { totalStock: number; totalReserved: number; totalAvailable: number; code: string; name: string }
-  > = {};
+function accountScope(state: ReturnType<typeof useAuthStore.getState>): string {
+  const user = state.session?.user;
+  return user ? `${user.id}:${user.role}` : '';
+}
 
-  for (const wh of warehousesList) {
-    whMap[wh.id] = {
+async function loadCatalog(scope: string): Promise<InventoryCatalog> {
+  const fetchPage = (offset: number) => {
+    if (accountScope(useAuthStore.getState()) !== scope) {
+      throw new AuthError(401, 'Phiên đăng nhập đã thay đổi.');
+    }
+    return apiGet<ApiInventoryPage>(
+      `/admin/inventory?includeCategory=true&limit=${API_PAGE_SIZE}&offset=${offset}`
+    );
+  };
+  const firstPage = await fetchPage(0);
+  const rows = new Map(firstPage.items.map((row) => [row.id, row]));
+
+  // The matrix and the CSV operate on complete product groups, across API pages.
+  for (let offset = API_PAGE_SIZE; offset < firstPage.total; offset += API_PAGE_SIZE) {
+    const nextPage = await fetchPage(offset);
+    for (const row of nextPage.items) rows.set(row.id, row);
+  }
+
+  const products = new Map<string, ProductInventoryItem>();
+  const warehouses = new Map<string, WarehouseOption>();
+  const categories = new Set<string>();
+  for (const row of rows.values()) {
+    const warehouse = row.warehouse;
+    warehouses.set(warehouse.id, { id: warehouse.id, code: warehouse.code, name: warehouse.name });
+    const category = row.product.category?.name ?? 'Chưa phân loại';
+    categories.add(category);
+    const product: ProductInventoryItem = products.get(row.productId) ?? {
+      id: row.productId,
+      sku: row.product.sku,
+      name: row.product.name,
+      category,
       totalStock: 0,
       totalReserved: 0,
       totalAvailable: 0,
-      code: wh.code,
-      name: wh.name,
+      effectiveThreshold: row.effectiveThreshold,
+      status: 'IN_STOCK',
+      warehouses: {},
     };
-  }
 
-  for (const p of groupedList) {
-    for (const detail of Object.values(p.warehouses)) {
-      if (!whMap[detail.warehouseId]) {
-        whMap[detail.warehouseId] = {
-          totalStock: 0,
-          totalReserved: 0,
-          totalAvailable: 0,
-          code: detail.warehouseCode,
-          name: detail.warehouseName,
-        };
-      }
-      whMap[detail.warehouseId].totalStock += detail.stock;
-      whMap[detail.warehouseId].totalReserved += detail.reservedStock;
-      whMap[detail.warehouseId].totalAvailable += detail.availableStock;
-    }
+    product.totalStock += row.stock;
+    product.totalReserved += row.reservedStock;
+    product.totalAvailable += row.availableStock;
+    product.warehouses[warehouse.id] = {
+      inventoryId: row.id,
+      warehouseId: warehouse.id,
+      warehouseCode: warehouse.code,
+      warehouseName: warehouse.name,
+      stock: row.stock,
+      reservedStock: row.reservedStock,
+      availableStock: row.availableStock,
+      threshold: row.threshold ?? row.effectiveThreshold,
+      effectiveThreshold: row.effectiveThreshold,
+      isLowStock: row.isLowStock,
+      version: row.version,
+      updatedAt: row.updatedAt,
+    };
+    products.set(product.id, product);
   }
-
-  const warehouseDistribution = Object.entries(whMap).map(([id, stat]) => ({
-    warehouseId: id,
-    warehouseCode: stat.code,
-    warehouseName: stat.name,
-    totalStock: stat.totalStock,
-    totalReserved: stat.totalReserved,
-    totalAvailable: stat.totalAvailable,
-    capacityRate: Math.min(100, Math.round((stat.totalStock / 5000) * 100)),
-  }));
 
   return {
+    products: Array.from(products.values(), (product) => ({
+      ...product,
+      status: determineProductStatus(
+        product.totalAvailable,
+        Object.values(product.warehouses).some((warehouse) => warehouse.isLowStock)
+      ),
+    })),
+    warehouses: [...warehouses.values()].sort((a, b) => a.code.localeCompare(b.code)),
+    categories: [
+      ALL_CATEGORIES,
+      ...[...categories]
+        .filter((name) => name !== ALL_CATEGORIES)
+        .sort((a, b) => a.localeCompare(b, 'vi')),
+    ],
+  };
+}
+
+function toInventorySummary(
+  data: AdminInventorySummaryApi,
+  products: ProductInventoryItem[]
+): InventorySummaryResponse {
+  return {
     kpis: {
-      totalProducts: groupedList.length,
-      totalStock,
-      totalReserved,
-      totalAvailable,
-      lowStockCount,
-      outOfStockCount,
+      totalProducts: data.totalProducts,
+      totalStock: data.totalStock,
+      totalReserved: data.totalReserved,
+      totalAvailable: data.totalAvailable,
+      lowStockCount: data.productsByStatus.LOW_STOCK,
+      outOfStockCount: data.productsByStatus.OUT_OF_STOCK,
     },
-    warehouseDistribution,
-    topLowStockProducts: groupedList
-      .filter((p) => p.status !== 'IN_STOCK')
+    warehouseDistribution: data.byWarehouse.map((warehouse) => ({
+      warehouseId: warehouse.warehouseId,
+      warehouseCode: warehouse.code,
+      warehouseName: warehouse.name,
+      totalStock: warehouse.totalStock,
+      totalReserved: warehouse.totalReserved,
+      totalAvailable: warehouse.totalAvailable,
+      capacityRate: warehouse.capacityRate,
+    })),
+    topLowStockProducts: products
+      .filter((product) => product.status !== 'IN_STOCK')
+      .sort((a, b) => a.totalAvailable - b.totalAvailable || a.sku.localeCompare(b.sku))
       .slice(0, 5)
-      .map((p) => ({
-        id: p.id,
-        sku: p.sku,
-        name: p.name,
-        totalAvailable: p.totalAvailable,
-        status: p.status,
+      .map(({ id, sku, name, totalAvailable, status }) => ({
+        id,
+        sku,
+        name,
+        totalAvailable,
+        status,
       })),
   };
 }
 
 export function useAdminInventory(): UseAdminInventoryReturn {
-  const [products, setProducts] = useState<ProductInventoryItem[]>([]);
-  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [summary, setSummary] = useState<InventorySummaryResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const scope = useAuthStore(accountScope);
+  const [snapshot, setSnapshot] = useState<InventorySnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const catalogRequest = useRef<CatalogRequest | null>(null);
+  const realtimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedInventoryIds, setHighlightedInventoryIds] = useState<string[]>([]);
+  const [search, setSearchState] = useState('');
+  const [category, setCategoryState] = useState('ALL');
+  const [warehouseId, setWarehouseIdState] = useState('ALL');
+  const [status, setStatusState] = useState('ALL');
+  const [page, setPageState] = useState(1);
+  const [pageSize, setPageSizeState] = useState(10);
+  const [editingTarget, setEditingTarget] =
+    useState<UseAdminInventoryReturn['editingTarget']>(null);
 
-  // Filters state
-  const [search, setSearchState] = useState<string>('');
-  const [category, setCategoryState] = useState<string>('ALL');
-  const [warehouseId, setWarehouseIdState] = useState<string>('ALL');
-  const [status, setStatusState] = useState<string>('ALL');
-
-  // Pagination state
-  const [page, setPageState] = useState<number>(1);
-  const [pageSize, setPageSizeState] = useState<number>(10);
-
-  // Modal target state
-  const [editingTarget, setEditingTarget] = useState<{
-    product: ProductInventoryItem;
-    detail: WarehouseStockDetail;
-  } | null>(null);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const firstPage = await apiGet<ApiInventoryResponse>('/inventory?limit=100&offset=0');
-
-      let allRows: ApiInventoryRow[] = firstPage.items || [];
-      const total = firstPage.total || allRows.length;
-
-      if (total > 100) {
-        const remainingOffsets: number[] = [];
-        for (let offset = 100; offset < total && offset < 1000; offset += 100) {
-          remainingOffsets.push(offset);
-        }
-
-        const remainingPages = await Promise.all(
-          remainingOffsets.map((offset) =>
-            apiGet<ApiInventoryResponse>(`/inventory?limit=100&offset=${offset}`)
-          )
-        );
-
-        for (const p of remainingPages) {
-          if (p.items) allRows = allRows.concat(p.items);
-        }
-      }
-
-      const productMap = new Map<string, ProductInventoryItem>();
-      const whMap = new Map<string, WarehouseOption>();
-      const catSet = new Set<string>();
-
-      for (const row of allRows) {
-        if (!whMap.has(row.warehouse.id)) {
-          whMap.set(row.warehouse.id, {
-            id: row.warehouse.id,
-            code: row.warehouse.code,
-            name: row.warehouse.name,
-          });
-        }
-
-        const catName = row.product.category?.name || 'Chưa phân loại';
-        catSet.add(catName);
-
-        let prod = productMap.get(row.productId);
-        if (!prod) {
-          prod = {
-            id: row.productId,
-            sku: row.product.sku,
-            name: row.product.name,
-            category: catName,
-            totalStock: 0,
-            totalReserved: 0,
-            totalAvailable: 0,
-            effectiveThreshold: row.effectiveThreshold,
-            status: 'IN_STOCK',
-            warehouses: {},
-          };
-          productMap.set(row.productId, prod);
-        }
-
-        prod.totalStock += row.stock;
-        prod.totalReserved += row.reservedStock;
-        prod.totalAvailable += row.availableStock;
-
-        prod.warehouses[row.warehouse.id] = {
-          inventoryId: row.id,
-          warehouseId: row.warehouse.id,
-          warehouseCode: row.warehouse.code,
-          warehouseName: row.warehouse.name,
-          stock: row.stock,
-          reservedStock: row.reservedStock,
-          availableStock: row.availableStock,
-          threshold: row.threshold ?? row.effectiveThreshold,
-          effectiveThreshold: row.effectiveThreshold,
-          isLowStock: row.isLowStock,
-          version: row.version,
-          updatedAt: row.updatedAt,
-        };
-      }
-
-      const groupedList = Array.from(productMap.values()).map((p) => {
-        const hasLow = Object.values(p.warehouses).some((w) => w.isLowStock);
-        p.status = determineProductStatus(p.totalAvailable, hasLow);
-        return p;
-      });
-
-      const whList = Array.from(whMap.values()).sort((a, b) => a.code.localeCompare(b.code));
-      const catList = Array.from(catSet).sort((a, b) => a.localeCompare(b, 'vi'));
-
-      setWarehouses(whList);
-      setCategories(catList);
-      setProducts(groupedList);
-      setSummary(computeSummary(groupedList, whList));
-      setError(null);
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Không thể tải dữ liệu tồn kho từ máy chủ.'));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const params = new URLSearchParams();
+  if (search.trim()) params.set('search', search.trim());
+  if (category !== 'ALL') params.set('category', category);
+  if (warehouseId !== 'ALL') params.set('warehouseId', warehouseId);
+  if (status !== 'ALL') params.set('status', status);
+  const filters = params.toString();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadData();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [loadData]);
-
-  // Cập nhật trực tiếp dòng tồn kho khi nhận sự kiện realtime (FR-INV-02, FR-NOT-01)
-  const handleLowStockAlert = useCallback(
-    (event: LowStockRealtimeEvent) => {
-      setHighlightedInventoryIds((prev) =>
-        prev.includes(event.inventoryId) ? prev : [...prev, event.inventoryId]
-      );
-
-      setProducts((prev) => {
-        const next = prev.map((prod) => {
-          const wh = prod.warehouses[event.warehouseId];
-          if (!wh || wh.inventoryId !== event.inventoryId) return prod;
-
-          const updatedWh: WarehouseStockDetail = {
-            ...wh,
-            availableStock: event.availableStock,
-            effectiveThreshold: event.threshold,
-            isLowStock: event.availableStock <= event.threshold,
-            updatedAt: event.triggeredAt ?? new Date().toISOString(),
+    if (!scope) return;
+    let active = true;
+    const timer = setTimeout(
+      async () => {
+        if (accountScope(useAuthStore.getState()) !== scope) return;
+        setLoading(true);
+        let request = catalogRequest.current;
+        if (request?.scope !== scope || request.revision !== revision) {
+          const next: CatalogRequest = {
+            scope,
+            revision,
+            promise: loadCatalog(scope),
+            pending: true,
+            refreshAfter: false,
           };
-          const nextWarehouses = {
-            ...prod.warehouses,
-            [event.warehouseId]: updatedWh,
+          const settled = () => {
+            next.pending = false;
+            if (next.refreshAfter && catalogRequest.current === next) {
+              setRevision((value) => value + 1);
+            }
           };
-          const totalAvailable = Object.values(nextWarehouses).reduce(
-            (s, d) => s + d.availableStock,
-            0
-          );
-          const hasLow = Object.values(nextWarehouses).some((d) => d.isLowStock);
+          void next.promise.then(settled, settled);
+          catalogRequest.current = next;
+          request = next;
+        }
+        try {
+          const path = filters ? `/admin/inventory/summary?${filters}` : '/admin/inventory/summary';
+          const [catalog, summary] = await Promise.all([
+            request.promise,
+            apiGet<AdminInventorySummaryApi>(path),
+          ]);
+          if (active) {
+            setSnapshot({ scope, filters, catalog, summary });
+            setError(null);
+          }
+        } catch (err) {
+          if (active && catalogRequest.current === request) catalogRequest.current = null;
+          if (active) {
+            if (err instanceof AuthError && (err.status === 401 || err.status === 403)) {
+              setSnapshot(null);
+            }
+            setError(extractErrorMessage(err, 'Không thể tải dữ liệu tồn kho từ máy chủ.'));
+          }
+        } finally {
+          if (active) setLoading(false);
+        }
+      },
+      filters.startsWith('search=') ? 180 : 0
+    );
 
-          return {
-            ...prod,
-            warehouses: nextWarehouses,
-            totalAvailable,
-            status: determineProductStatus(totalAvailable, hasLow),
-          };
-        });
-        setSummary(computeSummary(next, warehouses));
-        return next;
-      });
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [scope, filters, revision]);
+
+  const refreshData = useCallback(() => {
+    if (realtimeTimer.current !== null) {
+      clearTimeout(realtimeTimer.current);
+      realtimeTimer.current = null;
+    }
+    const request = catalogRequest.current;
+    if (request?.pending && request.scope === accountScope(useAuthStore.getState())) {
+      request.refreshAfter = true;
+      return;
+    }
+    setRevision((value) => value + 1);
+  }, []);
+
+  const refreshFromEvent = useCallback(() => {
+    if (realtimeTimer.current !== null) return;
+    realtimeTimer.current = setTimeout(refreshData, 250);
+  }, [refreshData]);
+
+  useEffect(
+    () => () => {
+      if (realtimeTimer.current !== null) {
+        clearTimeout(realtimeTimer.current);
+        realtimeTimer.current = null;
+      }
+      if (catalogRequest.current?.scope === scope) catalogRequest.current = null;
     },
-    [warehouses]
+    [scope]
   );
 
-  const handleInventoryChanged = useCallback(
-    (event: InventoryChangedEvent) => {
-      setProducts((prev) => {
-        const next = prev.map((prod) => {
-          const entry = Object.entries(prod.warehouses).find(
-            ([, detail]) => detail.inventoryId === event.inventoryId
-          );
-          if (!entry) return prod;
-          const [whId, detail] = entry;
-          const effectiveThreshold = event.effectiveThreshold ?? detail.effectiveThreshold;
-          const updatedWh: WarehouseStockDetail = {
-            ...detail,
-            stock: event.stock,
-            reservedStock: event.reservedStock,
-            availableStock: event.availableStock,
-            effectiveThreshold,
-            isLowStock: event.isLowStock ?? event.availableStock <= effectiveThreshold,
-            updatedAt: new Date().toISOString(),
-          };
-          const nextWarehouses = { ...prod.warehouses, [whId]: updatedWh };
-          const totalStock = Object.values(nextWarehouses).reduce((s, d) => s + d.stock, 0);
-          const totalReserved = Object.values(nextWarehouses).reduce(
-            (s, d) => s + d.reservedStock,
-            0
-          );
-          const totalAvailable = Object.values(nextWarehouses).reduce(
-            (s, d) => s + d.availableStock,
-            0
-          );
-          const hasLow = Object.values(nextWarehouses).some((d) => d.isLowStock);
-          return {
-            ...prod,
-            warehouses: nextWarehouses,
-            totalStock,
-            totalReserved,
-            totalAvailable,
-            status: determineProductStatus(totalAvailable, hasLow),
-          };
-        });
-        setSummary(computeSummary(next, warehouses));
-        return next;
-      });
+  const handleLowStockAlert = useCallback(
+    (event: LowStockRealtimeEvent) => {
+      setHighlightedInventoryIds((ids) =>
+        ids.includes(event.inventoryId) ? ids : [...ids, event.inventoryId]
+      );
+      refreshFromEvent();
     },
-    [warehouses]
+    [refreshFromEvent]
   );
 
   const { status: realtimeStatus } = useInventoryRealtime({
     onLowStockAlert: handleLowStockAlert,
-    onInventoryChanged: handleInventoryChanged,
-    onReconnectSync: loadData,
+    onInventoryChanged: refreshFromEvent,
+    onReconnectSync: refreshData,
   });
 
-  // Handler reset page when filter changes
-  const setSearch = useCallback((val: string) => {
-    setSearchState(val);
+  const current = snapshot?.scope === scope ? snapshot : null;
+  const { products, warehouses, categories } = current?.catalog ?? EMPTY_CATALOG;
+  const filteredProducts = useMemo(() => {
+    const matches = filterInventoryProducts(products, { search, category, warehouseId, status });
+    if (warehouseId === 'ALL') return matches;
+
+    return matches.map((product) => {
+      const stock = product.warehouses[warehouseId];
+      return {
+        ...product,
+        totalStock: stock.stock,
+        totalReserved: stock.reservedStock,
+        totalAvailable: stock.availableStock,
+        effectiveThreshold: stock.effectiveThreshold,
+        status: determineProductStatus(stock.availableStock, stock.isLowStock),
+        warehouses: { [warehouseId]: stock },
+      };
+    });
+  }, [products, search, category, warehouseId, status]);
+
+  const summary = useMemo(
+    () =>
+      current?.filters === filters ? toInventorySummary(current.summary, filteredProducts) : null,
+    [current, filters, filteredProducts]
+  );
+  const totalFilteredCount = filteredProducts.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+
+  const setSearch = (value: string) => {
+    setSearchState(value);
     setPageState(1);
-  }, []);
-
-  const setCategory = useCallback((val: string) => {
-    setCategoryState(val);
+  };
+  const setCategory = (value: string) => {
+    setCategoryState(value);
     setPageState(1);
-  }, []);
-
-  const setWarehouseId = useCallback((val: string) => {
-    setWarehouseIdState(val);
+  };
+  const setWarehouseId = (value: string) => {
+    setWarehouseIdState(value);
     setPageState(1);
-  }, []);
-
-  const setStatus = useCallback((val: string) => {
-    setStatusState(val);
+  };
+  const setStatus = (value: string) => {
+    setStatusState(value);
     setPageState(1);
-  }, []);
-
-  const setPage = useCallback((p: number) => {
-    setPageState(p);
-  }, []);
-
-  const setPageSize = useCallback((size: number) => {
-    setPageSizeState(size);
+  };
+  const setPageSize = (value: number) => {
+    setPageSizeState(value);
     setPageState(1);
-  }, []);
-
-  const resetFilters = useCallback(() => {
+  };
+  const resetFilters = () => {
     setSearchState('');
     setCategoryState('ALL');
     setWarehouseIdState('ALL');
     setStatusState('ALL');
     setPageState(1);
-  }, []);
+  };
 
-  // Filtered products list
-  const filteredProducts = useMemo(() => {
-    return filterInventoryProducts(products, {
-      search,
-      category,
-      warehouseId,
-      status,
-    });
-  }, [products, search, category, warehouseId, status]);
-
-  const totalFilteredCount = filteredProducts.length;
-  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / pageSize));
-
-  // Paginated slice
-  const paginatedProducts = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredProducts.slice(start, start + pageSize);
-  }, [filteredProducts, page, pageSize]);
-
-  // Adjust modal triggers
-  const openAdjustModal = useCallback(
-    (product: ProductInventoryItem, detail: WarehouseStockDetail) => {
-      setEditingTarget({ product, detail });
-    },
-    []
-  );
-
-  const closeAdjustModal = useCallback(() => {
-    setEditingTarget(null);
-  }, []);
-
-  // Submit stock adjustment qua API thật của Khang (PUT /inventory/:id và POST /inventory/:id/restock)
-  const submitStockAdjustment = useCallback(
-    async (payload: StockAdjustPayload): Promise<{ success: boolean; error?: string }> => {
-      try {
-        if (payload.mode === 'RESTOCK') {
-          await apiPost(`/inventory/${payload.inventoryId}/restock`, {
-            quantity: payload.quantity,
-            note: payload.note,
-          });
-        } else {
-          await apiPut(`/inventory/${payload.inventoryId}`, {
-            stock: payload.newStock,
-            threshold: payload.threshold,
-            note: payload.note,
-          });
-        }
-
-        await loadData();
-        setEditingTarget(null);
-        return { success: true };
-      } catch (err: unknown) {
-        return {
-          success: false,
-          error: extractErrorMessage(err, 'Lỗi cập nhật tồn kho từ máy chủ.'),
-        };
+  const submitStockAdjustment = async (payload: StockAdjustPayload) => {
+    try {
+      if (payload.mode === 'RESTOCK') {
+        await apiPost(`/inventory/${payload.inventoryId}/restock`, {
+          quantity: payload.quantity,
+          note: payload.note,
+        });
+      } else {
+        await apiPut(`/inventory/${payload.inventoryId}`, {
+          stock: payload.newStock,
+          threshold: payload.threshold,
+          note: payload.note,
+        });
       }
-    },
-    [loadData]
-  );
+      refreshData();
+      setEditingTarget(null);
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: extractErrorMessage(err, 'Lỗi cập nhật tồn kho từ máy chủ.'),
+      };
+    }
+  };
 
   return {
     products,
     filteredProducts,
-    paginatedProducts,
+    paginatedProducts: filteredProducts.slice(start, start + pageSize),
     summary,
     loading,
     error,
@@ -511,23 +455,23 @@ export function useAdminInventory(): UseAdminInventoryReturn {
     category,
     warehouseId,
     status,
-    page,
+    page: currentPage,
     pageSize,
     totalPages,
     totalFilteredCount,
     warehouses,
     categories,
-    editingTarget,
+    editingTarget: current ? editingTarget : null,
     setSearch,
     setCategory,
     setWarehouseId,
     setStatus,
-    setPage,
+    setPage: setPageState,
     setPageSize,
     resetFilters,
-    openAdjustModal,
-    closeAdjustModal,
+    openAdjustModal: (product, detail) => setEditingTarget({ product, detail }),
+    closeAdjustModal: () => setEditingTarget(null),
     submitStockAdjustment,
-    refreshData: loadData,
+    refreshData,
   };
 }

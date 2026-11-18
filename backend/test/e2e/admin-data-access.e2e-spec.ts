@@ -294,6 +294,287 @@ describeDb('Admin data access with PostgreSQL', () => {
     await read(inventory, 'customerA').expect(403);
   });
 
+  it('validates shared filters and keeps pagination specific to the inventory list', async () => {
+    const list = '/admin/inventory';
+    const summary = '/admin/inventory/summary';
+    for (const path of [list, summary]) {
+      await http().get(path).expect(401);
+      await read(path, 'customerA').expect(403);
+      await read(path, 'admin').query({ warehouseId: 'invalid' }).expect(400);
+      await read(path, 'admin').query({ lowStockOnly: 'maybe' }).expect(400);
+      await read(path, 'admin').query({ status: 'INVALID' }).expect(400);
+    }
+    await read(summary, 'admin').query({ limit: 1 }).expect(400);
+    await read(list, 'admin').query({ limit: 101 }).expect(400);
+    await read(list, 'admin').query({ offset: -1 }).expect(400);
+    await read(list, 'admin').query({ page: 2_147_483_647 }).expect(400);
+
+    const query = { productId: fixture.product.id.toUpperCase(), limit: 1 };
+    const first = await read(list, 'admin')
+      .query({ ...query, page: 2, offset: 0 })
+      .expect(200);
+    const second = await read(list, 'admin')
+      .query({ ...query, page: 2 })
+      .expect(200);
+    expect(first.body).toMatchObject({
+      offset: 0,
+      total: 2,
+      items: [{ id: fixture.inventory.a.id }],
+    });
+    expect(second.body).toMatchObject({
+      offset: 1,
+      total: 2,
+      items: [{ id: fixture.inventory.b.id }],
+    });
+
+    const unfiltered = await read(summary, 'admin')
+      .query({
+        warehouseId: 'ALL',
+        productId: fixture.product.id.toUpperCase(),
+        lowStockOnly: 'false',
+      })
+      .expect(200);
+    const lowOnly = await read(summary, 'admin')
+      .query({ productId: fixture.product.id, lowStockOnly: 'true' })
+      .expect(200);
+    expect(unfiltered.body).toMatchObject({
+      totalInventoryRows: 2,
+      totalProducts: 1,
+      totalStock: 14,
+      totalReserved: 1,
+      totalAvailable: 13,
+      productsByStatus: { LOW_STOCK: 1, OUT_OF_STOCK: 0 },
+    });
+    expect(lowOnly.body).toMatchObject({
+      totalInventoryRows: 1,
+      totalStock: 2,
+    });
+  });
+
+  it('uses the same warehouse scope for list and summary and shows configured capacity only', async () => {
+    const a = { id: fixture.warehouses.a.id };
+    const b = { id: fixture.warehouses.b.id };
+    await db.$transaction([
+      db.warehouse.update({ where: a, data: { isActive: false } }),
+      db.warehouse.update({ where: b, data: { capacity: null } }),
+    ]);
+    try {
+      const list = '/admin/inventory';
+      const summary = '/admin/inventory/summary';
+      const product = { productId: fixture.product.id };
+      const [adminRows, staffRows, adminTotals, staffTotals] =
+        await Promise.all([
+          read(list, 'admin').query(product).expect(200),
+          read(list, 'staff').query(product).expect(200),
+          read(summary, 'admin').query(product).expect(200),
+          read(summary, 'staff').query(product).expect(200),
+        ]);
+      expect(adminRows.body).toMatchObject({ total: 2 });
+      expect(staffRows.body).toMatchObject({
+        total: 1,
+        items: [{ id: fixture.inventory.b.id }],
+      });
+      expect(staffRows.body).not.toHaveProperty('items.0.product.costPrice');
+      expect(adminTotals.body).toMatchObject({
+        totalInventoryRows: 2,
+        totalStock: 14,
+      });
+      const adminWarehouseTotals = adminTotals.body as {
+        byWarehouse: Array<{ warehouseId: string }>;
+      };
+      expect(
+        adminWarehouseTotals.byWarehouse.find(
+          (warehouse) => warehouse.warehouseId === a.id,
+        ),
+      ).toMatchObject({ capacity: 100, capacityRate: 12 });
+      expect(
+        adminWarehouseTotals.byWarehouse.find(
+          (warehouse) => warehouse.warehouseId === b.id,
+        ),
+      ).toMatchObject({ capacity: null, capacityRate: null });
+      expect(staffTotals.body).toMatchObject({
+        totalInventoryRows: 1,
+        totalStock: 2,
+        totalReserved: 1,
+        totalAvailable: 1,
+      });
+      expect(staffTotals.body).not.toHaveProperty(
+        'byWarehouse',
+        expect.arrayContaining([
+          expect.objectContaining({ warehouseId: a.id }),
+        ]),
+      );
+
+      const empty = await read(summary, 'staff')
+        .query({ ...product, warehouseId: a.id })
+        .expect(200);
+      expect(empty.body).toMatchObject({
+        totalProducts: 0,
+        totalInventoryRows: 0,
+        totalStock: 0,
+        byWarehouse: [],
+      });
+    } finally {
+      await db.$transaction([
+        db.warehouse.update({ where: a, data: { isActive: true } }),
+        db.warehouse.update({ where: b, data: { capacity: 100 } }),
+      ]);
+    }
+  });
+
+  it('filters by Vietnamese product name, real category and stock status within the selected warehouse', async () => {
+    const productWhere = { id: fixture.product.id };
+    const original = await db.product.findUniqueOrThrow({
+      where: productWhere,
+      select: { name: true, categoryId: true },
+    });
+    const category = await db.category.create({
+      data: { name: `Điện tử ${fixture.runId}`, slug: `f056-${fixture.runId}` },
+      select: { id: true, name: true },
+    });
+    try {
+      await db.product.update({
+        where: productWhere,
+        data: { name: 'Điện thoại mẫu', categoryId: category.id },
+      });
+      const query = {
+        productId: fixture.product.id,
+        search: 'dien thoai',
+        category: category.name,
+        status: 'LOW_STOCK',
+      };
+      const [list, summary, warehouseSummary, safeStock] = await Promise.all([
+        read('/admin/inventory', 'staff')
+          .query({
+            ...query,
+            includeCategory: 'true',
+            warehouseId: fixture.warehouses.b.id,
+          })
+          .expect(200),
+        read('/admin/inventory/summary', 'staff').query(query).expect(200),
+        read('/admin/inventory/summary', 'staff')
+          .query({ ...query, warehouseId: fixture.warehouses.b.id })
+          .expect(200),
+        read('/admin/inventory/summary', 'staff')
+          .query({
+            ...query,
+            warehouseId: fixture.warehouses.a.id,
+            status: 'IN_STOCK',
+          })
+          .expect(200),
+      ]);
+      expect(list.body).toMatchObject({
+        total: 1,
+        items: [
+          {
+            id: fixture.inventory.b.id,
+            product: { name: 'Điện thoại mẫu', category },
+          },
+        ],
+      });
+      expect(list.body).not.toHaveProperty('items.0.product.costPrice');
+      expect(summary.body).toMatchObject({
+        totalProducts: 1,
+        totalInventoryRows: 2,
+        totalStock: 14,
+        productsByStatus: { IN_STOCK: 0, LOW_STOCK: 1, OUT_OF_STOCK: 0 },
+      });
+      expect(warehouseSummary.body).toMatchObject({
+        totalInventoryRows: 1,
+        totalStock: 2,
+        totalAvailable: 1,
+        byWarehouse: [{ warehouseId: fixture.warehouses.b.id }],
+      });
+      expect(safeStock.body).toMatchObject({
+        totalInventoryRows: 1,
+        totalStock: 12,
+        productsByStatus: { IN_STOCK: 1, LOW_STOCK: 0 },
+      });
+    } finally {
+      await db.product.update({ where: productWhere, data: original });
+      await db.category.delete({ where: { id: category.id } });
+    }
+  });
+
+  it('counts the entire filtered scope past 1,000 rows and measures the real load of the warehouse', async () => {
+    const skuPrefix = `F056-${fixture.runId}-`;
+    const warehouse = await db.warehouse.create({
+      data: {
+        code: `BULK-${fixture.runId}`,
+        name: 'Kho kiểm thử phân trang',
+        region: 'VN',
+        capacity: 2_000,
+      },
+      select: { id: true },
+    });
+    try {
+      await db.$executeRaw`
+        WITH inserted_products AS (
+          INSERT INTO products(sku, slug, name, base_price, updated_at)
+          SELECT ${skuPrefix} || n, ${skuPrefix} || n, ${skuPrefix} || n, 100, NOW()
+          FROM generate_series(1, 1001) AS n
+          RETURNING id, sku
+        )
+        INSERT INTO inventory(product_id, warehouse_id, stock, updated_at)
+        SELECT id, ${warehouse.id}::uuid, CASE WHEN sku = ${skuPrefix} || 1 THEN 0 ELSE 1 END, NOW()
+        FROM inserted_products
+      `;
+      const query = { warehouseId: warehouse.id };
+      const page = await read('/admin/inventory', 'admin')
+        .query({ ...query, limit: 100, offset: 1000, includeCategory: 'true' })
+        .expect(200);
+      expect(page.body).toMatchObject({ total: 1001, offset: 1000 });
+      const { items } = page.body as { items: Array<{ productId: string }> };
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ product: { category: null } });
+
+      const summary = await read('/admin/inventory/summary', 'admin')
+        .query(query)
+        .expect(200);
+      expect(summary.body).toMatchObject({
+        totalProducts: 1001,
+        totalInventoryRows: 1001,
+        totalStock: 1000,
+        totalReserved: 0,
+        totalAvailable: 1000,
+        productsByStatus: { LOW_STOCK: 1000, OUT_OF_STOCK: 1 },
+        byWarehouse: [
+          { warehouseId: warehouse.id, capacity: 2000, capacityRate: 50 },
+        ],
+      });
+      const selected = await read('/admin/inventory/summary', 'admin')
+        .query({ ...query, productId: items[0].productId })
+        .expect(200);
+      expect(selected.body).toMatchObject({
+        totalInventoryRows: 1,
+        totalStock: 1,
+        byWarehouse: [{ totalStock: 1, occupiedStock: 1000, capacityRate: 50 }],
+      });
+
+      const outOfStock = { ...query, status: 'OUT_OF_STOCK' };
+      const [emptyRows, emptyTotals] = await Promise.all([
+        read('/admin/inventory', 'admin').query(outOfStock).expect(200),
+        read('/admin/inventory/summary', 'admin').query(outOfStock).expect(200),
+      ]);
+      expect(emptyRows.body).toMatchObject({
+        total: 1,
+        items: [{ availableStock: 0 }],
+      });
+      expect(emptyTotals.body).toMatchObject({
+        totalProducts: 1,
+        totalInventoryRows: 1,
+        totalStock: 0,
+        productsByStatus: { LOW_STOCK: 0, OUT_OF_STOCK: 1 },
+      });
+    } finally {
+      await db.$transaction([
+        db.inventory.deleteMany({ where: { warehouseId: warehouse.id } }),
+        db.product.deleteMany({ where: { sku: { startsWith: skuPrefix } } }),
+        db.warehouse.delete({ where: warehouse }),
+      ]);
+    }
+  }, 30_000);
+
   it('enforces account lock and first-password-change state on protected routes', async () => {
     const admin = { id: fixture.users.admin.id };
     const staff = { id: fixture.users.staff.id };
@@ -305,8 +586,14 @@ describeDb('Admin data access with PostgreSQL', () => {
     }
     await db.user.update({ where: admin, data: { mustChangePassword: true } });
     try {
-      const res = await read('/admin/staff', 'admin').expect(403);
-      expect(res.body).toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' });
+      for (const path of [
+        '/admin/staff',
+        '/admin/inventory',
+        '/admin/inventory/summary',
+      ]) {
+        const res = await read(path, 'admin').expect(403);
+        expect(res.body).toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' });
+      }
     } finally {
       await db.user.update({
         where: admin,

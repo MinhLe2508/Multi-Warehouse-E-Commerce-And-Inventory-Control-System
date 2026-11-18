@@ -1,33 +1,45 @@
-import { IsOptional, IsInt, Min, Max, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  optionalQueryBoolean,
+  QueryInventorySummaryDto,
+} from './query-inventory-summary.dto';
 
-export class QueryInventoryDto {
+export const MAX_INVENTORY_OFFSET = 2_147_483_647;
+
+function optionalInteger({ value }: { value: unknown }): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const number = Number(trimmed);
+  return /^\d+$/.test(trimmed) && Number.isSafeInteger(number) ? number : value;
+}
+
+export class QueryInventoryDto extends QueryInventorySummaryDto {
+  @Transform(optionalInteger)
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
   @Min(1)
-  page?: number = 1;
+  @Max(MAX_INVENTORY_OFFSET)
+  page?: number;
 
+  @Transform(optionalInteger)
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100, { message: 'limit tối đa không vượt quá 100 theo NFR-06.3' })
-  limit?: number = 10;
+  @Max(100)
+  limit?: number;
 
+  // When a client supplies offset, it takes precedence over page.
+  @Transform(optionalInteger)
   @IsOptional()
-  @IsString()
-  search?: string;
+  @IsInt()
+  @Min(0)
+  @Max(MAX_INVENTORY_OFFSET)
+  offset?: number;
 
+  @Transform(optionalQueryBoolean)
   @IsOptional()
-  @IsString()
-  category?: string;
-
-  @IsOptional()
-  @IsString()
-  warehouseId?: string;
-
-  @IsOptional()
-  @IsString()
-  status?: string;
+  @IsBoolean()
+  includeCategory?: boolean;
 }

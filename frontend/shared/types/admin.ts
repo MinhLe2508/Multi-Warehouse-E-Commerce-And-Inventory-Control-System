@@ -66,7 +66,27 @@ export interface InventoryWarehouseStat {
   totalStock: number;
   totalReserved: number;
   totalAvailable: number;
-  capacityRate: number;
+  capacityRate: number | null;
+}
+
+export interface AdminInventorySummaryApi {
+  totalProducts: number;
+  totalInventoryRows: number;
+  totalStock: number;
+  totalReserved: number;
+  totalAvailable: number;
+  productsByStatus: Record<StockStatus, number>;
+  byWarehouse: Array<{
+    warehouseId: string;
+    code: string;
+    name: string;
+    totalStock: number;
+    totalReserved: number;
+    totalAvailable: number;
+    capacity: number | null;
+    occupiedStock: number;
+    capacityRate: number | null;
+  }>;
 }
 
 export interface InventorySummaryResponse {
