@@ -283,7 +283,6 @@ export default function AdminStaffPage() {
         </div>
       </div>
 
-      {/* THÔNG BÁO: 503/timeout có thể xảy ra sau khi Staff đã được tạo. */}
       {notice && (
         <Alert
           variant={notice.type === 'success' ? 'success' : 'warning'}
@@ -292,11 +291,6 @@ export default function AdminStaffPage() {
           role="status"
         >
           {notice.message}
-          {notice.type === 'warning' && (
-            <div className="small mt-1">
-              Tài khoản có thể đã được tạo. Hãy kiểm tra danh sách trước khi gửi lại thư mời.
-            </div>
-          )}
         </Alert>
       )}
       {error && (

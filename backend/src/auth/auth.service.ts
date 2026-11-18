@@ -18,6 +18,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -83,6 +84,11 @@ export interface PublicUserProfile {
   fullName: string;
   role: UserRole;
   mustChangePassword: boolean;
+}
+
+interface StaffOnboardingResult {
+  user: PublicUserProfile;
+  invitationSent: boolean;
 }
 
 // Một kiểu dữ liệu tái sử dụng cho giao dịch tạo tài khoản.
@@ -153,7 +159,7 @@ export class AuthService {
   // =========================================================================
   // 2. ADMIN TẠO STAFF (chỉ gọi từ endpoint đã qua RolesGuard ADMIN)
   // =========================================================================
-  async createStaff(input: CreateStaffInput): Promise<PublicUserProfile> {
+  async createStaff(input: CreateStaffInput): Promise<StaffOnboardingResult> {
     const email = this.normalizeEmail(input.email);
     const fullName = this.normalizeFullName(input.fullName);
     const phone = this.normalizePhone(input.phone);
@@ -178,12 +184,11 @@ export class AuthService {
       this.logger.error(
         'Tạo Staff thành công nhưng gửi Email Invitation thất bại.',
       );
-      throw new ServiceUnavailableException(
-        'Tài khoản Staff đã được tạo nhưng chưa gửi được thư mời. Admin cần gửi lại Invitation.',
-      );
+      // User và token đã commit. Trả ID vừa tạo cùng kết quả gửi thư.
+      return { user, invitationSent: false };
     }
 
-    return user;
+    return { user, invitationSent: true };
   }
 
   // =========================================================================
@@ -600,61 +605,44 @@ export class AuthService {
   // GỬI LẠI THƯ MỜI KÍCH HOẠT STAFF (chỉ gọi từ AdminApi đã xác thực ADMIN)
   // =========================================================================
 
-  async resendStaffInvitation(email: string): Promise<void> {
-    const normalizedEmail = this.normalizeEmail(email);
-    const invalidStaffMessage = 'Staff không tồn tại hoặc không cần kích hoạt.';
-
-    // Bước tra cứu này quyền không quyết định tài khoản có được gửi thư hay không
-    // Mọi kiểm tra quyền/trạng thái đều thực hiện lại SAU KHI khóa dòng User
-    const reference = await this.prisma.user.findUnique({
-      where: { email: normalizedEmail },
-      select: { id: true },
-    });
-
-    if (!reference) {
-      throw new BadRequestException(invalidStaffMessage);
-    }
-
+  async resendStaffInvitation(staffId: string): Promise<void> {
     // Không thực hiện SMTP bên trong transaction để tránh giữ khóa CSDL lâu
     const { user, action } = await this.prisma.$transaction(async (tx) => {
-      // StaffService.setStatus() cũng khóa dòng User bằng FOR UPDATE trước khi sửa isActive hoặc thu hồi token; hai nghiệp vụ sẽ được tuần tự hóa.
+      // Dùng cùng khóa dòng với thao tác khóa tài khoản và kích hoạt Staff.
       const lockedRows = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT "id"
         FROM "users"
-        WHERE "id" = ${reference.id}::uuid
+        WHERE "id" = ${staffId}::uuid
+          AND "role" = 'WAREHOUSE_STAFF'
         FOR UPDATE
       `;
 
       if (lockedRows.length !== 1) {
-        throw new BadRequestException(invalidStaffMessage);
+        throw new NotFoundException('Không tìm thấy nhân viên kho.');
       }
 
-      // Quan trọng: đọc lại User sau khi lấy khóa, không dùng bản đọc cũ
-      const current = await tx.user.findUnique({
-        where: { id: reference.id },
+      const current = await tx.user.findUniqueOrThrow({
+        where: { id: staffId },
         select: {
           email: true,
           fullName: true,
           username: true,
-          role: true,
           isActive: true,
           emailVerifiedAt: true,
         },
       });
 
-      // Chỉ Staff chưa kích hoạt, còn mở khóa và đúng email mới được mời lại
-      if (
-        !current ||
-        current.email !== normalizedEmail ||
-        current.role !== UserRole.WAREHOUSE_STAFF ||
-        !current.isActive ||
-        current.emailVerifiedAt !== null
-      ) {
-        throw new BadRequestException(invalidStaffMessage);
+      if (!current.isActive) {
+        throw new ConflictException(
+          'Tài khoản đang bị khóa. Hãy mở khóa trước khi gửi thư mời.',
+        );
+      }
+      if (current.emailVerifiedAt !== null) {
+        throw new ConflictException('Nhân viên đã kích hoạt tài khoản.');
       }
 
       const action = await this.accountActionTokenService.createToken(
-        reference.id,
+        staffId,
         AccountActionPurpose.STAFF_INVITATION,
         tx,
       );
@@ -729,14 +717,22 @@ export class AuthService {
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === 'P2002'
         ) {
-          const target = JSON.stringify(error.meta?.target ?? '').toLowerCase();
-          if (target.includes('email')) {
+          // Prisma adapter-pg báo tên chỉ mục hoặc cột trong constraint.
+          const adapterError = error.meta?.driverAdapterError as
+            | { cause?: { constraint?: { index?: string; fields?: string[] } } }
+            | undefined;
+          const constraint = adapterError?.cause?.constraint;
+          const target =
+            error.meta?.target ?? constraint?.index ?? constraint?.fields;
+          const key: unknown =
+            Array.isArray(target) && target.length === 1 ? target[0] : target;
+          if (key === 'email' || key === 'users_email_key') {
             throw new ConflictException(
               'Email này đã được đăng ký tài khoản trước đó.',
             );
           }
           // Chỉ thử lại khi trùng username; không che giấu lỗi unique khác.
-          if (target.includes('username')) continue;
+          if (key === 'username' || key === 'users_username_key') continue;
           throw new ConflictException('Email hoặc tên đăng nhập đã tồn tại.');
         }
         throw error;

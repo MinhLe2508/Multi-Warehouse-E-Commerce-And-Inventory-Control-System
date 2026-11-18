@@ -15,7 +15,6 @@
 
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -25,7 +24,13 @@ import { Prisma, UserRole } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, type CreateStaffInput } from '../auth/auth.service';
-import type { QueryStaffDto, StaffStatus } from './dto/query-staff.dto';
+import {
+  STAFF_DEFAULT_LIMIT,
+  STAFF_MAX_LIMIT,
+  STAFF_MAX_OFFSET,
+  type QueryStaffDto,
+  type StaffStatus,
+} from './dto/query-staff.dto';
 import type { UpdateStaffDto } from './dto/update-staff.dto';
 import type { UpdateStaffStatusDto } from './dto/update-staff-status.dto';
 
@@ -45,8 +50,6 @@ const STAFF_SELECT = {
 // Lấy kiểu từ Prisma để tránh khai báo thủ công sai kiểu dữ liệu
 type StaffRow = Prisma.UserGetPayload<{ select: typeof STAFF_SELECT }>;
 
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
 const MAX_SEARCH_LENGTH = 150;
 const MAX_REASON_LOG_LENGTH = 200;
 
@@ -100,16 +103,21 @@ export class StaffService {
   // Xem danh sách Staff: tìm kiếm, lọc trạng thái, phân trang.
   // Count và danh sách đọc cùng snapshot để giảm chênh lệch khi có ghi đồng thời.
   async findAll(query: QueryStaffDto): Promise<PagedResult<StaffView>> {
-    const limit = query.limit ?? DEFAULT_LIMIT;
+    const limit = query.limit ?? STAFF_DEFAULT_LIMIT;
     const offset = query.offset ?? 0;
 
-    // DTO ở Controller vẫn phải dùng @Type/@IsInt/@Min/@Max.
-    // Kiểm tra thêm tại service để an toàn khi gọi từ code nội bộ.
-    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
-      throw new BadRequestException(`limit phải từ 1 đến ${MAX_LIMIT}.`);
+    // Áp dụng cùng giới hạn với DTO khi gọi từ code nội bộ.
+    if (!Number.isInteger(limit) || limit < 1 || limit > STAFF_MAX_LIMIT) {
+      throw new BadRequestException(`limit phải từ 1 đến ${STAFF_MAX_LIMIT}.`);
     }
-    if (!Number.isSafeInteger(offset) || offset < 0) {
-      throw new BadRequestException('offset phải là số nguyên không âm.');
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      offset > STAFF_MAX_OFFSET
+    ) {
+      throw new BadRequestException(
+        `offset phải từ 0 đến ${STAFF_MAX_OFFSET}.`,
+      );
     }
 
     const where = this.buildWhere(query);
@@ -151,50 +159,21 @@ export class StaffService {
     input: CreateStaffInput,
     actorId: string,
   ): Promise<CreateStaffResult> {
-    let createdId: string | null = null;
-    let mailError: ServiceUnavailableException | null = null;
-
-    try {
-      const created = await this.authService.createStaff(input);
-      createdId = created.id;
-    } catch (error: unknown) {
-      // Với AuthService hiện tại, 503 này được ném SAU KHI tạo User thành công,
-      // khi MailService không gửi được thư mời.
-      if (error instanceof ServiceUnavailableException) {
-        mailError = error;
-      } else {
-        // Bao gồm lỗi email trùng (409) và các lỗi tạo User/token thực sự.
-        throw error;
-      }
-    }
-
-    // Thành công: tìm đúng ID vừa tạo.
-    // Email thất bại: AuthService chưa trả ID nên tìm bằng email đã chuẩn hóa.
-    const where: Prisma.UserWhereInput = createdId
-      ? { id: createdId, role: UserRole.WAREHOUSE_STAFF }
-      : {
-          email: input.email.trim().toLowerCase(),
-          role: UserRole.WAREHOUSE_STAFF,
-        };
-
+    const { user, invitationSent } = await this.authService.createStaff(input);
     const row = await this.prisma.user.findFirst({
-      where,
+      where: { id: user.id, role: UserRole.WAREHOUSE_STAFF },
       select: STAFF_SELECT,
     });
 
     if (!row) {
-      // Không báo đã tạo thành công khi không thể xác nhận User trong DB.
-      throw (
-        mailError ??
-        new ServiceUnavailableException(
-          'Không thể xác nhận tài khoản nhân viên vừa được tạo.',
-        )
+      throw new ServiceUnavailableException(
+        'Không thể xác nhận tài khoản nhân viên vừa được tạo.',
       );
     }
 
     const staff = this.toView(row);
 
-    if (mailError) {
+    if (!invitationSent) {
       // Chỉ log ID; tuyệt đối không log token/URL kích hoạt.
       this.logger.warn(
         `Admin ${actorId} tạo Staff ${staff.id}, nhưng gửi thư mời thất bại.`,
@@ -386,20 +365,8 @@ export class StaffService {
     actorId: string,
   ): Promise<ResendInvitationResult> {
     this.assertStaffId(id);
-    const row = await this.findStaffRowOrThrow(id);
-    const status = this.computeStatus(row);
-
-    if (status === 'LOCKED') {
-      throw new ConflictException(
-        'Tài khoản đang bị khóa. Hãy mở khóa trước khi gửi thư mời.',
-      );
-    }
-    if (status === 'ACTIVE') {
-      throw new ConflictException('Nhân viên đã kích hoạt tài khoản.');
-    }
-
-    // Không tạo hoặc log token tại StaffService.
-    await this.authService.resendStaffInvitation(row.email);
+    // AuthService kiểm tra role và trạng thái trên dòng đã được khóa.
+    await this.authService.resendStaffInvitation(id);
 
     this.logger.log(
       `Admin ${actorId} đã yêu cầu gửi lại thư mời cho Staff ${id}.`,
