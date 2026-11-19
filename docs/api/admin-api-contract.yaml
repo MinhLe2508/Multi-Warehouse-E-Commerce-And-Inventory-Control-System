@@ -1,0 +1,603 @@
+openapi: 3.0.3
+info:
+  title: Multi-Warehouse Admin API
+  version: 0.2.0
+  description: API quản lý đơn hàng, tồn kho, cảnh báo và báo cáo.
+servers:
+  - url: http://localhost:3001
+security:
+  - bearerAuth: []
+tags:
+  - name: AdminOrders
+  - name: AdminInventory
+  - name: AdminAlerts
+  - name: AdminAnalytics
+
+paths:
+  /admin/orders:
+    get:
+      operationId: adminListOrders
+      tags: [AdminOrders]
+      summary: Lọc đơn hàng trước khi phân trang
+      description: ADMIN và WAREHOUSE_STAFF. Một đơn khớp kho khi có ít nhất một dòng hàng từ kho đó. Khoảng ngày tính theo UTC+7, gồm cả ngày đầu và ngày cuối.
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/OrderStatus'}}
+        - $ref: '#/components/parameters/Warehouse'
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: q, in: query, schema: {type: string}, description: Tìm theo mã đơn hoặc thông tin liên hệ giao hàng.}
+      responses:
+        '200':
+          description: Sắp xếp giảm dần theo createdAt và id.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminOrderList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+
+  /admin/orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      operationId: adminGetOrderDetails
+      tags: [AdminOrders]
+      summary: Xem chi tiết đơn hàng
+      description: ADMIN và WAREHOUSE_STAFF.
+      responses:
+        '200': {$ref: '#/components/responses/Order'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/orders/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    patch:
+      operationId: adminUpdateOrderStatus
+      tags: [AdminOrders]
+      summary: Chuyển đơn sang SHIPPING hoặc DELIVERED
+      description: ADMIN và WAREHOUSE_STAFF. targetStatus và note được ưu tiên nếu gửi cùng status và reason. Lịch sử trạng thái được ghi trong giao dịch chuyển trạng thái.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              anyOf:
+                - required: [targetStatus]
+                - required: [status]
+              properties:
+                targetStatus: {type: string, enum: [SHIPPING, DELIVERED]}
+                status: {type: string, enum: [SHIPPING, DELIVERED]}
+                note: {type: string, maxLength: 255}
+                reason: {type: string, maxLength: 255}
+      responses:
+        '200': {$ref: '#/components/responses/Order'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+
+  /admin/inventory:
+    get:
+      operationId: adminListInventory
+      tags: [AdminInventory]
+      summary: Liệt kê các dòng tồn kho
+      description: ADMIN xem mọi kho. WAREHOUSE_STAFF xem kho đang hoạt động. API trả giá vốn cho ADMIN. Khi có offset, offset được ưu tiên hơn page.
+      parameters:
+        - $ref: '#/components/parameters/InventoryWarehouse'
+        - $ref: '#/components/parameters/Product'
+        - $ref: '#/components/parameters/LowStockOnly'
+        - $ref: '#/components/parameters/InventorySearch'
+        - $ref: '#/components/parameters/InventoryCategory'
+        - $ref: '#/components/parameters/InventoryStatus'
+        - {name: page, in: query, schema: {type: integer, minimum: 1, maximum: 2147483647, default: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: includeCategory, in: query, schema: {type: boolean}}
+      responses:
+        '200':
+          description: Dòng tồn kho và tổng số dòng trong phạm vi lọc.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/InventoryRow'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/inventory/summary:
+    get:
+      operationId: adminGetInventorySummary
+      tags: [AdminInventory]
+      summary: Tổng hợp tồn kho theo cùng bộ lọc của danh sách
+      description: Độ đầy kho tính từ tồn vật lý của toàn kho. capacity và capacityRate có thể là null.
+      parameters:
+        - $ref: '#/components/parameters/InventoryWarehouse'
+        - $ref: '#/components/parameters/Product'
+        - $ref: '#/components/parameters/LowStockOnly'
+        - $ref: '#/components/parameters/InventorySearch'
+        - $ref: '#/components/parameters/InventoryCategory'
+        - $ref: '#/components/parameters/InventoryStatus'
+      responses:
+        '200':
+          description: Tổng hợp tồn kho và độ đầy theo kho.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InventorySummary'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/inventory/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BigIntId'
+    patch:
+      operationId: adminAdjustInventoryStock
+      tags: [AdminInventory]
+      summary: Điều chỉnh tồn kho hoặc ngưỡng cảnh báo
+      description: Chỉ ADMIN. stock được ưu tiên nếu có cả stock và newStock. threshold nhận null để dùng ngưỡng mặc định của kho.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              anyOf:
+                - required: [stock]
+                - required: [newStock]
+                - required: [threshold]
+              properties:
+                stock: {type: integer, minimum: 0, maximum: 2147483647}
+                newStock: {type: integer, minimum: 0, maximum: 2147483647}
+                threshold: {type: integer, nullable: true, minimum: 0, maximum: 2147483647}
+                note: {type: string, maxLength: 500}
+      responses:
+        '200': {$ref: '#/components/responses/Inventory'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /inventory/{id}/restock:
+    parameters:
+      - $ref: '#/components/parameters/BigIntId'
+    post:
+      operationId: adminRestockInventory
+      tags: [AdminInventory]
+      summary: Nhập thêm hàng vào một dòng tồn kho
+      description: Chỉ ADMIN. Kho phải hoạt động và còn đủ sức chứa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [quantity]
+              properties:
+                quantity: {type: integer, minimum: 1, maximum: 2147483647}
+                note: {type: string, maxLength: 500}
+      responses:
+        '200': {$ref: '#/components/responses/Inventory'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/alerts:
+    get:
+      operationId: adminListAlerts
+      tags: [AdminAlerts]
+      summary: Lọc cảnh báo theo kho, trạng thái và mức trước khi phân trang
+      description: ADMIN xem mọi kho. WAREHOUSE_STAFF xem kho đang hoạt động.
+      parameters:
+        - $ref: '#/components/parameters/Warehouse'
+        - {name: status, in: query, schema: {type: string, enum: [OPEN, RESOLVED, ALL], default: OPEN}}
+        - {name: alertLevel, in: query, schema: {$ref: '#/components/schemas/AlertLevel'}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
+      responses:
+        '200':
+          description: Danh sách và total lấy cùng phạm vi lọc.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/AlertRow'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/alerts/{id}/resolve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, pattern: '^[1-9][0-9]{0,17}$'}
+    patch:
+      operationId: adminResolveAlert
+      tags: [AdminAlerts]
+      summary: Đánh dấu đã xử lý cảnh báo
+      description: ADMIN và WAREHOUSE_STAFF. Gọi lại trả alreadyResolved=true và giữ người xử lý cùng thời điểm cập nhật ban đầu.
+      responses:
+        '200':
+          description: Trạng thái xử lý hiện tại của cảnh báo.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, resolvedAt, resolvedBy, alreadyResolved]
+                properties:
+                  id: {$ref: '#/components/schemas/BigIntId'}
+                  status: {type: string, enum: [RESOLVED]}
+                  resolvedAt: {type: string, format: date-time, nullable: true}
+                  resolvedBy: {type: string, format: uuid, nullable: true}
+                  alreadyResolved: {type: boolean}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/analytics/summary:
+    get:
+      operationId: adminGetAnalyticsSummary
+      tags: [AdminAnalytics]
+      summary: Tổng hợp báo cáo quản trị
+      description: Chỉ ADMIN. Khoảng ngày mặc định là 14 ngày gần nhất theo UTC+7.
+      parameters:
+        - $ref: '#/components/parameters/Warehouse'
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+      responses:
+        '200':
+          description: Doanh thu, trạng thái đơn, tồn kho và giữ chỗ hết hạn.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnalyticsSummary'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+
+  /admin/analytics/revenue-series:
+    get:
+      operationId: adminGetRevenueSeries
+      tags: [AdminAnalytics]
+      summary: Chuỗi doanh thu từng ngày
+      description: Chỉ ADMIN. Ngày được tính theo UTC+7.
+      parameters:
+        - $ref: '#/components/parameters/Warehouse'
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - {name: granularity, in: query, schema: {type: string, enum: [day], default: day}}
+      responses:
+        '200':
+          description: Phạm vi báo cáo và doanh thu theo ngày.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RevenueSeries'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    OrderId: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    BigIntId: {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/BigIntId'}}
+    Warehouse: {name: warehouseId, in: query, schema: {type: string, format: uuid}}
+    InventoryWarehouse:
+      name: warehouseId
+      in: query
+      schema:
+        oneOf:
+          - {type: string, format: uuid}
+          - {type: string, enum: [ALL]}
+    Product: {name: productId, in: query, schema: {type: string, format: uuid}}
+    LowStockOnly: {name: lowStockOnly, in: query, schema: {type: boolean}}
+    InventorySearch: {name: search, in: query, schema: {type: string, maxLength: 255}}
+    InventoryCategory: {name: category, in: query, schema: {type: string, maxLength: 150}}
+    InventoryStatus: {name: status, in: query, schema: {type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK, ALL]}}
+    FromDate: {name: fromDate, in: query, schema: {type: string, format: date}}
+    ToDate: {name: toDate, in: query, schema: {type: string, format: date}}
+  responses:
+    BadRequest:
+      description: Dữ liệu đầu vào không hợp lệ.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}
+    Unauthorized:
+      description: Phiên đăng nhập không hợp lệ.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}
+    Forbidden:
+      description: Thiếu quyền, tài khoản ngừng hoạt động hoặc cần đổi mật khẩu lần đầu.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}
+    NotFound:
+      description: Không tìm thấy bản ghi.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}
+    Conflict:
+      description: Trạng thái hiện tại xung đột với thao tác.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}
+    Unprocessable:
+      description: Thông tin nghiệp vụ hoặc khoảng ngày không hợp lệ.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}
+    Order:
+      description: Bản ghi đơn hàng.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Order'}
+    Inventory:
+      description: Dòng tồn kho đã cập nhật.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/InventoryRow'}
+  schemas:
+    Money: {type: string, pattern: '^\d+\.\d{2}$', example: '100000.00'}
+    BigIntId:
+      type: string
+      pattern: '^[1-9][0-9]{0,18}$'
+      description: ID BIGINT dương, tối đa 9223372036854775807.
+    ErrorResponse:
+      type: object
+      required: [statusCode, error, code, message, path, timestamp]
+      properties:
+        statusCode: {type: integer, minimum: 400, maximum: 599}
+        error: {type: string}
+        code: {type: string}
+        message:
+          oneOf:
+            - {type: string}
+            - {type: array, items: {type: string}}
+        path: {type: string}
+        timestamp: {type: string, format: date-time}
+    OrderStatus: {type: string, enum: [PENDING_PAYMENT, CONFIRMED, SHIPPING, DELIVERED, CANCELLED]}
+    AlertLevel: {type: string, enum: [WARNING, CRITICAL]}
+    OffsetPage:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1}
+        offset: {type: integer, minimum: 0}
+    WarehouseLabel:
+      type: object
+      required: [id, code, name]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+    AdminOrderList:
+      type: object
+      required: [items, total, page, limit, totalPages]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Order'}}
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 1}
+        limit: {type: integer, minimum: 1, maximum: 100}
+        totalPages: {type: integer, minimum: 1}
+    Order:
+      type: object
+      required: [id, orderCode, userId, status, grandTotal, currency, items, payments, statusHistory]
+      properties:
+        id: {type: string, format: uuid}
+        orderCode: {type: string}
+        userId: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/OrderStatus'}
+        subtotal: {$ref: '#/components/schemas/Money'}
+        discountTotal: {$ref: '#/components/schemas/Money'}
+        shippingFee: {$ref: '#/components/schemas/Money'}
+        grandTotal: {$ref: '#/components/schemas/Money'}
+        currency: {type: string}
+        shippingRecipient: {type: string}
+        shippingPhone: {type: string}
+        shippingAddress: {type: string}
+        shippingRegion: {type: string, nullable: true}
+        confirmedAt: {type: string, format: date-time, nullable: true}
+        cancelledAt: {type: string, format: date-time, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        customer:
+          type: object
+          nullable: true
+          properties:
+            id: {type: string, format: uuid}
+            username: {type: string}
+            fullName: {type: string}
+            email: {type: string, format: email}
+        items: {type: array, items: {$ref: '#/components/schemas/OrderItem'}}
+        payments: {type: array, items: {$ref: '#/components/schemas/Payment'}}
+        statusHistory: {type: array, items: {$ref: '#/components/schemas/StatusHistory'}}
+    OrderItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        warehouseId: {type: string, format: uuid}
+        inventoryId: {$ref: '#/components/schemas/BigIntId'}
+        warehouse: {$ref: '#/components/schemas/WarehouseLabel'}
+        productName: {type: string}
+        sku: {type: string}
+        quantity: {type: integer, minimum: 1}
+        unitPrice: {$ref: '#/components/schemas/Money'}
+        discountAmount: {$ref: '#/components/schemas/Money'}
+        lineTotal: {$ref: '#/components/schemas/Money'}
+    Payment:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [PENDING, SUCCESS, FAILED]}
+        method: {type: string, enum: [MOCK_CARD, MOCK_EWALLET, COD]}
+        amount: {$ref: '#/components/schemas/Money'}
+        currency: {type: string}
+        failureReason: {type: string, nullable: true}
+        transactionRef: {type: string}
+        createdAt: {type: string, format: date-time}
+        processedAt: {type: string, format: date-time, nullable: true}
+    StatusHistory:
+      type: object
+      properties:
+        id: {$ref: '#/components/schemas/BigIntId'}
+        fromStatus: {type: string, nullable: true, enum: [PENDING_PAYMENT, CONFIRMED, SHIPPING, DELIVERED, CANCELLED, null]}
+        toStatus: {$ref: '#/components/schemas/OrderStatus'}
+        actorId: {type: string, format: uuid, nullable: true}
+        actorName: {type: string}
+        reason: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+    InventoryRow:
+      type: object
+      required: [id, productId, warehouseId, stock, reservedStock, availableStock]
+      properties:
+        id: {$ref: '#/components/schemas/BigIntId'}
+        productId: {type: string, format: uuid}
+        warehouseId: {type: string, format: uuid}
+        stock: {type: integer, minimum: 0}
+        reservedStock: {type: integer, minimum: 0}
+        availableStock: {type: integer, minimum: 0}
+        threshold: {type: integer, nullable: true, minimum: 0}
+        effectiveThreshold: {type: integer, minimum: 0}
+        isLowStock: {type: boolean}
+        version: {type: integer}
+        lastRestockedAt: {type: string, format: date-time, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        warehouse: {$ref: '#/components/schemas/WarehouseLabel'}
+        product:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            sku: {type: string}
+            name: {type: string}
+            basePrice: {$ref: '#/components/schemas/Money'}
+            costPrice: {type: string, nullable: true}
+            category: {type: object, nullable: true}
+    StockTotals:
+      type: object
+      properties:
+        totalStock: {type: integer, minimum: 0}
+        totalReserved: {type: integer, minimum: 0}
+        totalAvailable: {type: integer, minimum: 0}
+        lowStockCount: {type: integer, minimum: 0}
+        outOfStockCount: {type: integer, minimum: 0}
+    InventorySummary:
+      allOf:
+        - $ref: '#/components/schemas/StockTotals'
+        - type: object
+          properties:
+            totalProducts: {type: integer, minimum: 0}
+            totalInventoryRows: {type: integer, minimum: 0}
+            productsByStatus:
+              type: object
+              additionalProperties: {type: integer, minimum: 0}
+            byWarehouse:
+              type: array
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/StockTotals'
+                  - type: object
+                    properties:
+                      warehouseId: {type: string, format: uuid}
+                      code: {type: string}
+                      name: {type: string}
+                      capacity: {type: integer, nullable: true}
+                      occupiedStock: {type: integer, minimum: 0}
+                      capacityRate: {type: integer, nullable: true}
+    AlertRow:
+      type: object
+      required: [id, inventoryId, alertLevel, status, productId, productSku, warehouseId]
+      properties:
+        id: {$ref: '#/components/schemas/BigIntId'}
+        inventoryId: {$ref: '#/components/schemas/BigIntId'}
+        alertLevel: {$ref: '#/components/schemas/AlertLevel'}
+        status: {type: string, enum: [OPEN, RESOLVED]}
+        stockAtTrigger: {type: integer}
+        availableAtTrigger: {type: integer}
+        thresholdAtTrigger: {type: integer}
+        currentStock: {type: integer}
+        currentAvailable: {type: integer}
+        productId: {type: string, format: uuid}
+        productSku: {type: string}
+        productName: {type: string}
+        warehouseId: {type: string, format: uuid}
+        warehouseCode: {type: string}
+        warehouseName: {type: string}
+        triggeredAt: {type: string, format: date-time}
+        resolvedAt: {type: string, format: date-time, nullable: true}
+        resolvedBy: {type: string, format: uuid, nullable: true}
+    AnalyticsRange:
+      type: object
+      properties:
+        fromDate: {type: string, format: date}
+        toDate: {type: string, format: date}
+        warehouseId: {type: string, format: uuid, nullable: true}
+    AnalyticsSummary:
+      type: object
+      properties:
+        range: {$ref: '#/components/schemas/AnalyticsRange'}
+        ordersByStatus:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+        revenue:
+          type: object
+          properties:
+            total: {$ref: '#/components/schemas/Money'}
+            currency: {type: string, enum: [VND]}
+            orderCount: {type: integer, minimum: 0}
+        topProducts:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: {type: string, format: uuid}
+              sku: {type: string}
+              name: {type: string}
+              quantitySold: {type: integer}
+              revenue: {$ref: '#/components/schemas/Money'}
+        lowStockByWarehouse:
+          type: array
+          items:
+            type: object
+            properties:
+              warehouseId: {type: string, format: uuid}
+              code: {type: string}
+              name: {type: string}
+              lowStockItems: {type: integer}
+              outOfStockItems: {type: integer}
+        expiredReservations: {type: integer, minimum: 0}
+    RevenueSeries:
+      type: object
+      properties:
+        range:
+          allOf:
+            - $ref: '#/components/schemas/AnalyticsRange'
+            - type: object
+              properties:
+                granularity: {type: string, enum: [day]}
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              date: {type: string, format: date}
+              revenue: {$ref: '#/components/schemas/Money'}
+              orderCount: {type: integer, minimum: 0}

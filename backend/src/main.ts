@@ -1,8 +1,26 @@
+import dotenv from 'dotenv';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import path from 'node:path';
+
+import { configureHttpApp } from './configure-app';
+
+// Nạp file .env ở thư mục gốc dự án, không phụ thuộc thư mục chạy lệnh.
+dotenv.config({
+  path: path.resolve(__dirname, '../../.env'),
+});
+
+// BigInt không serialize được bằng JSON.stringify -> chuyển thành chuỗi.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (
+  this: bigint,
+) {
+  return this.toString();
+};
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(process.env.PORT ?? 3000);
+  configureHttpApp(app);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3001, '0.0.0.0');
 }
-bootstrap();
+void bootstrap();

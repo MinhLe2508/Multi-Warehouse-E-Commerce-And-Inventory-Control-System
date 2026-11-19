@@ -1,0 +1,58 @@
+<mxfile host="app.diagrams.net" modified="2026-11-17T07:30:00.000Z" agent="Multi-Warehouse Architecture" version="24.0.0" type="device">
+  <diagram id="multi-warehouse-arch" name="Kiến Trúc Hệ Thống Đa Kho">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="client_group" value="Tầng Giao Diện (Next.js 15 Frontend - Port 3000)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1080" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="storefront" value="Storefront (Khách hàng)&#xa;- Đặt hàng đa kho&#xa;- AI Chatbot Widget" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="client_group">
+          <mxGeometry x="80" y="40" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="admin_portal" value="Admin &amp; Warehouse Portal&#xa;- Quản lý tồn kho, đơn hàng, nhập xuất&#xa;- Cảnh báo tồn thấp Realtime (Socket.IO)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="client_group">
+          <mxGeometry x="600" y="40" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="backend_group" value="Tầng Ứng Dụng (NestJS 11 Backend - Port 3001)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="1080" height="310" as="geometry" />
+        </mxCell>
+        <mxCell id="core_layer" value="Core Security &amp; Filter Layer: JwtAuthGuard | PasswordChangedGuard | RolesGuard | Global HttpExceptionFilter (Error Envelope F005)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" vertex="1" parent="backend_group">
+          <mxGeometry x="40" y="40" width="1000" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="order_inv" value="Orders &amp; Inventory Service&#xa;- Định tuyến kho (Bắc/Trung/Nam)&#xa;- Pessimistic Lock (SELECT FOR UPDATE)&#xa;- Cron giải phóng giữ chỗ TTL &amp; Đối soát" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="backend_group">
+          <mxGeometry x="40" y="110" width="310" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="alert_notif" value="Alerts &amp; Notifications Module&#xa;- AdminAlertsController (/admin/alerts)&#xa;- LowStockNotifierService (Dedup + Upgrade)&#xa;- NotificationsGateway (WebSocket /notifications)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="backend_group">
+          <mxGeometry x="385" y="110" width="310" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="chatbot_rag" value="AI Chatbot &amp; RAG Module&#xa;- ChatbotService (Claude / Gemini + Fallback)&#xa;- RetrievalService &amp; KnowledgeBaseService&#xa;- ChatbotToolsService (Ownership Guard)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="backend_group">
+          <mxGeometry x="730" y="110" width="310" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="data_group" value="Tầng Dữ Liệu &amp; Hạ Tầng (Docker Compose)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="1080" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="postgres_db" value="PostgreSQL 16 + pgvector (Port 5433:5432)&#xa;- Bảng giao dịch: users, warehouses, products, inventory, stock_reservations, orders, stock_alerts, notifications&#xa;- Ràng buộc: CHECK (stock &gt;= reserved_stock), uq_alerts_one_open_per_inventory&#xa;- Bảng tri thức RAG: kb_documents, kb_chunks (embedding vector(1024))" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="data_group">
+          <mxGeometry x="40" y="45" width="640" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="redis_pubsub" value="Redis 7 Alpine (Port 6379)&#xa;- Kênh Pub/Sub: inventory.low_stock&#xa;- Kênh Pub/Sub: inventory.changed&#xa;- Đồng bộ realtime đa instance Backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="data_group">
+          <mxGeometry x="720" y="45" width="320" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="storefront" target="core_layer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="admin_portal" target="core_layer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="order_inv" target="postgres_db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="alert_notif" target="redis_pubsub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="chatbot_rag" target="postgres_db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

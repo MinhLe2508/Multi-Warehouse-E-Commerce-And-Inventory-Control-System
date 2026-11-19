@@ -1,98 +1,58 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Backend NestJS — Multi-Warehouse E-Commerce & Inventory Control
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Dịch vụ Backend cung cấp RESTful API và cổng thời gian thực (`Socket.IO` trên namespace `/notifications`) cho hệ thống Thương mại điện tử & Kiểm soát tồn kho đa kho.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 1. Các phân hệ cốt lõi
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+1. **Chuẩn hóa phản hồi lỗi (`src/core/filters/http-exception.filter.ts`)**:
+   - Mọi lỗi HTTP đều trả về cấu trúc Error Envelope thống nhất: `{ statusCode, error, code, message, path, timestamp }`.
+   - Bảo toàn mã lỗi nghiệp vụ `4xx` (`INSUFFICIENT_STOCK`, `RESERVATION_EXPIRED`, `PASSWORD_CHANGE_REQUIRED`, `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`) và ẩn chi tiết nhạy cảm đối với lỗi `5xx` (`INTERNAL_ERROR`).
+2. **Định tuyến đa kho & Giữ chỗ chống Oversell (`src/inventory/`)**:
+   - Khóa bi quan (`SELECT ... FOR UPDATE` theo thứ tự khóa cố định tránh deadlock) kết hợp ràng buộc cơ sở dữ liệu `CHECK (stock >= reserved_stock)`.
+   - Cronjob giải phóng giữ chỗ quá hạn (`ReservationReleaseService`) và đối soát tồn kho định kỳ (`InventoryReconciliationService`).
+3. **Cảnh báo tồn kho thấp & Thông báo thời gian thực (`src/admin/alerts/`, `src/notifications/`)**:
+   - `AdminAlertsController`:
+     - `GET /admin/alerts`: Hỗ trợ lọc theo `status` (`OPEN` / `RESOLVED`), `warehouseId` (UUID), `limit`, `offset`, trả kèm thống kê `summary` (`openCount`, `criticalCount`, `warningCount`) và các trường phẳng (`productId`, `productSku`, `warehouseId`, `warehouseCode`).
+     - `PATCH /admin/alerts/:id/resolve`: Đóng cảnh báo thủ công một cách an toàn (idempotent, trả cờ `alreadyResolved`).
+   - `LowStockNotifierService`: Quét cảnh báo mở theo lô, chống tạo thông báo trùng theo `(userId, alertId, alertLevel)` nhưng cho phép nâng cấp cảnh báo từ `WARNING` lên `CRITICAL` khi tồn khả dụng giảm về `<= 0`.
+   - `NotificationsGateway`: Xác thực JWT khi bắt tay WebSocket, kiểm tra `isActive` và `mustChangePassword`, tự động ngắt kết nối khi token hết hạn.
+4. **AI Chatbot hỗ trợ RAG & Function Calling (`src/chatbot/`)**:
+   - `KnowledgeBaseService` & `RetrievalService`: Cắt nhỏ tài liệu chính sách (`text-chunker.ts`), sinh vector `1024` chiều và truy vấn tương đồng Cosine trên `pgvector`.
+   - `ChatbotToolsService`: Cung cấp 3 công cụ an toàn (`searchProducts`, `checkStock`, `getOrderStatus`). Tự động kiểm tra quyền sở hữu đơn hàng theo `userId` từ JWT và loại bỏ các trường nội bộ.
+   - `chatbot-eval.ts`: Bộ khung chấm điểm tự động 20 kịch bản (FAQ chính sách, tra cứu sản phẩm/tồn kho, tra cứu đơn hàng và 8 kịch bản tấn công/bẫy bảo mật).
 
-## Project setup
+---
 
-```bash
-$ npm install
-```
-
-## Compile and run the project
+## 2. Danh mục Script (`package.json`)
 
 ```bash
-# development
-$ npm run start
+# Phát triển & Biên dịch
+npm run start:dev          # Chạy server ở chế độ watch (cổng 3001)
+npm run build              # Biên dịch TypeScript sang thư mục dist/
+npm run start:prod         # Chạy bản build production
 
-# watch mode
-$ npm run start:dev
+# Đồng bộ tri thức & Đánh giá Chatbot
+npm run sync:kb            # Đồng bộ tài liệu chính sách vào bảng kb_documents / kb_chunks
+npm run eval:chatbot       # Chạy 20 ca đánh giá Chatbot và xuất báo cáo ra reports/chatbot-eval/
 
-# production mode
-$ npm run start:prod
+# Kiểm thử tự động
+npm test                   # Chạy toàn bộ Unit Test trong src/**/*.spec.ts
+npm run test:e2e           # Chạy kiểm thử tích hợp E2E (test/jest-e2e.json)
+npm run test:oversell      # Chạy unit test cho bộ hậu kiểm oversell-verifier
+
+# Kiểm thử chịu tải (Load Testing)
+npm run test:load:setup    # Khởi tạo dữ liệu mẫu (sản phẩm, kho, 200 JWT khách hàng)
+npm run test:load:run      # Chạy bài kiểm thử đồng thời bằng Node Concurrency Runner
+npm run test:load:k6       # Chạy bài kiểm thử chịu tải bằng k6 (xuất p95, p99)
+npm run test:load:verify   # Đối soát DB và sinh báo cáo NFR-04.1-NFR-01-OVERSELL-REPORT.md
+npm run test:load:all      # Thực thi tuần tự: setup -> run -> verify
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+## 3. Báo cáo kỹ thuật đầu ra
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Báo cáo kiểm thử chịu tải & chống bán vượt tồn: `backend/reports/NFR-04.1-NFR-01-OVERSELL-REPORT.md`
+- Báo cáo đánh giá độ chính xác & an toàn Chatbot: `backend/reports/chatbot-eval/latest.md` và `backend/reports/chatbot-eval/latest.json`
