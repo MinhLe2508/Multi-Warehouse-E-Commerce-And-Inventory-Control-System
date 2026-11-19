@@ -1,166 +1,116 @@
 import http from 'k6/http';
 import { check } from 'k6';
-import { Counter, Rate, Trend } from 'k6/metrics';
+import { Counter, Trend } from 'k6/metrics';
 
-// Nạp dữ liệu test đã chuẩn bị từ setup-test-data.ts
-const testData = JSON.parse(open('./test-data.json'));
+const fixture = JSON.parse(open('./test-data.json'));
+const policy = JSON.parse(open('./load-test-policy.json'));
+if (!fixture.runId || !/^[0-9a-f]{7,40}$/i.test(fixture.gitCommit || '') ||
+    !Number.isSafeInteger(fixture.totalVUs) || fixture.totalVUs <= 0 ||
+    !Number.isSafeInteger(fixture.initialStock) || fixture.initialStock < 0 ||
+    fixture.targetEndpoint !== '/orders' || !Array.isArray(fixture.users) ||
+    fixture.users.length !== fixture.totalVUs || fixture.users.some((user) => !user?.token) ||
+    (__ENV.LOAD_TEST_RUN_ID && __ENV.LOAD_TEST_RUN_ID !== fixture.runId) ||
+    (__ENV.GIT_COMMIT && __ENV.GIT_COMMIT !== fixture.gitCommit)) {
+  throw new Error('Fixture không hợp lệ hoặc sai lượt chạy. Chạy npm run test:load:setup.');
+}
 
-// Custom metrics để đo lường trực tiếp NFR-04.1 và NFR-01 (tách riêng độ trễ 201 và 409)
-export const ordersSuccess201 = new Counter('orders_success_201');
-export const ordersConflict409 = new Counter('orders_conflict_409');
-export const unexpectedErrors = new Counter('unexpected_errors');
-export const orderLatencyTrend = new Trend('order_api_duration', true);
-export const success201LatencyTrend = new Trend('order_201_duration_ms', true);
-export const conflict409LatencyTrend = new Trend('order_409_duration_ms', true);
-export const successRate = new Rate('order_success_rate');
+const success = new Counter('orders_success_201');
+const conflict = new Counter('orders_conflict_409');
+const unexpected = new Counter('unexpected_errors');
+const successLatency = new Trend('order_201_duration_ms', true);
+const conflictLatency = new Trend('order_409_duration_ms', true);
+const expectedOrders = Math.min(fixture.initialStock, fixture.totalVUs);
+const expectedConflicts = fixture.totalVUs - expectedOrders;
 
 export const options = {
-  // Bắt buộc cấu hình summaryTrendStats để k6 tính toán và xuất đầy đủ p(50)/med, p(90), p(95), p(99) thật (F110)
   summaryTrendStats: ['min', 'avg', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     oversell_spike_test: {
       executor: 'per-vu-iterations',
-      vus: testData.totalVUs || 100,
+      vus: fixture.totalVUs,
       iterations: 1,
       maxDuration: '45s',
     },
   },
   thresholds: {
-    // NFR-04.1: Với 10 tồn kho ban đầu, chính xác 10 đơn được tạo thành công
-    'orders_success_201': [`count==${testData.initialStock}`],
-    // Đúng (totalVUs - initialStock) đơn hàng bị từ chối với 409 Conflict
-    'orders_conflict_409': [`count==${testData.totalVUs - testData.initialStock}`],
-    // 0 lỗi hệ thống bất thường (500, timeout, deadlock)
-    'unexpected_errors': ['count==0'],
-    // NFR-01: Độ trễ p95 < 3000ms
-    'http_req_duration': ['p(95)<3000'],
+    http_reqs: [`count==${fixture.totalVUs}`],
+    orders_success_201: [`count==${expectedOrders}`],
+    orders_conflict_409: [`count==${expectedConflicts}`],
+    unexpected_errors: ['count==0'],
+    http_req_duration: [`p(95)<=${policy.p95MaxMs}`, `p(99)<=${policy.p99MaxMs}`],
   },
 };
 
 export default function () {
-  const vuId = __VU; // 1 -> 100
-  const user = testData.users[vuId - 1];
-
-  // Quyết định URL target: Nếu chạy trong container thì dùng dockerApiUrl, nếu ngoài host thì dùng localApiUrl
-  const baseUrl = (__ENV.BASE_URL) || testData.dockerApiUrl || 'http://127.0.0.1:3001';
-  const url = `${baseUrl}${testData.targetEndpoint}`;
-
-  const payload = JSON.stringify({
-    items: [
-      {
-        productId: testData.productId,
-        quantity: 1,
-      },
-    ],
-    shippingRecipient: user ? user.fullName : `Customer ${vuId}`,
+  const user = fixture.users[__VU - 1];
+  const baseUrl = (__ENV.BASE_URL || fixture.dockerApiUrl).replace(/\/+$/, '');
+  const response = http.post(`${baseUrl}/orders`, JSON.stringify({
+    items: [{ productId: fixture.productId, quantity: 1 }],
+    shippingRecipient: user.fullName,
     shippingPhone: '0912345678',
-    shippingAddress: `Địa chỉ nhận hàng khách ${vuId}, Hà Nội`,
-    shippingRegion: testData.warehouseRegion || 'Miền Bắc',
+    shippingAddress: `Địa chỉ kiểm thử ${user.vuIndex}`,
+    shippingRegion: fixture.warehouseRegion,
+  }), {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
+    timeout: '30s',
+    redirects: 0,
   });
 
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${user ? user.token : ''}`,
-    },
-    timeout: '30s',
-  };
-
-  const start = Date.now();
-  const res = http.post(url, payload, params);
-  const duration = Date.now() - start;
-  orderLatencyTrend.add(duration);
-
-  const is201 = res.status === 201;
-  const is409 = res.status === 409;
-  const isUnexpected = !is201 && !is409;
-
-  if (is201) {
-    ordersSuccess201.add(1);
-    success201LatencyTrend.add(duration);
-    successRate.add(1);
-  } else if (is409) {
-    ordersConflict409.add(1);
-    conflict409LatencyTrend.add(duration);
-    successRate.add(0);
-  } else {
-    unexpectedErrors.add(1);
-    console.error(`[VU ${vuId}] Unexpected status: ${res.status} - Body: ${res.body}`);
+  const isSuccess = response.status === 201;
+  let isConflict = false;
+  if (response.status === 409) {
+    try {
+      isConflict = response.json('code') === 'INSUFFICIENT_STOCK';
+    } catch {
+      // An unreadable response is counted as unexpected.
+    }
   }
 
-  check(res, {
-    'Status là 201 (Thành công) hoặc 409 (Hết hàng - Insufficient Stock)': (r) =>
-      r.status === 201 || r.status === 409,
-    'Không xảy ra lỗi hệ thống 500 hoặc Deadlock': (r) => r.status !== 500,
-  });
+  success.add(Number(isSuccess));
+  conflict.add(Number(isConflict));
+  unexpected.add(Number(!isSuccess && !isConflict));
+  if (isSuccess) successLatency.add(response.timings.duration);
+  if (isConflict) conflictLatency.add(response.timings.duration);
+  check(response, { 'HTTP 201 hoặc 409 INSUFFICIENT_STOCK': () => isSuccess || isConflict });
 }
 
-function extractTrendValues(metric) {
-  const vals = metric && metric.values ? metric.values : {};
-  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+function summarize(metric) {
+  const values = metric?.values ?? {};
+  const numeric = (value) => Number.isFinite(value) ? value : undefined;
   return {
-    min: num(vals.min),
-    avg: num(vals.avg),
-    med: num(vals.med),
-    max: num(vals.max),
-    p90: num(vals['p(90)']),
-    p95: num(vals['p(95)']),
-    // Tuyệt đối không thay thế p99 bị thiếu bằng 0 (F110)
-    p99: num(vals['p(99)']),
+    min: numeric(values.min),
+    avg: numeric(values.avg),
+    med: numeric(values.med),
+    max: numeric(values.max),
+    p90: numeric(values['p(90)']),
+    p95: numeric(values['p(95)']),
+    p99: numeric(values['p(99)']),
   };
-}
-
-function fmtMs(v) {
-  return typeof v === 'number' && Number.isFinite(v) ? `${v.toFixed(1)} ms` : 'unavailable';
 }
 
 export function handleSummary(data) {
-  const durationMs = extractTrendValues(data.metrics.http_req_duration);
-  const duration201Ms = extractTrendValues(data.metrics.order_201_duration_ms);
-  const duration409Ms = extractTrendValues(data.metrics.order_409_duration_ms);
-  const s201 = data.metrics.orders_success_201 ? data.metrics.orders_success_201.values.count : 0;
-  const c409 = data.metrics.orders_conflict_409 ? data.metrics.orders_conflict_409.values.count : 0;
-  const errs = data.metrics.unexpected_errors ? data.metrics.unexpected_errors.values.count : 0;
-  const total = s201 + c409 + errs;
-
+  const counts = data.metrics;
   const summary = {
-    runId: (__ENV.LOAD_TEST_RUN_ID) || testData.runId || 'unknown-run',
-    gitCommit: (__ENV.GIT_COMMIT) || testData.gitCommit || 'unknown',
+    runId: fixture.runId,
+    gitCommit: fixture.gitCommit,
     runner: 'k6',
     testDate: new Date().toISOString(),
-    totalRequests: total,
-    success201: s201,
-    conflict409: c409,
-    unexpectedErrors: errs,
-    initialStock: testData.initialStock,
-    durationMs,
-    duration201Ms,
-    duration409Ms,
-    rps: data.metrics.http_reqs ? data.metrics.http_reqs.values.rate : 0,
+    initialStock: fixture.initialStock,
+    totalRequests: counts.http_reqs?.values.count,
+    success201: counts.orders_success_201?.values.count,
+    conflict409: counts.orders_conflict_409?.values.count,
+    unexpectedErrors: counts.unexpected_errors?.values.count,
+    durationMs: summarize(counts.http_req_duration),
+    duration201Ms: summarize(counts.order_201_duration_ms),
+    duration409Ms: summarize(counts.order_409_duration_ms),
+    rps: counts.http_reqs?.values.rate,
   };
-
+  const text = `Lượt k6 ${summary.runId} · SHA ${summary.gitCommit}\n` +
+    `HTTP ${summary.totalRequests ?? 'unavailable'} · 201 ${summary.success201 ?? 'unavailable'} · 409 hết tồn ${summary.conflict409 ?? 'unavailable'} · Lỗi khác ${summary.unexpectedErrors ?? 'unavailable'}\n` +
+    `p95 ${summary.durationMs.p95?.toFixed(1) ?? 'unavailable'} ms · p99 ${summary.durationMs.p99?.toFixed(1) ?? 'unavailable'} ms\n` +
+    'Chạy npm run test:load:verify để đối soát PostgreSQL.\n';
   return {
-    'stdout': `
-============================================================
-🎯 K6 CONCURRENCY OVERSELL LOAD TEST SUMMARY (RunId: ${summary.runId})
-============================================================
-Total VUs / Requests:      ${total}
-Success Orders (HTTP 201): ${s201} (Expected: ${testData.initialStock})
-Conflict Rejections (409): ${c409} (Expected: ${testData.totalVUs - testData.initialStock})
-Unexpected Errors (500):   ${errs} (Expected: 0)
-------------------------------------------------------------
-NFR-04.1 (Zero Oversell):  ${s201 === testData.initialStock && errs === 0 ? 'PASSED ✅' : 'FAILED ❌'}
-NFR-01 Latency Metrics (Overall):
-  - Min: ${fmtMs(durationMs.min)}
-  - Avg: ${fmtMs(durationMs.avg)}
-  - Med: ${fmtMs(durationMs.med)}
-  - p90: ${fmtMs(durationMs.p90)}
-  - p95: ${fmtMs(durationMs.p95)}
-  - p99: ${fmtMs(durationMs.p99)}
-  - Max: ${fmtMs(durationMs.max)}
-============================================================
-`,
-    '/scripts/load-test-summary.json': JSON.stringify(summary, null, 2),
-    './load-test-summary.json': JSON.stringify(summary, null, 2),
+    stdout: text,
+    './.generated/k6-summary.json': JSON.stringify(summary, null, 2),
   };
 }

@@ -25,7 +25,7 @@
     "test:load:run": "ts-node -r tsconfig-paths/register test/load-test/run-concurrency-test.ts",
     "test:load:k6": "powershell -ExecutionPolicy Bypass -File ../load-tests/run-k6.ps1",
     "test:load:verify": "ts-node -r tsconfig-paths/register test/load-test/verify-oversell.ts",
-    "test:load:all": "ts-node -r tsconfig-paths/register test/load-test/setup-test-data.ts && ts-node -r tsconfig-paths/register test/load-test/run-concurrency-test.ts && ts-node -r tsconfig-paths/register test/load-test/verify-oversell.ts",
+    "test:load:all": "npm run test:load:setup && npm run test:load:run && npm run test:load:verify -- --runner node-concurrency-smoke",
     "test:week6:static": "node --test test/week6-huy-khang.integration.cjs",
     "test:week6:db": "npm run build && node test/week6-huy-khang.integration.cjs --require-db",
     "test:inventory:live": "npm run build && node test/week6-huy-khang.integration.cjs --require-db --require-redis",

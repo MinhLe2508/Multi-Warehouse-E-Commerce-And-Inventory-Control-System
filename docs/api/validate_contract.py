@@ -34,7 +34,10 @@ def mapping_without_duplicates(loader, node, deep=False):
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
         if key in result:
-            raise ValueError(f"YAML có key trùng: {key!r}")
+            raise yaml.constructor.ConstructorError(
+                "trong cùng một mapping", node.start_mark,
+                f"YAML có key trùng: {key!r}", key_node.start_mark,
+            )
         result[key] = loader.construct_object(value_node, deep=deep)
     return result
 
@@ -42,11 +45,28 @@ def mapping_without_duplicates(loader, node, deep=False):
 UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping_without_duplicates)
 
 
+def load_spec(filename: str) -> dict:
+    with (ROOT / filename).open(encoding="utf-8") as stream:
+        spec = yaml.load(stream, Loader=UniqueKeyLoader)
+    if not isinstance(spec, dict) or spec.get("openapi") != "3.0.3":
+        raise ValueError(f"{filename} phải là tài liệu OpenAPI 3.0.3")
+    try:
+        validate_spec(spec)
+    except Exception as error:
+        raise ValueError(f"{filename}: {error}") from error
+    return spec
+
+
 def run(source: Path | None, report_path: Path | None) -> None:
-    spec = yaml.load((ROOT / "openapi.yaml").read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
-    validate_spec(spec)
-    checks = [("OpenAPI 3.0.3, YAML không key trùng và cấu trúc chuẩn", "PASS")]
-    assert spec["openapi"] == "3.0.3"
+    spec = load_spec("openapi.yaml")
+    admin = load_spec("admin-api-contract.yaml")
+    admin_count = sum(
+        method in HTTP_METHODS for item in admin["paths"].values() for method in item
+    )
+    checks = [
+        ("openapi.yaml chuẩn OpenAPI 3.0.3 và YAML không có key trùng", "PASS"),
+        (f"admin-api-contract.yaml chuẩn OpenAPI 3.0.3, {admin_count} thao tác và YAML không có key trùng", "PASS"),
+    ]
 
     references = set()
 
@@ -208,7 +228,6 @@ def run(source: Path | None, report_path: Path | None) -> None:
     print("\n".join(output))
     print("Không chạy backend, migration, seed, SQL transaction, concurrency hoặc E2E.")
     if report_path:
-        digest = hashlib.sha256((ROOT / "openapi.yaml").read_bytes()).hexdigest()
         content = "# Báo cáo kiểm tra bộ API Contract\n\n"
         content += f"**Phiên bản:** {spec['info']['version']} · **Mốc yêu cầu nhóm:** 09/10/2026.\n\n"
         content += "Báo cáo sinh bởi `validate_contract.py` sau khi toàn bộ kiểm tra tài liệu bên dưới hoàn tất. PASS ở đây chỉ áp dụng cho tài liệu/fixtures và đối chiếu tĩnh đã liệt kê.\n\n"
@@ -225,7 +244,10 @@ def run(source: Path | None, report_path: Path | None) -> None:
         content += "- Các điều kiện nghiệp vụ như productId trùng, so khớp callback, giới hạn BIGINT thực, trạng thái đổi mật khẩu phải được service/guard thực thi; kiểm tra schema mẫu không chứng minh điều đó.\n"
         content += "- Cập nhật Auth mới được đọc từ ảnh, chưa kiểm chứng trên source Auth mới.\n"
         content += "- Chưa có bằng chứng Khang/Minh/Trọng/Triết đã duyệt các lựa chọn ĐỀ XUẤT.\n"
-        content += f"\n## Nhận diện bản YAML được kiểm tra\n\nSHA-256: `{digest}`\n"
+        content += "\n## Nhận diện bản YAML được kiểm tra\n\n"
+        for filename in ["openapi.yaml", "admin-api-contract.yaml"]:
+            digest = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()
+            content += f"- `{filename}` SHA-256 `{digest}`\n"
         content += "\nChạy lại bằng hướng dẫn trong README.md sau mỗi thay đổi contract.\n"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(content, encoding="utf-8")

@@ -1,18 +1,16 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPatch, extractErrorMessage } from '@/shared/lib/apiClient';
-import {
-  useInventoryRealtime,
-  type LowStockRealtimeEvent,
-  type RealtimeStatus,
-} from './useInventoryRealtime';
+import type { AlertLevel } from '@/shared/types/admin';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useInventoryRealtime } from './useInventoryRealtime';
 
 export interface StockAlertItem {
   id: string;
   inventoryId: string;
-  alertLevel: 'WARNING' | 'CRITICAL' | string;
-  status: 'OPEN' | 'RESOLVED' | string;
+  alertLevel: AlertLevel;
+  status: 'OPEN' | 'RESOLVED';
   stockAtTrigger: number;
   availableAtTrigger: number;
   thresholdAtTrigger: number;
@@ -35,124 +33,142 @@ interface AlertsApiResponse {
   offset: number;
 }
 
-export function useStockAlerts() {
-  const [alerts, setAlerts] = useState<StockAlertItem[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const isFetchingRef = useRef(false);
+interface AlertFilters {
+  warehouseId?: string;
+  alertLevel?: AlertLevel;
+  limit?: number;
+  offset?: number;
+}
 
-  const fetchAlerts = useCallback(async () => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-    try {
-      const data = await apiGet<AlertsApiResponse>('/admin/alerts?status=OPEN&limit=50');
-      setAlerts(data.items || []);
-      setTotal(data.total ?? (data.items ? data.items.length : 0));
-      setError(null);
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Không tải được danh sách cảnh báo tồn kho.'));
-    } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
+type Snapshot = {
+  key: string;
+  data?: AlertsApiResponse;
+  error?: string;
+};
+
+const ALERTS_REFRESH = 'mwh:stock-alerts-refresh';
+const EMPTY_ALERTS: StockAlertItem[] = [];
+
+export function useStockAlerts({
+  warehouseId,
+  alertLevel,
+  limit = 50,
+  offset = 0,
+}: AlertFilters = {}) {
+  const scope = useAuthStore(({ session }) => {
+    const user = session?.user;
+    return user && !user.mustChangePassword &&
+      (user.role === 'ADMIN' || user.role === 'WAREHOUSE_STAFF')
+      ? `${user.id}:${user.role}`
+      : null;
+  });
+  const params = new URLSearchParams({
+    status: 'OPEN',
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (warehouseId && warehouseId !== 'ALL') params.set('warehouseId', warehouseId);
+  if (alertLevel) params.set('alertLevel', alertLevel);
+  const url = `/admin/alerts?${params}`;
+  const key = `${scope}:${url}`;
+
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<{ key: string; message: string } | null>(null);
+  const generation = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolving = useRef(false);
+
+  const clearRefreshTimer = useCallback(() => {
+    if (timer.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
     }
   }, []);
 
+  const refresh = useCallback(() => {
+    clearRefreshTimer();
+    generation.current++;
+    setResolveError(null);
+    setRevision((value) => value + 1);
+  }, [clearRefreshTimer]);
+
+  const queueRefresh = useCallback(() => {
+    if (timer.current !== null) return;
+    // Invalidate any pending read immediately and coalesce changes before fetching again.
+    generation.current++;
+    timer.current = setTimeout(refresh, 100);
+  }, [refresh]);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchAlerts();
-    }, 0);
+    if (!scope) return;
+    let active = true;
+    const currentGeneration = generation.current;
+    void apiGet<AlertsApiResponse>(url).then(
+      (data) => {
+        if (active && currentGeneration === generation.current) setSnapshot({ key, data });
+      },
+      (err: unknown) => {
+        if (active && currentGeneration === generation.current) {
+          setSnapshot({ key, error: extractErrorMessage(err, 'Không tải được cảnh báo tồn kho.') });
+        }
+      },
+    );
+    return () => { active = false; };
+  }, [key, revision, scope, url]);
 
-    const interval = setInterval(() => {
-      void fetchAlerts();
-    }, 30000);
-
-    const onFocus = () => {
-      void fetchAlerts();
-    };
-    window.addEventListener('focus', onFocus);
-
+  useEffect(() => {
+    if (!scope) return;
+    window.addEventListener(ALERTS_REFRESH, queueRefresh);
+    window.addEventListener('focus', refresh);
+    const interval = setInterval(refresh, 30_000);
     return () => {
-      clearTimeout(timer);
       clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
+      clearRefreshTimer();
+      window.removeEventListener(ALERTS_REFRESH, queueRefresh);
+      window.removeEventListener('focus', refresh);
     };
-  }, [fetchAlerts]);
-
-  const handleRealtimeAlert = useCallback((event: LowStockRealtimeEvent) => {
-    setAlerts((prev) => {
-      const exists = prev.some(
-        (a) =>
-          (event.alertId && a.id === event.alertId) ||
-          (a.inventoryId === event.inventoryId && a.status === 'OPEN')
-      );
-      if (exists) {
-        return prev.map((a) =>
-          a.inventoryId === event.inventoryId && a.status === 'OPEN'
-            ? {
-                ...a,
-                alertLevel: event.alertLevel ?? (event.availableStock === 0 ? 'CRITICAL' : 'WARNING'),
-                currentAvailable: event.availableStock,
-              }
-            : a
-        );
-      }
-
-      const incoming: StockAlertItem = {
-        id: event.alertId ?? `rt-${event.inventoryId}-${Date.now()}`,
-        inventoryId: event.inventoryId,
-        alertLevel: event.alertLevel ?? (event.availableStock === 0 ? 'CRITICAL' : 'WARNING'),
-        status: 'OPEN',
-        stockAtTrigger: event.availableStock,
-        availableAtTrigger: event.availableStock,
-        thresholdAtTrigger: event.threshold,
-        currentAvailable: event.availableStock,
-        productId: event.productId,
-        productSku: event.sku ?? event.productId.slice(0, 8),
-        productName: event.productName ?? 'Sản phẩm dưới ngưỡng',
-        warehouseId: event.warehouseId,
-        warehouseCode: event.warehouseCode ?? 'WH',
-        warehouseName: event.warehouseCode ?? 'Kho hàng',
-        triggeredAt: event.triggeredAt ?? new Date().toISOString(),
-      };
-      setTotal((t) => t + 1);
-      return [incoming, ...prev];
-    });
-  }, []);
+  }, [clearRefreshTimer, queueRefresh, refresh, scope]);
 
   const { status: realtimeStatus } = useInventoryRealtime({
-    onLowStockAlert: handleRealtimeAlert,
-    onReconnectSync: fetchAlerts,
+    enabled: Boolean(scope),
+    onLowStockAlert: queueRefresh,
+    onInventoryChanged: queueRefresh,
+    onReconnectSync: queueRefresh,
   });
 
-  const resolve = useCallback(
-    async (id: string): Promise<boolean> => {
-      setResolvingId(id);
-      try {
-        await apiPatch(`/admin/alerts/${id}/resolve`, {});
-        setAlerts((prev) => prev.filter((a) => a.id !== id));
-        setTotal((t) => Math.max(0, t - 1));
-        setError(null);
-        return true;
-      } catch (err: unknown) {
-        setError(extractErrorMessage(err, 'Không thể đánh dấu đã xử lý cảnh báo.'));
-        return false;
-      } finally {
-        setResolvingId(null);
-      }
-    },
-    []
-  );
+  const resolve = useCallback(async (id: string): Promise<boolean> => {
+    if (!scope || resolving.current) return false;
+    resolving.current = true;
+    setResolvingId(id);
+    setResolveError(null);
+    try {
+      await apiPatch(`/admin/alerts/${id}/resolve`, {});
+      window.dispatchEvent(new Event(ALERTS_REFRESH));
+      return true;
+    } catch (err: unknown) {
+      setResolveError({
+        key,
+        message: extractErrorMessage(err, 'Không thể đánh dấu đã xử lý cảnh báo.'),
+      });
+      return false;
+    } finally {
+      resolving.current = false;
+      setResolvingId(null);
+    }
+  }, [key, scope]);
 
+  const current = scope && snapshot?.key === key ? snapshot : null;
   return {
-    alerts,
-    total,
-    loading,
+    alerts: current?.data?.items ?? EMPTY_ALERTS,
+    total: current?.data?.total ?? 0,
+    loading: Boolean(scope) && !current,
     resolvingId,
-    error,
-    realtimeStatus: realtimeStatus as RealtimeStatus,
+    error: current?.error ?? null,
+    resolveError: resolveError?.key === key ? resolveError.message : null,
+    realtimeStatus,
     resolve,
-    refresh: fetchAlerts,
+    refresh,
   };
 }

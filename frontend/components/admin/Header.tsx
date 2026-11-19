@@ -22,7 +22,8 @@ export function Header({
   const { warehouses, warehouseId, setWarehouseId } = useAdminCtx();
   const [hasScrolled, setHasScrolled] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const { alerts, total: openAlertsCount } = useStockAlerts();
+  const { alerts, total: openAlertsCount, loading: alertsLoading, error: alertsError } =
+    useStockAlerts({ warehouseId, limit: 5 });
 
   // Lấy tiêu đề trang ngắn gọn theo pathname
   const getPageTitle = () => {
@@ -162,12 +163,12 @@ export function Header({
                   className="list-group list-group-flush"
                   style={{ maxHeight: '300px', overflowY: 'auto' }}
                 >
-                  {alerts.length === 0 ? (
+                  {alertsLoading || alertsError || alerts.length === 0 ? (
                     <div className="p-4 text-center text-muted small">
-                      Không có cảnh báo
+                      {alertsError ?? (alertsLoading ? 'Đang tải cảnh báo…' : 'Không có cảnh báo')}
                     </div>
                   ) : (
-                    alerts.slice(0, 5).map(alert => {
+                    alerts.map(alert => {
                       const current = alert.currentAvailable ?? alert.availableAtTrigger;
                       return (
                         <div key={alert.id} className="list-group-item p-3 border-bottom small">

@@ -221,6 +221,48 @@ describeDb(
         status: 'OPEN',
       });
     });
+    it('filters alert level and warehouse before limit and uses the same scope for total', async () => {
+      await api('put', '/inventory/' + ID, { threshold: 10 }).expect(200);
+      const other = await prisma.warehouse.create({
+        data: { code: 'ALERT-OTHER', name: 'Kho cảnh báo khác', region: 'HCM' },
+      });
+      const [sameWarehouse, otherWarehouse] = await prisma.$queryRaw<
+        Array<{ id: bigint }>
+      >`
+        INSERT INTO inventory (product_id, warehouse_id, stock, updated_at)
+        VALUES (${P2}::uuid, ${W}::uuid, 0, NOW()),
+               (${P2}::uuid, ${other.id}::uuid, 1, NOW())
+        RETURNING id
+      `;
+      await prisma.stockAlert.createMany({
+        data: [
+          {
+            inventoryId: sameWarehouse.id,
+            alertLevel: 'CRITICAL',
+            stockAtTrigger: 0,
+            availableAtTrigger: 0,
+            thresholdAtTrigger: 3,
+          },
+          {
+            inventoryId: otherWarehouse.id,
+            alertLevel: 'WARNING',
+            stockAtTrigger: 1,
+            availableAtTrigger: 1,
+            thresholdAtTrigger: 3,
+          },
+        ],
+      });
+      const path = `/inventory/alerts?warehouseId=${W}&alertLevel=WARNING&limit=1`;
+      const response = await api('get', path, undefined, S).expect(200);
+      expect(response.body).toMatchObject({
+        total: 1,
+        items: [{ inventoryId: ID, alertLevel: 'WARNING' }],
+      });
+      const beyond = await api('get', path + '&offset=1', undefined, S).expect(
+        200,
+      );
+      expect(beyond.body).toMatchObject({ total: 1, items: [] });
+    });
     it('STAFF cannot read inactive warehouses but ADMIN can', async () => {
       await prisma.warehouse.update({
         where: { id: W },

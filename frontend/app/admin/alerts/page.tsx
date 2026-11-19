@@ -2,22 +2,44 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { AlertCircle, ArrowRight, CheckCircle2, RefreshCw } from 'lucide-react';
+import { useAdminCtx } from '../../../components/admin/AdminContext';
 import { AlertBadge } from '../../../components/admin/StatusBadge';
 import { useStockAlerts } from '../../../hooks/useStockAlerts';
 import { formatTime } from '../../../shared/lib/format';
 import type { AlertLevel } from '../../../shared/types/admin';
 
+const PAGE_SIZE = 50;
+
 export default function AdminAlertsPage() {
-  const { alerts, loading, resolvingId, error, realtimeStatus, resolve, refresh } = useStockAlerts();
-  const [level, setLevel] = useState<AlertLevel | 'ALL'>('ALL');
+  const { warehouseId } = useAdminCtx();
+  const pathname = usePathname();
+  const isStaff = pathname.startsWith('/staff/');
+  const [filters, setFilters] = useState({
+    warehouseId,
+    level: 'ALL' as AlertLevel | 'ALL',
+    page: 1,
+  });
+  if (filters.warehouseId !== warehouseId) {
+    setFilters({ ...filters, warehouseId, page: 1 });
+  }
+  const { level, page } = filters;
+  const { alerts, total, loading, resolvingId, error, resolveError, realtimeStatus, resolve, refresh } =
+    useStockAlerts({
+      warehouseId,
+      alertLevel: level === 'ALL' ? undefined : level,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    });
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (!loading && !error && page > totalPages) {
+    setFilters({ ...filters, page: totalPages });
+  }
   const [notice, setNotice] = useState('');
 
-  const list = alerts.filter(
-    (a) => a.status === 'OPEN' && (level === 'ALL' || a.alertLevel === level)
-  );
-
   const handleResolve = async (id: string, sku: string) => {
+    setNotice('');
     const ok = await resolve(id);
     if (ok) {
       setNotice(`Đã đánh dấu xử lý cảnh báo cho ${sku}.`);
@@ -51,7 +73,10 @@ export default function AdminAlertsPage() {
       <div className="mb-3">
         <select
           value={level}
-          onChange={(e) => setLevel(e.target.value as AlertLevel | 'ALL')}
+          onChange={(e) => {
+            setNotice('');
+            setFilters({ ...filters, level: e.target.value as AlertLevel | 'ALL', page: 1 });
+          }}
           aria-label="Lọc theo mức cảnh báo"
           className="form-select form-select-sm"
           style={{
@@ -84,6 +109,8 @@ export default function AdminAlertsPage() {
         </div>
       )}
 
+      {resolveError && <div role="alert" className="alert alert-danger small">{resolveError}</div>}
+
       {error ? (
         <div role="alert" className="alert alert-danger d-flex align-items-center justify-content-between gap-2 small">
           <div className="d-flex align-items-center gap-2">
@@ -98,16 +125,16 @@ export default function AdminAlertsPage() {
         <div className="p-5 text-center small text-secondary rounded-3 border bg-white">
           Đang tải danh sách cảnh báo...
         </div>
-      ) : list.length === 0 ? (
+      ) : alerts.length === 0 ? (
         <div
           className="p-5 text-center small text-secondary rounded-3 border"
           style={{ borderColor: '#ede9fe', backgroundColor: '#ffffff' }}
         >
-          Không có cảnh báo đang mở. Tồn kho tất cả các mặt hàng đang trên ngưỡng an toàn.
+          Không có cảnh báo đang mở khớp bộ lọc.
         </div>
       ) : (
         <div className="d-flex flex-column gap-3">
-          {list.map((a) => {
+          {alerts.map((a) => {
             const levelValue: AlertLevel = a.alertLevel === 'CRITICAL' ? 'CRITICAL' : 'WARNING';
             return (
               <div
@@ -135,7 +162,7 @@ export default function AdminAlertsPage() {
 
                 <div className="d-flex flex-wrap gap-2">
                   <Link
-                    href="/admin/inventory"
+                    href={isStaff ? '/staff/inventory' : '/admin/inventory'}
                     className="btn btn-gradient-purple small d-inline-flex align-items-center gap-1"
                     style={{
                       minHeight: '40px',
@@ -143,12 +170,12 @@ export default function AdminAlertsPage() {
                       fontSize: '0.85rem',
                     }}
                   >
-                    <span>Nhập thêm hàng</span>
+                    <span>{isStaff ? 'Xem tồn kho' : 'Nhập thêm hàng'}</span>
                     <ArrowRight size={14} />
                   </Link>
                   <button
                     type="button"
-                    disabled={resolvingId === a.id}
+                    disabled={resolvingId !== null}
                     onClick={() => void handleResolve(a.id, a.productSku)}
                     className="btn btn-outline-secondary small"
                     style={{ minHeight: '40px', fontSize: '0.85rem' }}
@@ -160,6 +187,30 @@ export default function AdminAlertsPage() {
             );
           })}
         </div>
+      )}
+
+      {!loading && !error && total > 0 && (
+        <nav aria-label="Phân trang cảnh báo" className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3 small text-secondary">
+          <span>{total} cảnh báo · Trang {page}/{totalPages}</span>
+          <div className="d-flex gap-2">
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={page <= 1}
+              onClick={() => setFilters({ ...filters, page: page - 1 })}
+            >
+              Trang trước
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={page >= totalPages}
+              onClick={() => setFilters({ ...filters, page: page + 1 })}
+            >
+              Trang sau
+            </button>
+          </div>
+        </nav>
       )}
     </div>
   );

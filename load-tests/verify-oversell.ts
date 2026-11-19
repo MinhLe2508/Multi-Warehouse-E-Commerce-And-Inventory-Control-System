@@ -1,273 +1,125 @@
-/**
- * VERIFY OVERSELL & GENERATE NFR REPORT (Task 32: NFR-04.1 & NFR-01)
- *
- * Chức năng:
- * 1. Đọc dữ liệu trực tiếp từ PostgreSQL thông qua Prisma.
- * 2. Đối soát dữ liệu tồn kho `inventory` (stock, reserved_stock, available_stock).
- * 3. Kiểm tra số lượng đơn hàng thực tế được tạo và trạng thái.
- * 4. Kiểm tra các bản ghi giữ chỗ `stock_reservations` (trạng thái HOLDING, quantity).
- * 5. Xác nhận không có hiện tượng oversell (0 oversell, không có tồn kho âm).
- * 6. Đối chiếu chỉ số NFR-01 (Độ trễ phản hồi API) và NFR-04.1 (0 oversell).
- * 7. Xuất báo cáo markdown hoàn chỉnh vào `backend/reports/NFR-04.1-NFR-01-OVERSELL-REPORT.md`.
- */
-
-import dotenv from "dotenv";
-import path from "node:path";
-import fs from "node:fs";
-
-const backendNodeModules = path.resolve(__dirname, "../backend/node_modules");
-if (fs.existsSync(backendNodeModules)) {
-  module.paths.unshift(backendNodeModules);
-  if (require.main) {
-    require.main.paths.unshift(backendNodeModules);
-  }
-}
-
-const envCandidates = [
-  path.resolve(process.cwd(), "../.env"),
-  path.resolve(process.cwd(), ".env"),
-  path.resolve(__dirname, "../../../../.env"),
-  path.resolve(__dirname, "../../../.env"),
-];
-for (const envPath of envCandidates) {
-  if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath });
-    break;
-  }
-}
-
-(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (
-  this: bigint,
-) {
-  return this.toString();
-};
-
-import { NestFactory } from "@nestjs/core";
-import { AppModule } from "../backend/src/app.module";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { parseArgs } from "node:util";
+import { NestFactory } from "../backend/test/load-test/dependencies";
+import { PrismaModule } from "../backend/src/prisma/prisma.module";
 import { PrismaService } from "../backend/src/prisma/prisma.service";
 import {
+  loadEnvironment,
+  OUTPUT_DIR,
+  readLoadFixture,
+  summaryPath,
+} from "./load-test-fixture";
+import {
   evaluateOversell,
-  type MetricsSummaryPayload,
   type DatabaseState,
+  type LoadTestRunner,
+  type MetricsSummaryPayload,
 } from "./oversell-verifier";
 
-interface TestDataPayload {
-  runId?: string;
-  productId: string;
-  productSku: string;
-  productName: string;
-  initialStock: number;
-  totalVUs: number;
-}
-
-export async function verifyOversell() {
-  console.log("====================================================");
-  console.log("🔍 [TASK 32] ĐỐI SOÁT CƠ SỞ DỮ LIỆU & KIỂM TRA NFR-04.1");
-  console.log("====================================================\n");
-
-  // Đọc metadata từ test-data.json
-  const candidatePaths = [
-    path.resolve(__dirname, "test-data.json"),
-    path.resolve(__dirname, "../backend/test/load-test/test-data.json"),
-  ];
-  let testDataPath = "";
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) {
-      testDataPath = p;
-      break;
-    }
-  }
-
-  if (!testDataPath) {
-    throw new Error(
-      "Không tìm thấy file test-data.json! Hãy chạy setup-test-data.ts trước.",
-    );
-  }
-
-  const testData = JSON.parse(
-    fs.readFileSync(testDataPath, "utf-8"),
-  ) as TestDataPayload;
-  const { productId, initialStock, totalVUs } = testData;
-
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ["error", "warn"],
-  });
-  const prisma = app.get(PrismaService);
-
+export async function verifyOversell(): Promise<void> {
   try {
-    // 1. Kiểm tra bảng inventory
-    const inventory = await prisma.inventory.findFirst({
-      where: { productId },
-      include: { warehouse: true },
+    loadEnvironment();
+    const { values } = parseArgs({
+      options: { runner: { type: "string", default: "k6" } },
     });
-
-    if (!inventory) {
-      throw new Error(
-        `Không tìm thấy dòng inventory nào cho productId ${productId}`,
-      );
+    if (values.runner !== "k6" && values.runner !== "node-concurrency-smoke") {
+      throw new Error("Runner hỗ trợ: k6 hoặc node-concurrency-smoke.");
     }
-
-    const currentStock = inventory.stock;
-    const currentReservedStock = inventory.reservedStock;
-    const availableStock = currentStock - currentReservedStock;
-
-    console.log("1. TRẠNG THÁI TỒN KHO HIỆN TẠI TRONG DATABASE:");
-    console.log(`   - Tổng tồn kho (stock): ${currentStock}`);
-    console.log(`   - Đang giữ chỗ (reserved_stock): ${currentReservedStock}`);
-    console.log(
-      `   - Tồn khả dụng (available_stock = stock - reserved_stock): ${availableStock}`,
-    );
-
-    // 2. Kiểm tra các OrderItem liên kết với sản phẩm này
-    const orderItems = await prisma.orderItem.findMany({
-      where: { productId },
-      include: {
-        order: {
-          select: {
-            id: true,
-            orderCode: true,
-            userId: true,
-            status: true,
-            grandTotal: true,
-            createdAt: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    });
-
-    console.log("\n2. SỐ LƯỢNG ĐƠN HÀNG ĐƯỢC TẠO THÀNH CÔNG:");
-    console.log(`   - Tổng số order_items: ${orderItems.length}`);
-    const distinctOrders = [
-      ...new Set(orderItems.map((item) => item.order.id)),
-    ];
-    console.log(
-      `   - Tổng số đơn hàng (distinct orders): ${distinctOrders.length}`,
-    );
-
-    const totalSoldQuantity = orderItems.reduce(
-      (sum, item) => sum + item.quantity,
-      0,
-    );
-    console.log(
-      `   - Tổng số lượng sản phẩm được đặt mua: ${totalSoldQuantity}`,
-    );
-
-    // 3. Kiểm tra bảng stock_reservations
-    const orderItemIds = orderItems.map((item) => item.id);
-    const reservations = await prisma.stockReservation.findMany({
-      where: { orderItemId: { in: orderItemIds } },
-    });
-
-    const holdingReservations = reservations.filter(
-      (r) => r.status === "HOLDING",
-    );
-    const totalHoldingQuantity = holdingReservations.reduce(
-      (sum, r) => sum + r.quantity,
-      0,
-    );
-
-    console.log("\n3. BẢNG STOCK_RESERVATIONS:");
-    console.log(`   - Tổng số bản ghi giữ chỗ: ${reservations.length}`);
-    console.log(
-      `   - Bản ghi trạng thái HOLDING: ${holdingReservations.length}`,
-    );
-    console.log(
-      `   - Tổng số lượng giữ chỗ (quantity): ${totalHoldingQuantity}`,
-    );
-
-    // 4. Thu thập dbData và metricsSummary để đánh giá chuẩn xác
-    const dbData: DatabaseState = {
-      currentStock,
-      currentReservedStock,
-      availableStock,
-      distinctOrdersCount: distinctOrders.length,
-      totalSoldQuantity,
-      holdingReservationsCount: holdingReservations.length,
-      totalHoldingQuantity,
-    };
-
-    // Đọc số liệu k6/concurrency metrics nếu có
-    let metricsSummary: MetricsSummaryPayload | null = null;
-
-    const summaryCandidates = [
-      path.resolve(__dirname, "load-test-summary.json"),
-      path.resolve(
-        __dirname,
-        "../backend/test/load-test/load-test-summary.json",
-      ),
-    ];
-    for (const sp of summaryCandidates) {
-      if (fs.existsSync(sp)) {
-        try {
-          metricsSummary = JSON.parse(
-            fs.readFileSync(sp, "utf-8"),
-          ) as MetricsSummaryPayload;
-          break;
-        } catch {
-          // ignore parse error
-        }
+    const runner: LoadTestRunner = values.runner;
+    const fixture = readLoadFixture();
+    const path = summaryPath(runner);
+    let metrics: MetricsSummaryPayload | null = null;
+    if (existsSync(path)) {
+      try {
+        metrics = JSON.parse(
+          readFileSync(path, "utf8"),
+        ) as MetricsSummaryPayload;
+      } catch {
+        console.error(`Tệp kết quả đo không phải JSON hợp lệ: ${path}`);
       }
     }
 
-    // 5. Đánh giá tính toàn vẹn (NFR-04.1) và độ trễ (NFR-01) qua oversell-verifier
-    const evaluation = evaluateOversell({
-      testData: {
-        productId,
-        productSku: testData.productSku,
-        productName: testData.productName,
-        initialStock,
-        totalVUs,
-        runId: testData.runId,
-      },
-      dbData,
-      metricsSummary,
+    const app = await NestFactory.createApplicationContext(PrismaModule, {
+      logger: ["error", "warn"],
     });
+    try {
+      const prisma = app.get(PrismaService);
+      const inventoryId = BigInt(fixture.inventoryId);
+      const dbData = await prisma.$transaction(
+        async (tx): Promise<DatabaseState | null> => {
+          const inventory = await tx.inventory.findFirst({
+            where: {
+              id: inventoryId,
+              productId: fixture.productId,
+              warehouseId: fixture.warehouseId,
+            },
+            select: { stock: true, reservedStock: true, availableStock: true },
+          });
+          if (!inventory) return null;
 
-    console.log("\n4. ĐÁNH GIÁ CÁC TIÊU CHÍ NFR-04.1 (ZERO OVERSELL):");
-    for (const chk of evaluation.checks) {
-      console.log(
-        `   [${chk.status === "PASS" ? "PASS ✅" : "FAIL ❌"}] ${chk.name}: ${chk.observed} (Kỳ vọng: ${chk.expected})`,
+          const items = await tx.orderItem.findMany({
+            where: {
+              inventoryId,
+              productId: fixture.productId,
+              warehouseId: fixture.warehouseId,
+            },
+            select: {
+              quantity: true,
+              order: { select: { id: true, status: true } },
+            },
+          });
+          const holdings = await tx.stockReservation.aggregate({
+            where: { inventoryId, status: "HOLDING" },
+            _count: { id: true },
+            _sum: { quantity: true },
+          });
+          return {
+            currentStock: inventory.stock,
+            currentReservedStock: inventory.reservedStock,
+            availableStock: inventory.availableStock,
+            distinctOrdersCount: new Set(items.map(({ order }) => order.id))
+              .size,
+            pendingOrdersCount: new Set(
+              items
+                .filter(({ order }) => order.status === "PENDING_PAYMENT")
+                .map(({ order }) => order.id),
+            ).size,
+            totalSoldQuantity: items.reduce(
+              (sum, item) => sum + item.quantity,
+              0,
+            ),
+            holdingReservationsCount: holdings._count.id,
+            totalHoldingQuantity: holdings._sum.quantity ?? 0,
+          };
+        },
+        { isolationLevel: "RepeatableRead" },
       );
-    }
 
-    // 6. Xuất báo cáo Markdown NFR được sinh động (không bao giờ hardcode PASS khi có lỗi)
-    const reportDir = path.resolve(__dirname, "../backend/reports");
-    if (!fs.existsSync(reportDir)) {
-      fs.mkdirSync(reportDir, { recursive: true });
-    }
-
-    const reportPath = path.join(
-      reportDir,
-      "NFR-04.1-NFR-01-OVERSELL-REPORT.md",
-    );
-
-    fs.writeFileSync(reportPath, evaluation.markdownReport, "utf-8");
-    console.log(`\n📄 ĐÃ XUẤT BÁO CÁO KỸ THUẬT: ${reportPath}`);
-
-    if (evaluation.verdict === "PASS") {
-      console.log("\n🎉 ====================================================");
-      console.log("🎉 XÁC NHẬN NFR-04.1 (0 OVERSELL) THÀNH CÔNG 100%!");
-      console.log("🎉 ====================================================\n");
-    } else if (evaluation.verdict === "INVALID") {
-      console.error(
-        "\n⚠️ CẢNH BÁO: DỮ LIỆU KIỂM THỬ KHÔNG HỢP LỆ HOẶC THIẾU DỮ LIỆU HẬU KIỂM!",
-      );
-      process.exit(evaluation.exitCode);
-    } else {
-      console.error(
-        "\n❌ CẢNH BÁO: MỘT HOẶC NHIỀU TIÊU CHÍ NFR-04.1 CHƯA ĐẠT!",
-      );
-      process.exit(evaluation.exitCode);
+      const result = evaluateOversell({
+        testData: fixture,
+        dbData,
+        metricsSummary: metrics,
+        expectedRunner: runner,
+      });
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      const report = join(OUTPUT_DIR, `${runner}-report.md`);
+      writeFileSync(report, result.markdownReport, "utf8");
+      for (const check of result.checks) {
+        console.log(
+          `[${check.status}] ${check.name} · đo ${check.observed} · kỳ vọng ${check.expected}`,
+        );
+      }
+      console.log(result.summaryMessage);
+      console.log(report);
+      if (result.exitCode) process.exitCode = result.exitCode;
+    } finally {
+      await app.close();
     }
   } catch (error) {
-    console.error("❌ Lỗi khi đối soát dữ liệu:", error);
-    process.exit(1);
-  } finally {
-    await app.close();
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
   }
 }
 
-if (require.main === module) {
-  void verifyOversell();
-}
+if (require.main === module) void verifyOversell();

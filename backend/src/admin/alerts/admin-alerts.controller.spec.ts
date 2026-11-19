@@ -43,6 +43,7 @@ function createNestedAlertView(): StockAlertView {
 describe('AdminAlertsController (F205, F206, F207)', () => {
   let controller: AdminAlertsController;
   let inventoryService: { findAlerts: jest.Mock };
+  let changes: { publishInventory: jest.Mock };
   let txStockAlert: {
     updateMany: jest.Mock;
     findUnique: jest.Mock;
@@ -73,10 +74,12 @@ describe('AdminAlertsController (F205, F206, F207)', () => {
       stockAlert: txStockAlert,
       $transaction: jest.fn((cb: (tx: typeof prisma) => unknown) => cb(prisma)),
     };
+    changes = { publishInventory: jest.fn().mockResolvedValue(undefined) };
 
     controller = new AdminAlertsController(
       inventoryService as never,
       prisma as never,
+      changes as never,
     );
   });
 
@@ -96,13 +99,20 @@ describe('AdminAlertsController (F205, F206, F207)', () => {
 
   it('findAll chuẩn hóa StockAlertView dạng nested từ InventoryService sang cả trường phẳng (productSku, productName, warehouseCode...) cho Frontend', async () => {
     const res = await controller.findAll(
-      { status: 'OPEN', warehouseId: WAREHOUSE_UUID, limit: 20, offset: 0 },
+      {
+        status: 'OPEN',
+        alertLevel: 'WARNING',
+        warehouseId: WAREHOUSE_UUID,
+        limit: 20,
+        offset: 0,
+      },
       UserRole.ADMIN,
     );
 
     expect(inventoryService.findAlerts).toHaveBeenCalledWith(
       {
         status: 'OPEN',
+        alertLevel: 'WARNING',
         warehouseId: WAREHOUSE_UUID,
         limit: 20,
         offset: 0,
@@ -189,6 +199,7 @@ describe('AdminAlertsController (F205, F206, F207)', () => {
     txStockAlert.updateMany.mockResolvedValueOnce({ count: 1 });
     txStockAlert.findUnique.mockResolvedValueOnce({
       id: BigInt(15),
+      inventoryId: 8n,
       status: AlertStatus.RESOLVED,
       resolvedAt: firstResolvedAt,
       resolvedBy: ADMIN_ID,
@@ -214,6 +225,7 @@ describe('AdminAlertsController (F205, F206, F207)', () => {
     txStockAlert.updateMany.mockResolvedValueOnce({ count: 0 });
     txStockAlert.findUnique.mockResolvedValueOnce({
       id: BigInt(15),
+      inventoryId: 8n,
       status: AlertStatus.RESOLVED,
       resolvedAt: firstResolvedAt,
       resolvedBy: ADMIN_ID,
@@ -228,5 +240,7 @@ describe('AdminAlertsController (F205, F206, F207)', () => {
       alreadyResolved: true,
     });
     expect(txStockAlert.update).not.toHaveBeenCalled();
+    expect(changes.publishInventory).toHaveBeenCalledTimes(1);
+    expect(changes.publishInventory).toHaveBeenCalledWith([8n]);
   });
 });

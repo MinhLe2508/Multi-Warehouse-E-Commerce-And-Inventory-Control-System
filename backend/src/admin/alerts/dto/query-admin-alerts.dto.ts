@@ -10,7 +10,9 @@ import {
   isUUID,
 } from 'class-validator';
 import {
+  ALERT_LEVEL_FILTERS,
   ALERT_STATUS_FILTERS,
+  type AlertLevelFilter,
   type AlertStatusFilter,
 } from '../../../inventory/dto/query-inventory.dto';
 
@@ -30,6 +32,15 @@ export class QueryAdminAlertsDto {
     message: 'Status chỉ nhận OPEN, RESOLVED hoặc ALL.',
   })
   status?: AlertStatusFilter = 'OPEN';
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() || undefined : value,
+  )
+  @IsIn(ALERT_LEVEL_FILTERS, {
+    message: 'Mức cảnh báo chỉ nhận WARNING hoặc CRITICAL.',
+  })
+  alertLevel?: AlertLevelFilter;
 
   @IsOptional()
   @Transform(emptyToUndefined)
@@ -64,6 +75,7 @@ export function normalizeAdminAlertsQuery(
   raw: Partial<Record<keyof QueryAdminAlertsDto, unknown>> = {},
 ): {
   status: AlertStatusFilter;
+  alertLevel?: AlertLevelFilter;
   warehouseId?: string;
   limit: number;
   offset: number;
@@ -83,6 +95,22 @@ export function normalizeAdminAlertsQuery(
     }
     if (normalized !== '') {
       status = normalized as AlertStatusFilter;
+    }
+  }
+
+  let alertLevel: AlertLevelFilter | undefined;
+  if (raw.alertLevel !== undefined && raw.alertLevel !== null) {
+    const candidate =
+      typeof raw.alertLevel === 'string'
+        ? raw.alertLevel.trim().toUpperCase()
+        : raw.alertLevel;
+    if (candidate !== '') {
+      if (candidate !== 'WARNING' && candidate !== 'CRITICAL') {
+        throw new BadRequestException(
+          'Mức cảnh báo chỉ nhận WARNING hoặc CRITICAL.',
+        );
+      }
+      alertLevel = candidate;
     }
   }
 
@@ -153,5 +181,11 @@ export function normalizeAdminAlertsQuery(
     offset = parsed;
   }
 
-  return { status, warehouseId, limit, offset };
+  return {
+    status,
+    warehouseId,
+    ...(alertLevel ? { alertLevel } : {}),
+    limit,
+    offset,
+  };
 }

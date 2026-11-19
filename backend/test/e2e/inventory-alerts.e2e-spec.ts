@@ -11,6 +11,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { AlertStatus, NotificationType, UserRole } from '@prisma/client';
 import { AdminAlertsController } from '../../src/admin/alerts/admin-alerts.controller';
+import { InventoryChangeEmitter } from '../../src/inventory/inventory-change-emitter.service';
 import { HttpExceptionFilter } from '../../src/core/filters/http-exception.filter';
 import { JwtAuthGuard } from '../../src/core/guards/jwt-auth.guard';
 import { PasswordChangedGuard } from '../../src/core/guards/password-changed.guard';
@@ -163,6 +164,9 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
     emitLowStockAlert: jest.fn(),
     emitInventoryChanged: jest.fn(),
   };
+  const changes = {
+    publishInventory: jest.fn().mockResolvedValue(undefined),
+  };
 
   const pubsubMock = {
     onLowStock: jest.fn((listener: (event: LowStockEvent) => void) => {
@@ -212,6 +216,7 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
     findAlerts: jest.fn(
       async (query: {
         status?: 'OPEN' | 'RESOLVED';
+        alertLevel?: 'WARNING' | 'CRITICAL';
         warehouseId?: string;
         limit?: number;
         offset?: number;
@@ -220,6 +225,11 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
         const filtered = alertsStore.filter((a) => {
           if (query.status && a.status !== query.status) return false;
           if (query.warehouseId && a.warehouseId !== query.warehouseId)
+            return false;
+          if (
+            query.alertLevel &&
+            toAlertView(a).alertLevel !== query.alertLevel
+          )
             return false;
           return true;
         });
@@ -324,6 +334,7 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
         if (!found) return null;
         return {
           id: found.id,
+          inventoryId: BigInt(found.inventoryId),
           status: found.status,
           resolvedAt: found.resolvedAt,
           resolvedBy: found.resolvedBy,
@@ -402,6 +413,7 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         { provide: PrismaService, useValue: prismaMock },
         { provide: InventoryService, useValue: inventoryServiceMock },
+        { provide: InventoryChangeEmitter, useValue: changes },
         { provide: InventoryPubSubService, useValue: pubsubMock },
         { provide: NotificationsGateway, useValue: gatewayMock },
       ],
@@ -494,6 +506,30 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
       statusCode: 400,
       code: 'VALIDATION_ERROR',
     });
+  });
+
+  it('chuẩn hóa mức cảnh báo trước khi gọi truy vấn phân trang', async () => {
+    const result = await invokeHttp(app, {
+      method: 'GET',
+      url: `/admin/alerts?warehouseId=${warehouseId}&alertLevel=critical&limit=1&offset=2`,
+      headers: { Authorization: 'Bearer admin-token' },
+    });
+    expect(result.status).toBe(200);
+    expect(inventoryServiceMock.findAlerts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        warehouseId,
+        alertLevel: 'CRITICAL',
+        limit: 1,
+        offset: 2,
+      }),
+      UserRole.ADMIN,
+    );
+    const invalid = await invokeHttp(app, {
+      method: 'GET',
+      url: '/admin/alerts?alertLevel=UNKNOWN',
+      headers: { Authorization: 'Bearer admin-token' },
+    });
+    expect(invalid.status).toBe(400);
   });
 
   it('2. Luồng E2E hoàn chỉnh: Reserve chạm ngưỡng -> Alert WARNING -> Chống trùng (Dedup) -> Nâng cấp CRITICAL -> Admin xem & Resolve Idempotent', async () => {
@@ -621,5 +657,6 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
       resolvedBy: adminUserId,
       alreadyResolved: true,
     });
+    expect(changes.publishInventory).toHaveBeenCalledTimes(1);
   });
 });

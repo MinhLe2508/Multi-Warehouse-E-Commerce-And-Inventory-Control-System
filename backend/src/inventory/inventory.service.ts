@@ -286,9 +286,17 @@ export class InventoryService {
     const offset = query.offset ?? 0;
     const status = query.status ?? 'OPEN';
     const warehouseId = query.warehouseId ?? null;
+    const alertLevel = query.alertLevel ?? null;
     const isAdmin = role === UserRole.ADMIN;
-
-    const rows = await this.prisma.$queryRaw<AlertRow[]>`
+    const filters = Prisma.sql`
+      WHERE (${status}::text = 'ALL' OR a."status"::text = ${status}::text)
+        AND (${warehouseId}::uuid IS NULL OR i."warehouse_id" = ${warehouseId}::uuid)
+        AND (${alertLevel}::"AlertLevel" IS NULL OR a."alert_level" = ${alertLevel}::"AlertLevel")
+        AND (${isAdmin}::boolean OR w."is_active")
+    `;
+    const [rows, countRows] = await this.prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<AlertRow[]>`
       SELECT a."id"::text AS "id",
              a."inventory_id"::text AS "inventoryId",
              a."alert_level"::text AS "alertLevel",
@@ -311,9 +319,7 @@ export class InventoryService {
         JOIN "inventory" i ON i."id" = a."inventory_id"
         JOIN "products" p ON p."id" = i."product_id"
         JOIN "warehouses" w ON w."id" = i."warehouse_id"
-       WHERE (${status}::text = 'ALL' OR a."status"::text = ${status}::text)
-         AND (${warehouseId}::uuid IS NULL OR i."warehouse_id" = ${warehouseId}::uuid)
-         AND (${isAdmin}::boolean OR w."is_active")
+       ${filters}
        ORDER BY (a."status" = 'OPEN'::"AlertStatus") DESC,
                 a."alert_level" DESC,
                 a."triggered_at" DESC,
@@ -321,15 +327,17 @@ export class InventoryService {
        LIMIT ${limit}::integer OFFSET ${offset}::integer
     `;
 
-    const countRows = await this.prisma.$queryRaw<Array<{ total: number }>>`
+        const countRows = await tx.$queryRaw<Array<{ total: number }>>`
       SELECT COUNT(*)::integer AS "total"
         FROM "stock_alerts" a
         JOIN "inventory" i ON i."id" = a."inventory_id"
         JOIN "warehouses" w ON w."id" = i."warehouse_id"
-       WHERE (${status}::text = 'ALL' OR a."status"::text = ${status}::text)
-         AND (${warehouseId}::uuid IS NULL OR i."warehouse_id" = ${warehouseId}::uuid)
-         AND (${isAdmin}::boolean OR w."is_active")
+       ${filters}
     `;
+        return [rows, countRows] as const;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
     return {
       items: rows.map((row) => this.toAlertView(row)),

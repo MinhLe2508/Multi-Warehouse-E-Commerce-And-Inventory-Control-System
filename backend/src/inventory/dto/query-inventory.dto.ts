@@ -32,6 +32,8 @@ const INT4_MAX = 2147483647;
 // Danh sách các trạng thái cảnh báo được phép lọc ("ALL" = không lọc theo trạng thái).
 export const ALERT_STATUS_FILTERS = ['OPEN', 'RESOLVED', 'ALL'] as const;
 export type AlertStatusFilter = (typeof ALERT_STATUS_FILTERS)[number];
+export const ALERT_LEVEL_FILTERS = ['WARNING', 'CRITICAL'] as const;
+export type AlertLevelFilter = (typeof ALERT_LEVEL_FILTERS)[number];
 
 // Chuỗi rỗng -> undefined (coi như không truyền); giá trị khác giữ nguyên.
 const emptyToUndefined = ({ value }: { value: unknown }): unknown =>
@@ -100,6 +102,15 @@ export class QueryStockAlertsDto {
     message: 'Status chỉ nhận OPEN, RESOLVED hoặc ALL.',
   })
   status?: AlertStatusFilter = 'OPEN';
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() || undefined : value,
+  )
+  @IsIn(ALERT_LEVEL_FILTERS, {
+    message: 'Mức cảnh báo chỉ nhận WARNING hoặc CRITICAL.',
+  })
+  alertLevel?: AlertLevelFilter;
 
   // Chỉ lấy cảnh báo của MỘT kho.
   @IsOptional()

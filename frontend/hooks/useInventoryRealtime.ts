@@ -69,8 +69,6 @@ export function useInventoryRealtime(options: UseInventoryRealtimeOptions = {}) 
     onSyncRef.current = onReconnectSync;
   }, [onLowStockAlert, onInventoryChanged, onReconnectSync]);
 
-  // Khử trùng lặp theo alertId hoặc (inventoryId + availableStock + timestamp phút)
-  const seenAlertKeysRef = useRef<Set<string>>(new Set());
   const socketRef = useRef<Socket | null>(null);
   const retryAttemptRef = useRef<number>(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,6 +92,7 @@ export function useInventoryRealtime(options: UseInventoryRealtimeOptions = {}) 
     }
 
     let disposed = false;
+    const lastAlertPayload = new Map<string, string>();
 
     const connectSocket = (token: string) => {
       if (disposed) return;
@@ -163,15 +162,19 @@ export function useInventoryRealtime(options: UseInventoryRealtimeOptions = {}) 
 
       socket.on('low_stock_alert', (payload: LowStockRealtimeEvent) => {
         if (disposed || !payload || !payload.inventoryId) return;
-        const dedupKey = payload.alertId
+        const alertKey = payload.alertId
           ? `alert:${payload.alertId}`
-          : `inv:${payload.inventoryId}:${payload.availableStock}:${payload.triggeredAt ?? ''}`;
-
-        if (seenAlertKeysRef.current.has(dedupKey)) return;
-        seenAlertKeysRef.current.add(dedupKey);
-        if (seenAlertKeysRef.current.size > 500) {
-          const oldest = seenAlertKeysRef.current.values().next().value;
-          if (oldest) seenAlertKeysRef.current.delete(oldest);
+          : `inv:${payload.inventoryId}`;
+        const signature = JSON.stringify([
+          payload.alertLevel, payload.availableStock, payload.threshold, payload.triggeredAt,
+          payload.productName, payload.warehouseCode,
+        ]);
+        if (lastAlertPayload.get(alertKey) === signature) return;
+        lastAlertPayload.delete(alertKey);
+        lastAlertPayload.set(alertKey, signature);
+        if (lastAlertPayload.size > 500) {
+          const oldest = lastAlertPayload.keys().next().value;
+          if (oldest) lastAlertPayload.delete(oldest);
         }
 
         setLastEventAt(new Date().toISOString());

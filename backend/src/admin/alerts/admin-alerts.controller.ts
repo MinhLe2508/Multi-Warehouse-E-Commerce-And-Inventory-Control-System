@@ -16,6 +16,7 @@ import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { PasswordChangedGuard } from '../../core/guards/password-changed.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
+import { InventoryChangeEmitter } from '../../inventory/inventory-change-emitter.service';
 import {
   InventoryService,
   type StockAlertView,
@@ -33,6 +34,7 @@ export class AdminAlertsController {
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly prisma: PrismaService,
+    private readonly changes: InventoryChangeEmitter,
   ) {}
 
   @Get()
@@ -74,6 +76,7 @@ export class AdminAlertsController {
         where: { id },
         select: {
           id: true,
+          inventoryId: true,
           status: true,
           resolvedAt: true,
           resolvedBy: true,
@@ -84,18 +87,23 @@ export class AdminAlertsController {
       }
 
       return {
-        id: current.id.toString(),
-        status: current.status,
-        resolvedAt: current.resolvedAt,
-        resolvedBy: current.resolvedBy,
-        alreadyResolved: updateResult.count === 0,
+        inventoryId: current.inventoryId,
+        response: {
+          id: current.id.toString(),
+          status: current.status,
+          resolvedAt: current.resolvedAt,
+          resolvedBy: current.resolvedBy,
+          alreadyResolved: updateResult.count === 0,
+        },
       };
     };
 
-    if (typeof this.prisma.$transaction === 'function') {
-      return this.prisma.$transaction((tx) => executeResolve(tx));
+    const { inventoryId, response } =
+      await this.prisma.$transaction(executeResolve);
+    if (!response.alreadyResolved) {
+      await this.changes.publishInventory([inventoryId]);
     }
-    return executeResolve(this.prisma);
+    return response;
   }
 
   private normalizeAlertItem(item: StockAlertView) {
