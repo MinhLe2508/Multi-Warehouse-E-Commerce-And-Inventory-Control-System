@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Multi-Warehouse Admin API
-  version: 0.2.0
+  version: 0.3.0
   description: API quản lý đơn hàng, tồn kho, cảnh báo và báo cáo.
 servers:
   - url: http://localhost:3001
@@ -12,6 +12,8 @@ tags:
   - name: AdminInventory
   - name: AdminAlerts
   - name: AdminAnalytics
+  - name: AdminProducts
+  - name: Warehouses
 
 paths:
   /admin/orders:
@@ -302,6 +304,204 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Unprocessable'}
 
+  /admin/products:
+    get:
+      operationId: adminListProducts
+      tags: [AdminProducts]
+      summary: Tìm và phân trang danh sách sản phẩm
+      description: ADMIN và WAREHOUSE_STAFF. Giá vốn chỉ có trong phản hồi của ADMIN.
+      parameters:
+        - {name: search, in: query, schema: {type: string, maxLength: 200}}
+        - {name: category, in: query, schema: {type: string, maxLength: 160}, description: UUID hoặc slug danh mục.}
+        - {name: sort, in: query, schema: {type: string, enum: [default, price-asc, price-desc], default: default}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, maximum: 1000000, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 12}}
+      responses:
+        '200':
+          description: Trang sản phẩm theo bộ lọc.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, page, pageSize, totalPages]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ManagedProduct'}}
+                  total: {type: integer, minimum: 0}
+                  page: {type: integer, minimum: 1}
+                  pageSize: {type: integer, minimum: 1}
+                  totalPages: {type: integer, minimum: 0}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: adminCreateProduct
+      tags: [AdminProducts]
+      summary: Tạo sản phẩm, chỉ ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ProductWrite'
+                - {type: object, required: [sku, name, slug, categoryId, basePrice, costPrice]}
+      responses:
+        '201': {$ref: '#/components/responses/Product'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/products/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      operationId: adminGetProduct
+      tags: [AdminProducts]
+      summary: Đọc sản phẩm, chỉ ADMIN thấy giá vốn
+      responses:
+        '200': {$ref: '#/components/responses/Product'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: adminUpdateProduct
+      tags: [AdminProducts]
+      summary: Cập nhật sản phẩm hoặc trạng thái mở bán, chỉ ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductWrite'}
+      responses:
+        '200': {$ref: '#/components/responses/Product'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      operationId: adminDeleteProduct
+      tags: [AdminProducts]
+      summary: Xóa sản phẩm, chỉ ADMIN
+      description: Nếu sản phẩm đã có đơn hàng hoặc lịch sử tồn kho, chuyển trạng thái ngừng bán bằng PATCH.
+      responses:
+        '204': {description: Đã xóa sản phẩm.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /warehouses:
+    get:
+      operationId: listWarehouses
+      tags: [Warehouses]
+      summary: Xem danh sách kho
+      parameters:
+        - {name: includeInactive, in: query, schema: {type: boolean, default: false}, description: Chỉ ADMIN được đặt true.}
+        - {name: region, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Danh sách kho trong phạm vi được phép.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ManagedWarehouse'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createWarehouse
+      tags: [Warehouses]
+      summary: Tạo kho đang hoạt động, chỉ ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WarehouseFields'
+                - type: object
+                  required: [code, name, region]
+                  properties:
+                    code: {type: string, maxLength: 32}
+      responses:
+        '201': {$ref: '#/components/responses/Warehouse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /warehouses/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      operationId: getWarehouse
+      tags: [Warehouses]
+      summary: Xem thông tin một kho
+      responses:
+        '200': {$ref: '#/components/responses/Warehouse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      operationId: updateWarehouse
+      tags: [Warehouses]
+      summary: Sửa thông tin hoặc kích hoạt lại kho, chỉ ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WarehouseFields'
+                - type: object
+                  properties:
+                    isActive: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/Warehouse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      operationId: deactivateWarehouse
+      tags: [Warehouses]
+      summary: Ngừng hoạt động kho, chỉ ADMIN
+      responses:
+        '204': {description: Kho đã ngừng hoạt động.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /inventory:
+    post:
+      operationId: createInventoryRow
+      tags: [AdminInventory]
+      summary: Tạo dòng tồn cho một cặp sản phẩm và kho, chỉ ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [productId, warehouseId]
+              properties:
+                productId: {type: string, format: uuid}
+                warehouseId: {type: string, format: uuid}
+                initialStock: {type: integer, minimum: 0, maximum: 2147483647, default: 0}
+                threshold: {type: integer, nullable: true, minimum: 0, maximum: 2147483647}
+                note: {type: string, maxLength: 500}
+      responses:
+        '201': {$ref: '#/components/responses/Inventory'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
@@ -352,7 +552,74 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/InventoryRow'}
+
+    Product:
+      description: Dữ liệu sản phẩm từ PostgreSQL.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagedProduct'}
+    Warehouse:
+      description: Thông tin kho hiện tại.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagedWarehouse'}
   schemas:
+    ProductWrite:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        sku: {type: string, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$'}
+        name: {type: string, minLength: 1, maxLength: 255}
+        slug: {type: string, maxLength: 280, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'}
+        categoryId: {type: string, format: uuid}
+        basePrice: {type: string, pattern: '^[0-9]{1,12}([.][0-9]{1,2})?$'}
+        costPrice: {type: string, pattern: '^[0-9]{1,12}([.][0-9]{1,2})?$'}
+        discountPercent: {type: string, pattern: '^(?:[0-9]{1,2}(?:[.][0-9]{1,2})?|100(?:[.]0{1,2})?)$'}
+        imageUrl: {type: string, nullable: true, maxLength: 500}
+        description: {type: string, nullable: true, maxLength: 5000}
+        isActive: {type: boolean}
+    ManagedProduct:
+      type: object
+      required: [id, sku, name, slug, categoryId, category, basePrice, discountPercent, imageUrl, description, isActive, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        sku: {type: string}
+        name: {type: string}
+        slug: {type: string}
+        categoryId: {type: string, format: uuid, nullable: true}
+        category:
+          type: object
+          nullable: true
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        basePrice: {type: string}
+        costPrice: {type: string, nullable: true, description: Chỉ trả cho ADMIN.}
+        discountPercent: {type: string}
+        imageUrl: {type: string, nullable: true}
+        description: {type: string, nullable: true}
+        isActive: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    WarehouseFields:
+      type: object
+      properties:
+        name: {type: string, minLength: 1, maxLength: 150}
+        region: {type: string, minLength: 1, maxLength: 100}
+        address: {type: string, nullable: true, maxLength: 500}
+        capacity: {type: integer, nullable: true, minimum: 1, maximum: 2147483647}
+        defaultLowStockThreshold: {type: integer, minimum: 0, maximum: 2147483647}
+    ManagedWarehouse:
+      allOf:
+        - $ref: '#/components/schemas/WarehouseLabel'
+        - $ref: '#/components/schemas/WarehouseFields'
+        - type: object
+          required: [isActive, createdAt, updatedAt]
+          properties:
+            isActive: {type: boolean}
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
     Money: {type: string, pattern: '^\d+\.\d{2}$', example: '100000.00'}
     BigIntId:
       type: string

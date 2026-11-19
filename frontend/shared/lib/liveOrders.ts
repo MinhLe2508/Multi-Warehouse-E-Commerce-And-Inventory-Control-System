@@ -5,6 +5,8 @@ export type Line = { productId: string; quantity: number };
 export type Destination = { shippingRecipient: string; shippingPhone: string; shippingAddress: string; shippingRegion: string };
 export interface Receipt {
   id: string; orderCode: string; grandTotal: string; status: string;
+  reservationExpiresAt: string | null;
+  cancelledReason: string | null;
   items: { id: string; productName: string; quantity: number; lineTotal: string }[];
   statusHistory: { id: string; toStatus: string; createdAt: string }[];
 }

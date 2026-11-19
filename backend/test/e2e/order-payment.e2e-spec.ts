@@ -228,6 +228,79 @@ describeDb('Order and payment with PostgreSQL', () => {
     });
   });
 
+  it('rejects concurrent reuse of one transaction reference across two orders', async () => {
+    const first = await createOrder(1).expect(201);
+    const second = await createOrder(1).expect(201);
+    const firstId = (first.body as { id: string }).id;
+    const secondId = (second.body as { id: string }).id;
+    const transactionRef = `TEST-SHARED-${randomBytes(8).toString('hex')}`;
+    const approve = (id: string) =>
+      http().post(`/payments/mock/${id}`).auth(token, bearer).send({
+        transactionRef,
+        method: 'MOCK_CARD',
+        approved: true,
+      });
+
+    const results = await Promise.all([approve(firstId), approve(secondId)]);
+    expect(results.map(({ status }) => status).sort()).toEqual([201, 409]);
+    expect(results.find(({ status }) => status === 409)?.body).toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(await db.payment.count({ where: { transactionRef } })).toBe(1);
+    expect(await inventory()).toEqual({
+      stock: 1,
+      reservedStock: 1,
+      availableStock: 0,
+    });
+  });
+
+  it('allocates across active warehouses and prefers the shipping region', async () => {
+    const { productId, userId, warehouseId } = fixture!;
+    const fallback = await db.warehouse.create({
+      data: {
+        code: `FALLBACK-${randomBytes(6).toString('hex')}`,
+        name: 'Fallback warehouse',
+        region: 'HN',
+        isActive: false,
+      },
+    });
+    try {
+      await db.$executeRaw`
+        INSERT INTO inventory (product_id, warehouse_id, stock, updated_at)
+        VALUES (${productId}::uuid, ${fallback.id}::uuid, 2, NOW())
+      `;
+      expect((await createOrder(3).expect(409)).body).toMatchObject({
+        code: 'INSUFFICIENT_STOCK',
+      });
+      await db.warehouse.update({
+        where: { id: fallback.id },
+        data: { isActive: true },
+      });
+      const created = await createOrder(3).expect(201);
+      const { id } = created.body as { id: string };
+      expect(
+        await db.orderItem.findMany({
+          where: { orderId: id },
+          select: { warehouseId: true, quantity: true },
+        }),
+      ).toEqual(
+        expect.arrayContaining([
+          { warehouseId, quantity: 2 },
+          { warehouseId: fallback.id, quantity: 1 },
+        ]),
+      );
+      expect(await db.stockReservation.count({ where: { orderId: id } })).toBe(
+        2,
+      );
+    } finally {
+      await db.$transaction([
+        db.order.deleteMany({ where: { userId } }),
+        db.inventory.deleteMany({ where: { warehouseId: fallback.id } }),
+        db.warehouse.delete({ where: { id: fallback.id } }),
+      ]);
+    }
+  });
+
   it('rejects approval after expiry without committing stock or persisting a partial payment', async () => {
     const created = await createOrder(1).expect(201);
     const { id: orderId } = created.body as { id: string };

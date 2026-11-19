@@ -89,19 +89,19 @@ const KB_DOCUMENTS_SEED_DATA: Array<{
     title: 'Phương thức thanh toán hỗ trợ',
     docType: 'policy',
     content:
-      'Hệ thống hỗ trợ 3 phương thức thanh toán: Thanh toán thẻ, thanh toán ví điện tử, và thanh toán khi nhận hàng (COD). Không thu phí phụ thêm cho bất kỳ phương thức nào.',
+      'Bản demo có hai phương thức thanh toán: thẻ mô phỏng và ví điện tử mô phỏng.',
   },
   {
     title: 'Thời gian giao hàng dự kiến',
     docType: 'policy',
     content:
-      'Đơn hàng được giao từ kho gần nhất với địa chỉ nhận hàng. Thời gian giao hàng dự kiến từ 1 đến 3 ngày làm việc đối với nội thành, 3 đến 5 ngày đối với các tỉnh thành khác.',
+      'Đơn hàng được ưu tiên phân bổ từ kho cùng khu vực giao hàng nếu có đủ tồn khả dụng. Thời gian giao hàng dự kiến từ 1 đến 3 ngày làm việc đối với nội thành, 3 đến 5 ngày làm việc đối với các tỉnh thành khác.',
   },
   {
     title: 'Chính sách hủy đơn hàng',
     docType: 'policy',
     content:
-      'Khách hàng có thể hủy đơn hàng miễn phí khi đơn còn ở trạng thái "Chờ thanh toán". Sau khi đơn hàng đã được xác nhận thanh toán thành công, việc hủy đơn cần liên hệ bộ phận chăm sóc khách hàng.',
+      'Để yêu cầu hủy đơn ở trạng thái "Chờ thanh toán", khách hàng có thể liên hệ bộ phận chăm sóc khách hàng. Khi đã hết thời gian giữ hàng, hệ thống tự động hủy đơn đang chờ thanh toán.',
   },
   {
     title: 'Hướng dẫn tra cứu trạng thái đơn hàng',
@@ -131,7 +131,7 @@ const KB_DOCUMENTS_SEED_DATA: Array<{
     title: 'Quy trình xử lý khi thanh toán bị lỗi',
     docType: 'faq',
     content:
-      'Nếu thanh toán bị lỗi, đơn hàng sẽ tự động chuyển sang trạng thái “Đã hủy” và phần tồn kho đã giữ chỗ sẽ được giải phóng ngay lập tức để khách hàng khác có thể mua. Khách hàng có thể thử thanh toán lại hoặc liên hệ bộ phận chăm sóc khách hàng để được hỗ trợ.',
+      'Khi thanh toán mô phỏng bị từ chối, đơn vẫn ở trạng thái “Chờ thanh toán”. Khách hàng có thể thử lại trên cùng đơn trước thời điểm hết hạn ban đầu. Khi hết hạn, hệ thống hủy đơn và giải phóng phần hàng đã giữ chỗ.',
   },
   {
     title: 'Chính sách đối với đơn hàng giao nhầm',
@@ -155,7 +155,7 @@ const KB_DOCUMENTS_SEED_DATA: Array<{
     title: 'Điều kiện áp dụng giao hàng miễn phí',
     docType: 'policy',
     content:
-      'Đơn hàng có tổng giá trị từ 500.000 VND trở lên được miễn phí vận chuyển nội thành. Đối với đơn hàng dưới mức này, phí vận chuyển được tính dựa trên khoảng cách đến kho gần nhất.',
+      'Bản demo miễn phí vận chuyển cho mọi đơn hàng ở cả nội thành và các tỉnh. Phí vận chuyển là 0 VND.',
   },
   {
     title: 'Hướng dẫn đánh giá sản phẩm',
@@ -321,7 +321,9 @@ async function main(): Promise<void> {
   );
 
   // Bước 2: Tạo 1 ADMIN + 1 WAREHOUSE_STAFF + 100 CUSTOMER = 102 User.
-  console.log('[2/8] Đang khởi tạo 102 Users mẫu (1 Admin, 1 Staff, 100 Customer)...',);
+  console.log(
+    '[2/8] Đang khởi tạo 102 Users mẫu (1 Admin, 1 Staff, 100 Customer)...',
+  );
 
   // Dùng chung mốc thời gian xác thực cho tài khoản demo.
   const now = new Date();
@@ -357,10 +359,7 @@ async function main(): Promise<void> {
     where: { username: 'staff' },
   });
 
-  if (
-    existingStaff &&
-    existingStaff.role !== UserRole.WAREHOUSE_STAFF
-  ) {
+  if (existingStaff && existingStaff.role !== UserRole.WAREHOUSE_STAFF) {
     throw new Error(
       'Username "staff" đã được sử dụng bởi tài khoản không phải WAREHOUSE_STAFF.',
     );
@@ -381,7 +380,6 @@ async function main(): Promise<void> {
       emailVerifiedAt: now,
     },
   });
-
 
   // 100 Khách hàng (CUSTOMER) — Sinh Email/Tên theo số thứ tự để đảm bảo UNIQUE trên cột "email", tránh trùng lặp ngẫu nhiên
   const customersData = Array.from({ length: 100 }, (_, index) => {
@@ -410,7 +408,10 @@ async function main(): Promise<void> {
 
   // Bước 3: Tạo danh mục sản phẩm.
   console.log('[3/8] Đang tạo danh mục sản phẩm...');
-  await prisma.category.createMany({ data: CATEGORIES_SEED_DATA, skipDuplicates: true,});
+  await prisma.category.createMany({
+    data: CATEGORIES_SEED_DATA,
+    skipDuplicates: true,
+  });
   const categories = await prisma.category.findMany({
     where: {
       slug: {
@@ -421,7 +422,10 @@ async function main(): Promise<void> {
 
   // Bước 4: Tạo 3 kho hàng.
   console.log('[4/8] Đang tạo 3 kho hàng...');
-  await prisma.warehouse.createMany({ data: WAREHOUSES_SEED_DATA, skipDuplicates: true,});
+  await prisma.warehouse.createMany({
+    data: WAREHOUSES_SEED_DATA,
+    skipDuplicates: true,
+  });
   const warehouses = await prisma.warehouse.findMany({
     where: {
       code: {
@@ -437,7 +441,8 @@ async function main(): Promise<void> {
     const namePrefix = pickRandom(PRODUCT_NAME_PREFIXES);
     const category = pickRandom(categories);
     const basePrice = randomInt(50, 30000) * 1000;
-    const costPrice = Math.round((basePrice * randomInt(60, 85)) / 100 / 1000) * 1000;
+    const costPrice =
+      Math.round((basePrice * randomInt(60, 85)) / 100 / 1000) * 1000;
     const hasDiscount = randomInt(1, 100) <= 20;
     const discountPercent = hasDiscount ? randomInt(5, 30) : 0;
 
@@ -452,7 +457,7 @@ async function main(): Promise<void> {
       categoryId: category.id,
     };
   });
-  await prisma.product.createMany({ data: productsData, skipDuplicates: true,});
+  await prisma.product.createMany({ data: productsData, skipDuplicates: true });
   const products = await prisma.product.findMany({
     where: {
       sku: {
@@ -493,9 +498,7 @@ async function main(): Promise<void> {
     `;
   }
 
-  console.log(
-    `→ Đã xử lý ${inventoryData.length} cặp Product Warehouse mẫu.`,
-  );
+  console.log(`→ Đã xử lý ${inventoryData.length} cặp Product Warehouse mẫu.`);
 
   // Bước 7: Tạo 30 đoạn tài liệu chính sách cho AI Chatbot RAG.
   // Cột "embedding" (vector 1024 chieu) chưa được điền ở đây
@@ -505,6 +508,28 @@ async function main(): Promise<void> {
     '[7/8] Đang tạo 30 đoạn tài liệu chính sách cho AI Chatbot RAG...',
   );
 
+  const legacyDemoContent = new Map([
+    [
+      'Phương thức thanh toán hỗ trợ',
+      'Hệ thống hỗ trợ 3 phương thức thanh toán: Thanh toán thẻ, thanh toán ví điện tử, và thanh toán khi nhận hàng (COD). Không thu phí phụ thêm cho bất kỳ phương thức nào.',
+    ],
+    [
+      'Thời gian giao hàng dự kiến',
+      'Đơn hàng được giao từ kho gần nhất với địa chỉ nhận hàng. Thời gian giao hàng dự kiến từ 1 đến 3 ngày làm việc đối với nội thành, 3 đến 5 ngày đối với các tỉnh thành khác.',
+    ],
+    [
+      'Chính sách hủy đơn hàng',
+      'Khách hàng có thể hủy đơn hàng miễn phí khi đơn còn ở trạng thái "Chờ thanh toán". Sau khi đơn hàng đã được xác nhận thanh toán thành công, việc hủy đơn cần liên hệ bộ phận chăm sóc khách hàng.',
+    ],
+    [
+      'Điều kiện áp dụng giao hàng miễn phí',
+      'Đơn hàng có tổng giá trị từ 500.000 VND trở lên được miễn phí vận chuyển nội thành. Đối với đơn hàng dưới mức này, phí vận chuyển được tính dựa trên khoảng cách đến kho gần nhất.',
+    ],
+    [
+      'Quy trình xử lý khi thanh toán bị lỗi',
+      'Nếu thanh toán bị lỗi, đơn hàng sẽ tự động chuyển sang trạng thái “Đã hủy” và phần tồn kho đã giữ chỗ sẽ được giải phóng ngay lập tức để khách hàng khác có thể mua. Khách hàng có thể thử thanh toán lại hoặc liên hệ bộ phận chăm sóc khách hàng để được hỗ trợ.',
+    ],
+  ]);
   for (const doc of KB_DOCUMENTS_SEED_DATA) {
     const existing = await prisma.kbDocument.findFirst({
       where: {
@@ -523,6 +548,13 @@ async function main(): Promise<void> {
           chunkIndex: 0,
         },
       });
+    } else if (existing.content === legacyDemoContent.get(doc.title)) {
+      // Refresh only the previous demo text and invalidate its old vector.
+      await prisma.$executeRaw`
+        UPDATE kb_documents
+        SET content = ${doc.content}, embedding = NULL, updated_at = NOW()
+        WHERE id = ${existing.id}::uuid AND content = ${existing.content}
+      `;
     }
   }
 
@@ -538,9 +570,7 @@ async function main(): Promise<void> {
   console.log('ADMIN: username = admin');
   console.log('STAFF: username = staff');
   console.log('CUSTOMER: username = customer1 ... customer100');
-  console.log(
-    'Mật khẩu Demo được quy định trong cấu hình Seed nội bộ.',
-  );
+  console.log('Mật khẩu Demo được quy định trong cấu hình Seed nội bộ.');
 }
 
 main()

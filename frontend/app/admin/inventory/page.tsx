@@ -1,16 +1,19 @@
 'use client';
 
-import React from 'react';
-import { RefreshCw, Download, Layers } from 'lucide-react';
+import React, { useState } from 'react';
+import { RefreshCw, Download, Layers, Plus } from 'lucide-react';
 import { useAdminInventory } from '../../../hooks/useAdminInventory';
 import { useCurrentAdminUser } from '../../../hooks/useCurrentAdminUser';
 import { WarehouseStockChart } from '../../../components/admin/WarehouseStockChart';
 import { InventoryFilterBar } from '../../../components/admin/InventoryFilterBar';
 import { InventoryTable } from '../../../components/admin/InventoryTable';
 import { StockAdjustModal } from '../../../components/admin/StockAdjustModal';
+import { CreateInventoryForm } from '../../../components/admin/CreateInventoryForm';
 
 export default function AdminInventoryPage() {
   const { isAdmin } = useCurrentAdminUser();
+  const [creatingInventory, setCreatingInventory] = useState(false);
+  const [notice, setNotice] = useState('');
   const {
     products,
     paginatedProducts,
@@ -88,7 +91,19 @@ export default function AdminInventoryPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm inline-flex items-center gap-1"
+              onClick={() => {
+                setNotice('');
+                setCreatingInventory(true);
+              }}
+            >
+              <Plus size={14} /> Thêm tồn kho
+            </button>
+          )}
           <button
             onClick={refreshData}
             disabled={loading}
@@ -108,6 +123,18 @@ export default function AdminInventoryPage() {
           </button>
         </div>
       </div>
+
+      {notice && <p className="alert alert-success py-2" role="status">{notice}</p>}
+      {isAdmin && creatingInventory && (
+        <CreateInventoryForm
+          onCancel={() => setCreatingInventory(false)}
+          onCreated={() => {
+            setCreatingInventory(false);
+            setNotice('Đã tạo dòng tồn kho.');
+            void refreshData();
+          }}
+        />
+      )}
 
       {/* Trạng thái realtime & Thông báo lỗi nếu có */}
       {realtimeStatus === 'reconnecting' && (

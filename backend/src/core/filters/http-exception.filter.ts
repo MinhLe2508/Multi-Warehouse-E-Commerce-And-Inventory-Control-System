@@ -158,6 +158,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         `${request.method} ${path} -> ${statusCode}`,
         errorDetails,
       );
+    } else if (code === 'INSUFFICIENT_STOCK') {
+      this.logger.debug(`${request.method} ${path} -> ${statusCode} (${code})`);
     } else {
       this.logger.warn(`${request.method} ${path} -> ${statusCode} (${code})`);
     }

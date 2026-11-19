@@ -56,7 +56,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/warehouses',
         label: 'Quản lý kho hàng',
         roles: ['ADMIN'],
-        ready: false,
+        ready: true,
       },
       {
         href: '/admin/inventory',

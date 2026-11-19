@@ -8,6 +8,7 @@ import {
   loadEnvironment,
   OUTPUT_DIR,
   readLoadFixture,
+  selectLoadTestDatabase,
   summaryPath,
 } from "./load-test-fixture";
 import {
@@ -20,6 +21,7 @@ import {
 export async function verifyOversell(): Promise<void> {
   try {
     loadEnvironment();
+    selectLoadTestDatabase();
     const { values } = parseArgs({
       options: { runner: { type: "string", default: "k6" } },
     });

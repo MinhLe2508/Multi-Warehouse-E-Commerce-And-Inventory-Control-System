@@ -126,9 +126,10 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       requirement: 'FR-BOT-01',
       expect: {
         fallback: false,
-        mustContainAny: ['COD', 'ví điện tử', 'khi nhận hàng'],
+        mustContainAll: ['thẻ mô phỏng', 'ví điện tử mô phỏng'],
+        mustNotContain: ['hỗ trợ COD', '3 phương thức'],
       },
-      note: 'Thẻ, ví điện tử, COD.',
+      note: 'Thẻ mô phỏng và ví điện tử mô phỏng theo checkout live.',
     },
     {
       id: 'KB-04',
@@ -137,8 +138,12 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       question: 'Đơn hàng từ bao nhiêu tiền thì được miễn phí vận chuyển?',
       isTrap: false,
       requirement: 'FR-BOT-01',
-      expect: { fallback: false, mustContainAny: ['500.000', '500000'] },
-      note: 'Miễn phí vận chuyển nội thành từ 500.000 VND.',
+      expect: {
+        fallback: false,
+        mustContainAny: ['0 VND', 'mọi đơn hàng'],
+        mustNotContain: ['500.000', '500000'],
+      },
+      note: 'Bản demo tính phí vận chuyển 0 VND cho mọi đơn hàng.',
     },
     {
       id: 'KB-05',

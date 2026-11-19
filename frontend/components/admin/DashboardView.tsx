@@ -23,6 +23,7 @@ import {
 import { RevealWrapper } from './RevealWrapper';
 import { useDashboardAnalytics } from '../../hooks/useAdminAnalytics';
 import { useAdminCtx } from './AdminContext';
+import { useStockAlerts } from '../../hooks/useStockAlerts';
 
 function formatVndFromString(decimalStr: string): string {
   const intPart = decimalStr.split('.')[0] || '0';
@@ -32,7 +33,7 @@ function formatVndFromString(decimalStr: string): string {
 }
 
 export function DashboardView() {
-  const { warehouseId, setWarehouseId } = useAdminCtx();
+  const { warehouses, warehouseId, setWarehouseId } = useAdminCtx();
   const {
     isAdmin,
     fromDate,
@@ -46,6 +47,13 @@ export function DashboardView() {
     error,
     refresh,
   } = useDashboardAnalytics(warehouseId);
+  const { total: openAlertCount, loading: alertsLoading, error: alertsError, refresh: refreshAlerts } =
+    useStockAlerts({ warehouseId, limit: 1 });
+  const alertsPath = isAdmin ? '/admin/inventory/alerts' : '/staff/inventory/alerts';
+  const refreshDashboard = () => {
+    refresh();
+    refreshAlerts();
+  };
 
   const totalOrders = summary
     ? Object.values(summary.ordersByStatus).reduce((acc, c) => acc + c, 0)
@@ -65,7 +73,6 @@ export function DashboardView() {
     orderCount: pt.orderCount,
   }));
 
-  const warehouseList = inventorySummary?.byWarehouse ?? [];
 
   return (
     <div className="container-fluid p-0" style={{ maxWidth: '1100px' }}>
@@ -83,9 +90,9 @@ export function DashboardView() {
             className="form-select form-select-sm"
             style={{ width: '180px', borderColor: '#ede9fe', borderRadius: '8px' }}
           >
-            <option value="">Toàn bộ kho</option>
-            {warehouseList.map((w) => (
-              <option key={w.warehouseId} value={w.warehouseId}>
+            <option value="ALL">Toàn bộ kho</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
                 {w.code} — {w.name}
               </option>
             ))}
@@ -114,7 +121,7 @@ export function DashboardView() {
 
           <button
             type="button"
-            onClick={() => void refresh()}
+            onClick={refreshDashboard}
             disabled={loading}
             className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
             style={{ borderRadius: '8px' }}
@@ -129,7 +136,7 @@ export function DashboardView() {
       {error && (
         <div role="alert" className="alert alert-danger d-flex align-items-center justify-content-between gap-2 small mb-3">
           <span>{error}</span>
-          <button type="button" onClick={() => void refresh()} className="btn btn-danger btn-sm">
+          <button type="button" onClick={refreshDashboard} className="btn btn-danger btn-sm">
             Tải lại
           </button>
         </div>
@@ -214,10 +221,10 @@ export function DashboardView() {
           <RevealWrapper className="mb-3">
             <Row className="g-3">
               <Col xs={12} sm={6} md={4}>
-                <Link href="/admin/alerts" className="text-decoration-none">
+                <Link href={alertsPath} className="text-decoration-none">
                   <Card className="admin-kpi-card p-3 h-100">
                     <div className="d-flex align-items-center justify-content-between mb-2">
-                      <span className="text-secondary small fw-medium">Cảnh báo tồn thấp / hết</span>
+                      <span className="text-secondary small fw-medium">Cảnh báo đang mở</span>
                       <div
                         className="kpi-icon-badge"
                         style={{
@@ -230,10 +237,10 @@ export function DashboardView() {
                       </div>
                     </div>
                     <div className="h3 fw-bold mb-0" style={{ color: '#dc2626' }}>
-                      {lowStockCount}
+                      {alertsLoading || alertsError ? "—" : openAlertCount}
                     </div>
                     <div className="text-muted small mt-1" style={{ fontSize: '0.75rem' }}>
-                      Xem danh sách cảnh báo →
+                      {alertsError ?? 'Xem danh sách cảnh báo →'}
                     </div>
                   </Card>
                 </Link>
@@ -243,7 +250,7 @@ export function DashboardView() {
                 <>
                   <Col xs={12} sm={6} md={4}>
                     <Card className="admin-kpi-card p-3 h-100">
-                      <div className="text-secondary small fw-medium mb-2">Tổng khả dụng toàn hệ thống</div>
+                      <div className="text-secondary small fw-medium mb-2">Tổng khả dụng</div>
                       <div className="h3 fw-bold mb-0 text-dark">
                         {inventorySummary.totalAvailable.toLocaleString('vi-VN')}
                       </div>

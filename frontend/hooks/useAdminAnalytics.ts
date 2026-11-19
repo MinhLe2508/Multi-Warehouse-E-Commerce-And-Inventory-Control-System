@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiGet, extractErrorMessage } from '../shared/lib/apiClient';
 import { useCurrentAdminUser } from './useCurrentAdminUser';
 
@@ -73,78 +73,95 @@ function getDefaultDateRange(): { fromDate: string; toDate: string } {
   return { fromDate, toDate };
 }
 
+interface DashboardData {
+  summary: AnalyticsSummaryData | null;
+  series: RevenueSeriesPointApi[];
+  inventorySummary: InventorySummaryApi;
+}
+
 export function useDashboardAnalytics(warehouseId?: string) {
-  const { isAdmin, ready, authenticated } = useCurrentAdminUser();
-  const defaults = getDefaultDateRange();
-
-  const [fromDate, setFromDate] = useState<string>(defaults.fromDate);
-  const [toDate, setToDate] = useState<string>(defaults.toDate);
-  const [summary, setSummary] = useState<AnalyticsSummaryData | null>(null);
-  const [series, setSeries] = useState<RevenueSeriesPointApi[]>([]);
-  const [inventorySummary, setInventorySummary] = useState<InventorySummaryApi | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadAnalytics = useCallback(async () => {
-    if (!ready || !authenticated) return;
-    setLoading(true);
-    try {
-      const invPromise = apiGet<InventorySummaryApi>('/admin/inventory/summary');
-
-      if (isAdmin) {
-        const params = new URLSearchParams({
-          fromDate,
-          toDate,
-        });
-        if (warehouseId && warehouseId !== 'ALL') {
-          params.set('warehouseId', warehouseId);
-        }
-
-        const [sumRes, seriesRes, invRes] = await Promise.all([
-          apiGet<AnalyticsSummaryData>(`/admin/analytics/summary?${params.toString()}`),
-          apiGet<{ series: RevenueSeriesPointApi[] }>(
-            `/admin/analytics/revenue-series?${params.toString()}&granularity=day`
-          ),
-          invPromise,
-        ]);
-
-        setSummary(sumRes);
-        setSeries(seriesRes.series || []);
-        setInventorySummary(invRes);
-      } else {
-        // WAREHOUSE_STAFF không được gọi /admin/analytics/* (403) -> chỉ tải tồn kho
-        const invRes = await invPromise;
-        setSummary(null);
-        setSeries([]);
-        setInventorySummary(invRes);
-      }
-
-      setError(null);
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Không tải được dữ liệu Dashboard từ máy chủ.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [ready, authenticated, isAdmin, fromDate, toDate, warehouseId]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadAnalytics();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [loadAnalytics]);
-
-  return {
+  const { user, isAdmin, isStaff, ready, authenticated } =
+    useCurrentAdminUser();
+  const [dates, setDates] = useState(getDefaultDateRange);
+  const [revision, setRevision] = useState(0);
+  const [snapshot, setSnapshot] = useState<{
+    key: string;
+    data?: DashboardData;
+    error?: string;
+  }>();
+  const scope = warehouseId && warehouseId !== 'ALL' ? warehouseId : '';
+  const permitted = ready && authenticated && (isAdmin || isStaff);
+  const { fromDate, toDate } = dates;
+  const key = JSON.stringify([
+    user.id,
     isAdmin,
+    scope,
     fromDate,
     toDate,
-    setFromDate,
-    setToDate,
-    summary,
-    series,
-    inventorySummary,
-    loading,
-    error,
-    refresh: loadAnalytics,
+    revision,
+  ]);
+
+  useEffect(() => {
+    if (!permitted) return;
+    let active = true;
+    const warehouse = new URLSearchParams();
+    if (scope) warehouse.set('warehouseId', scope);
+    const inventoryUrl = scope
+      ? `/admin/inventory/summary?${warehouse}`
+      : '/admin/inventory/summary';
+    const analytics = new URLSearchParams(warehouse);
+    if (fromDate) analytics.set('fromDate', fromDate);
+    if (toDate) analytics.set('toDate', toDate);
+
+    async function read(): Promise<DashboardData> {
+      const inventory = apiGet<InventorySummaryApi>(inventoryUrl);
+      if (!isAdmin) {
+        return { summary: null, series: [], inventorySummary: await inventory };
+      }
+      const [summary, series, inventorySummary] = await Promise.all([
+        apiGet<AnalyticsSummaryData>(`/admin/analytics/summary?${analytics}`),
+        apiGet<{ series: RevenueSeriesPointApi[] }>(
+          `/admin/analytics/revenue-series?${analytics}&granularity=day`,
+        ),
+        inventory,
+      ]);
+      return { summary, series: series.series, inventorySummary };
+    }
+
+    void read().then(
+      (data) => {
+        if (active) setSnapshot({ key, data });
+      },
+      (error: unknown) => {
+        if (active) {
+          setSnapshot({
+            key,
+            error: extractErrorMessage(
+              error,
+              'Không tải được dữ liệu Dashboard.',
+            ),
+          });
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [fromDate, isAdmin, key, permitted, scope, toDate]);
+
+  const current = permitted && snapshot?.key === key ? snapshot : undefined;
+  return {
+    isAdmin,
+    ...dates,
+    setFromDate: (value: string) =>
+      setDates((current) => ({ ...current, fromDate: value })),
+    setToDate: (value: string) =>
+      setDates((current) => ({ ...current, toDate: value })),
+    summary: current?.data?.summary ?? null,
+    series: current?.data?.series ?? [],
+    inventorySummary: current?.data?.inventorySummary ?? null,
+    loading: !ready || (permitted && !current),
+    error: current?.error ?? null,
+    refresh: () => setRevision((current) => current + 1),
   };
 }

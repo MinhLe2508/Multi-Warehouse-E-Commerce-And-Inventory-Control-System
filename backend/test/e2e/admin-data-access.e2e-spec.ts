@@ -7,6 +7,7 @@ import { type Server } from 'node:http';
 import { createRequire } from 'node:module';
 import request from 'supertest';
 import { AdminModule } from '../../src/admin/admin.module';
+import { AdminAnalyticsService } from '../../src/admin/analytics/admin-analytics.service';
 import { AdminOrdersQueryService } from '../../src/admin/orders/admin-orders.service';
 import { AdminApiModule } from '../../src/adminapi/adminapi.module';
 import { ChatbotModule } from '../../src/chatbot/chatbot.module';
@@ -364,6 +365,60 @@ describeDb('Admin data access with PostgreSQL', () => {
       expect(response.body).toMatchObject({
         range: { warehouseId, fromDate: date, toDate: date },
         revenue: { total: amount, currency: 'VND', orderCount: count },
+      });
+    }
+  });
+
+  it('keeps revenue summary and chart stable across PostgreSQL session time zones', async () => {
+    const prefix = `TZREV-${randomBytes(6).toString('hex')}-`;
+    const userId = fixture.users.customerA.id;
+    const dates = [
+      ['2026-02-17T16:59:59.999Z', 1],
+      ['2026-02-17T17:00:00.000Z', 10],
+      ['2026-02-18T16:59:59.999Z', 100],
+      ['2026-02-18T17:00:00.000Z', 1000],
+    ] as const;
+
+    try {
+      for (const [index, [timestamp, total]] of dates.entries()) {
+        await db.$executeRaw`
+          INSERT INTO orders
+            (order_code, user_id, status, subtotal, grand_total, shipping_recipient,
+             shipping_phone, shipping_address, created_at, updated_at)
+          VALUES (${prefix + index}, ${userId}::uuid, 'CONFIRMED', ${total}::numeric,
+                  ${total}::numeric, 'QA', '0900000000', 'HCM', ${timestamp}::timestamptz, NOW())
+        `;
+      }
+      for (const timeZone of ['UTC', 'Asia/Ho_Chi_Minh']) {
+        const session = new PrismaClient({
+          adapter: new PrismaPg({
+            connectionString: url,
+            options: `-c timezone=${timeZone}`,
+          }),
+        });
+        try {
+          const service = new AdminAnalyticsService(session as PrismaService);
+          const range = { fromDate: '2026-02-18', toDate: '2026-02-18' };
+          const summary = await service.getSummary(range);
+          const series = await service.getRevenueSeries(range);
+          expect(summary.revenue).toEqual({
+            total: '110.00',
+            currency: 'VND',
+            orderCount: 2,
+          });
+          expect(series.series).toEqual([
+            { date: '2026-02-18', revenue: '110.00', orderCount: 2 },
+          ]);
+        } finally {
+          await session.$disconnect();
+        }
+      }
+      await read('/admin/analytics/summary', 'admin')
+        .query({ fromDate: '2026-02-30' })
+        .expect(400);
+    } finally {
+      await db.order.deleteMany({
+        where: { userId, orderCode: { startsWith: prefix } },
       });
     }
   });

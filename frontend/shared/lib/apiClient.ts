@@ -25,6 +25,10 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   return authenticatedRequest<T>(path, body ?? {}, 'PATCH');
 }
 
+export async function apiDelete(path: string): Promise<void> {
+  await authenticatedRequest<void>(path, undefined, 'DELETE');
+}
+
 export function extractErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof AuthError) {
     if (err.status === 403) {

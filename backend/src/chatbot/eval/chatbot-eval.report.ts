@@ -12,7 +12,7 @@ export interface ReportMeta {
   runId?: string;
   gitCommit?: string;
   datasetVersion?: string;
-  retrievalMode?: 'KEYWORD' | 'VECTOR' | 'HYBRID' | 'LOCAL_MOCK';
+  retrievalMode?: 'KEYWORD' | 'VECTOR' | 'HYBRID' | 'NONE' | 'LOCAL_MOCK';
 }
 
 // Ngưỡng đạt của bài đánh giá (có thể điều chỉnh theo yêu cầu đề tài)

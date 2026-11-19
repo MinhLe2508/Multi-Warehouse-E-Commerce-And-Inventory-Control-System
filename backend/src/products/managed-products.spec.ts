@@ -219,7 +219,7 @@ describe('Managed products: real JWT, RBAC, DTO and service; database boundary m
     { categoryId: null },
     { name: '   ' },
     { discountPercent: '101' },
-    { description: 'unsupported' },
+    { description: 10 },
     { barcode: 'unsupported' },
   ])('rejects invalid create input %j', async (change) => {
     await client()

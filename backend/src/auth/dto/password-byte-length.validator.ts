@@ -42,7 +42,7 @@ export function IsPasswordByteLength(validationOptions?: ValidationOptions) {
         },
 
         defaultMessage(args: ValidationArguments): string {
-          const value = args.value;
+          const value: unknown = args.value;
 
           if (typeof value !== 'string') {
             return 'Mật khẩu phải là chuỗi ký tự.';

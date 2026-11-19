@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 // Nạp biến môi trường từ .env ở thư mục gốc dự án (giống sync-kb.ts)
 const envCandidates = [
@@ -27,7 +28,7 @@ import { NestFactory } from '@nestjs/core';
 import { Prisma, UserRole } from '@prisma/client';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ChatbotService } from '../chatbot.service';
+import { ChatbotService, type SendMessageResult } from '../chatbot.service';
 import { KnowledgeBaseService } from '../rag/knowledge-base.service';
 import {
   EvalActor,
@@ -43,6 +44,7 @@ import {
 import {
   renderJsonReport,
   renderMarkdownReport,
+  type ReportMeta,
   verdict,
 } from '../eval/chatbot-eval.report';
 
@@ -77,20 +79,22 @@ function parseArgs(argv: string[]): CliOptions {
   };
 }
 
-// Xác định bộ sinh câu trả lời theo đúng điều kiện khởi tạo trong ChatbotService
-function detectProvider(): string {
-  const anthropic = process.env.ANTHROPIC_API_KEY?.trim();
-  const gemini = (
-    process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
-  )?.trim();
-  if (anthropic?.startsWith('sk-ant-') && !anthropic.startsWith('mock_')) {
-    return `Anthropic Claude (${process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022'})`;
+function getGitCommit(): string {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return process.env.GIT_COMMIT?.trim() || 'unknown';
   }
-  if (gemini?.startsWith('AIza') && !gemini.startsWith('mock_')) {
-    return `Google Gemini (${process.env.GEMINI_MODEL || 'gemini-flash-latest'})`;
-  }
-  return 'Bộ xử lý RAG + Tool nội bộ (không gọi LLM ngoài)';
 }
+
+const providerNames = {
+  CLAUDE: 'Anthropic Claude',
+  GEMINI: 'Google Gemini',
+  LOCAL: 'RAG và công cụ nội bộ',
+} satisfies Record<SendMessageResult['generationSource'], string>;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -185,8 +189,8 @@ async function bootstrap() {
       CUSTOMER_OTHER: { userId: other.id, role: other.role },
     };
 
-    const provider = detectProvider();
-    console.log(`Bộ sinh câu trả lời: ${provider}`);
+    const generators = new Set<SendMessageResult['generationSource']>();
+    const retrievalModes = new Set<'KEYWORD' | 'VECTOR'>();
     console.log(
       `KB: ${kbStats.embeddedChunks}/${kbStats.totalChunks} chunk có embedding | owner=${owner.username}, other=${other.username}, product=${product.sku}`,
     );
@@ -207,6 +211,8 @@ async function bootstrap() {
           role: actor.role,
         });
         sessionTokens.push(res.sessionToken);
+        generators.add(res.generationSource);
+        if (res.retrievalMode !== 'NONE') retrievalModes.add(res.retrievalMode);
         observed = {
           reply: res.reply,
           isFallback: res.isFallback,
@@ -217,9 +223,13 @@ async function bootstrap() {
             error: t.error,
           })),
           latencyMs: res.latencyMs,
-          retrievedTitles: res.retrievedDocuments.map(
-            (d) => `${d.title} (${d.similarity.toFixed(2)})`,
-          ),
+          retrievedTitles: res.retrievedDocuments.map((d) => {
+            const score =
+              d.scoreType === 'keyword_match'
+                ? `từ khóa ${d.keywordScore ?? 0}`
+                : d.similarity.toFixed(2);
+            return `${d.title} (${score})`;
+          }),
         };
       } catch (err: unknown) {
         observed = {
@@ -244,10 +254,18 @@ async function bootstrap() {
     // ---- 3. Tổng hợp & xuất báo cáo --------------------------------------
     const summary = summarize(results);
     const runId = `eval-${Date.now()}-${randomBytes(3).toString('hex')}`;
-    const reportMeta = {
+    const reportMeta: ReportMeta = {
       runId,
       startedAt,
-      provider,
+      provider:
+        [...generators].map((source) => providerNames[source]).join(' + ') ||
+        'Chưa sinh phản hồi',
+      gitCommit: getGitCommit(),
+      datasetVersion: '1.1.0',
+      retrievalMode:
+        retrievalModes.size === 2
+          ? 'HYBRID'
+          : ([...retrievalModes][0] ?? 'NONE'),
       kbChunks: kbStats.totalChunks,
       kbEmbedded: kbStats.embeddedChunks,
     };

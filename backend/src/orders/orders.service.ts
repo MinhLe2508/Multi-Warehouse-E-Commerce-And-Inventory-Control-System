@@ -12,6 +12,16 @@ import { StockReservationService } from '../stock-reservation/stock-reservation.
 import { CreateOrderDto } from './dto/create-order.dto';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 
+interface CheckoutSnapshotRow {
+  id: string;
+  sku: string;
+  name: string;
+  basePrice: Prisma.Decimal;
+  discountPercent: Prisma.Decimal;
+  inventoryId: bigint | null;
+  availableStock: number | null;
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -22,32 +32,59 @@ export class OrdersService {
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
-    const result = await this.prisma.$transaction(
+    const { order, inventoryEvents } = await this.prisma.$transaction(
       async (tx) => {
-        const ids = dto.items.map((x) => x.productId);
-        const products = await tx.product.findMany({
-          where: { id: { in: ids }, isActive: true },
-        });
-        if (products.length !== ids.length)
+        const productIds = dto.items.map(({ productId }) => productId);
+        const snapshot = await tx.$queryRaw<CheckoutSnapshotRow[]>`
+          SELECT p.id, p.sku, p.name, p.base_price AS "basePrice",
+                 p.discount_percent AS "discountPercent",
+                 candidate.id AS "inventoryId", candidate.available_stock AS "availableStock"
+            FROM products p
+            LEFT JOIN (
+              SELECT i.id, i.product_id, i.available_stock
+                FROM inventory i
+                JOIN warehouses w ON w.id = i.warehouse_id AND w.is_active
+            ) candidate ON candidate.product_id = p.id
+           WHERE p.id = ANY(${productIds}::uuid[]) AND p.is_active
+        `;
+        const byId = new Map(snapshot.map((row) => [row.id, row]));
+        if (byId.size !== productIds.length)
           throw new BadRequestException(
             'Sản phẩm không tồn tại hoặc đã ngừng bán.',
           );
-        const byId = new Map(products.map((p) => [p.id, p]));
-        const candidates = await tx.inventory.findMany({
-          where: { productId: { in: ids }, warehouse: { isActive: true } },
-          include: { warehouse: true },
-        });
-        // Khóa TẤT CẢ candidate theo inventory.id tăng dần trước khi tạo order_items.
-        if (!candidates.length)
+        // Loại đơn đã thiếu tồn ngay trên snapshot, giảm tranh khóa khi SKU bán hết.
+        // Các đơn đủ tồn vẫn phải kiểm tra lại sau khi khóa.
+        const candidateIds: bigint[] = [];
+        const availableByProduct = new Map<string, number>();
+        for (const row of snapshot) {
+          if (row.inventoryId === null) continue;
+          candidateIds.push(row.inventoryId);
+          availableByProduct.set(
+            row.id,
+            (availableByProduct.get(row.id) ?? 0) + (row.availableStock ?? 0),
+          );
+        }
+        if (
+          dto.items.some(
+            ({ productId, quantity }) =>
+              (availableByProduct.get(productId) ?? 0) < quantity,
+          )
+        ) {
           throw new ConflictException('INSUFFICIENT_STOCK');
-        await this.stockReservation.lockInventories(
-          tx,
-          candidates.map((c) => c.id),
-        );
+        }
+
+        // Khóa TẤT CẢ candidate theo inventory.id tăng dần trước khi tạo order_items.
+        await this.stockReservation.lockInventories(tx, candidateIds);
         // Đọc lại dưới khóa, không dùng availableStock được đọc trước khi khóa.
         const locked = await tx.inventory.findMany({
-          where: { id: { in: candidates.map((c) => c.id) } },
-          include: { warehouse: true },
+          where: { id: { in: candidateIds } },
+          select: {
+            id: true,
+            productId: true,
+            warehouseId: true,
+            availableStock: true,
+            warehouse: { select: { code: true, region: true, isActive: true } },
+          },
         });
         const lines: Array<{
           productId: string;
@@ -77,7 +114,7 @@ export class OrdersService {
               );
             });
           for (const c of warehouses) {
-            const amount = Math.min(remaining, c.stock - c.reservedStock);
+            const amount = Math.min(remaining, c.availableStock);
             if (amount > 0)
               lines.push({
                 productId: request.productId,
@@ -161,7 +198,13 @@ export class OrdersService {
           where: { id: order.id },
           include: { items: true },
         });
-        return this.serialize(result);
+        return {
+          order: this.serialize(result),
+          inventoryEvents: await this.changes.readSnapshots(
+            lines.map(({ inventoryId }) => inventoryId),
+            tx,
+          ),
+        };
       },
       {
         timeout: 30000,
@@ -169,8 +212,8 @@ export class OrdersService {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
-    await this.changes.publishOrder(result.id);
-    return result;
+    await this.changes.publishSnapshots(inventoryEvents);
+    return order;
   }
 
   /** All status changes and their audit rows share the caller's DB transaction. */

@@ -25,6 +25,7 @@ export class AuthError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
   ) {
     super(message);
     this.name = "AuthError";
@@ -108,7 +109,10 @@ export async function authRequest<T>(
     : await response.json().catch(() => undefined);
 
   if (!response.ok) {
-    throw new AuthError(response.status, apiErrorMessage(data, response.status));
+    const code = data && typeof data === 'object' && 'code' in data && typeof data.code === 'string'
+      ? data.code
+      : undefined;
+    throw new AuthError(response.status, apiErrorMessage(data, response.status), code);
   }
 
   return data as T;

@@ -19,6 +19,7 @@ const fields = {
   discountPercent: true,
   categoryId: true,
   imageUrl: true,
+  description: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,

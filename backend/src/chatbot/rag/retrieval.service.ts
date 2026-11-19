@@ -146,43 +146,34 @@ export class RetrievalService {
         `RAG Search "${trimmedQuery.substring(0, 40)}...": top similarity: ${topSimilarity?.toFixed(3) ?? 'N/A'}, giữ lại ${documents.length}/${allDocs.length} docs (ngưỡng: ${minSimilarity})`,
       );
 
-      return {
-        query: trimmedQuery,
-        documents,
-        hasHighConfidence,
-        mode: 'VECTOR',
-        scoreType: 'cosine_similarity',
-      };
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Lỗi khi tìm kiếm tri thức RAG: ${msg}`);
-
-      // Nếu Voyage AI bị giới hạn tần suất (429 Free Tier) hoặc mất mạng tạm thời,
-      // fallback sang tìm kiếm toàn văn (keyword) trên bảng kb_documents.
-      // Điểm keyword được tách biệt hoàn toàn với cosine similarity (scoreType = 'keyword_match').
-      const keywordDocs = await this.fallbackKeywordSearch(trimmedQuery, limit);
-      if (keywordDocs.length > 0) {
-        const hasHighConfidence = keywordDocs.some(
-          (d) => (d.keywordScore ?? 0) >= this.HIGH_CONFIDENCE_KEYWORD_SCORE,
-        );
+      if (documents.length > 0) {
         return {
           query: trimmedQuery,
-          documents: keywordDocs,
+          documents,
           hasHighConfidence,
-          mode: 'KEYWORD',
-          scoreType: 'keyword_match',
+          mode: 'VECTOR',
+          scoreType: 'cosine_similarity',
         };
       }
-
-      // Fallback mềm: không crash ứng dụng nếu vector DB có sự cố
-      return {
-        query: trimmedQuery,
-        documents: [],
-        hasHighConfidence: false,
-        mode: 'NONE',
-        scoreType: 'keyword_match',
-      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.debug(`Chuyển sang tìm kiếm từ khóa: ${message}`);
     }
+
+    const documents = await this.fallbackKeywordSearch(
+      trimmedQuery,
+      limit,
+      options?.docType,
+    );
+    return {
+      query: trimmedQuery,
+      documents,
+      hasHighConfidence: documents.some(
+        (doc) => (doc.keywordScore ?? 0) >= this.HIGH_CONFIDENCE_KEYWORD_SCORE,
+      ),
+      mode: documents.length ? 'KEYWORD' : 'NONE',
+      scoreType: 'keyword_match',
+    };
   }
 
   /**
@@ -192,6 +183,7 @@ export class RetrievalService {
   private async fallbackKeywordSearch(
     query: string,
     limit: number,
+    docType?: string,
   ): Promise<RetrievedDocument[]> {
     if (
       !this.prisma.kbDocument ||
@@ -213,6 +205,7 @@ export class RetrievalService {
       'phí ship',
       'miễn phí vận chuyển',
       'miễn phí giao hàng',
+      'phương thức thanh toán',
       'thanh toán',
       'hủy đơn',
       'tích điểm',
@@ -237,6 +230,25 @@ export class RetrievalService {
     const matchedTopics = specificTopics.filter((topic) =>
       lower.includes(topic),
     );
+    if (
+      /\b(hotline|cskh)\b/i.test(lower) &&
+      !matchedTopics.includes('chăm sóc khách hàng')
+    ) {
+      matchedTopics.push('chăm sóc khách hàng');
+    }
+    if (
+      lower.includes('hình thức thanh toán') &&
+      !matchedTopics.includes('phương thức thanh toán')
+    ) {
+      matchedTopics.push('phương thức thanh toán');
+    }
+    if (
+      matchedTopics.includes('giao hàng') &&
+      !matchedTopics.includes('thời gian giao hàng') &&
+      /mấy ngày|bao nhiêu ngày|bao lâu/.test(lower)
+    ) {
+      matchedTopics.push('thời gian giao hàng');
+    }
 
     if (matchedTopics.length === 0) {
       return [];
@@ -246,12 +258,14 @@ export class RetrievalService {
       const rows = await this.prisma.kbDocument.findMany({
         where: {
           isActive: true,
+          ...(docType ? { docType } : {}),
           OR: matchedTopics.flatMap((topic) => [
             { title: { contains: topic, mode: 'insensitive' as const } },
             { content: { contains: topic, mode: 'insensitive' as const } },
           ]),
         },
-        take: 10,
+        orderBy: [{ title: 'asc' }, { id: 'asc' }],
+        take: 30,
       });
 
       if (rows.length === 0) {

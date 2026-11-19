@@ -1,41 +1,21 @@
-# DRAFT FOR TEAM REVIEW — Huy, tuần 1. Không phải API đã triển khai.
 openapi: 3.0.3
 info:
-  title: Multi-Warehouse — Orders, Payments & Stock Reservation contract
-  version: 0.1.1
-  description: Bản dự thảo hoàn chỉnh để nhóm review nhiệm vụ tuần 1 của Huy. Đối chiếu ZIP nhánh project, commit 2cc0677fd6fd1a0253f400a71a2f71d1d01ff505.
-    Chưa có Orders/Payments controllers, Auth hoặc mock gateway chạy thật. Các endpoint, error envelope, chọn kho và
-    quy tắc retry là ĐỀ XUẤT, không phải xác nhận triển khai/phê duyệt. Hàm fn_reserve_stock và enum/model được lấy từ
-    source. Xem README.md, stock-reservation-contract.md và week1-decisions.md. Example IDs/time là giả lập, không phải
-    dữ liệu seed. JSON camelCase, money/BIGINT dạng chuỗi. Không nhận field ngoài schema.
+  title: Multi-Warehouse Customer API
+  version: 1.0.0
+  description: Đặt hàng, xem đơn của chính mình và thanh toán mô phỏng.
 servers:
 - url: http://localhost:3001
-  description: Địa chỉ phát triển dự kiến; API contract chưa được triển khai ở bản ZIP nền.
-tags:
-- name: Orders
-  description: API CUSTOMER cho đơn hàng của chính mình.
-- name: Payments
-  description: Thanh toán mock, tra cứu và callback nội bộ.
+security:
+- bearerAuth: []
 paths:
   /orders:
     post:
+      operationId: createOrder
+      summary: Tạo đơn và giữ chỗ tồn kho
       tags:
       - Orders
-      operationId: createOrder
-      summary: Tạo đơn và giữ hàng trong một transaction
-      description: 'CẬP NHẬT NHÓM 09/10: Auth phải xác nhận tài khoản được phép hoạt động và đã hoàn tất đổi mật khẩu
-        lần đầu. Token chỉ dành cho đổi mật khẩu chưa được truy cập route này (403 PASSWORD_CHANGE_REQUIRED); tài khoản
-        không hoạt động trả 403 ACCOUNT_INACTIVE. Guard phía server kiểm tra trước truy vấn nghiệp vụ; frontend redirect
-        không thay thế guard. Các mã lỗi và tên thuộc tính auth context là đề xuất tích hợp, chưa có trong source ZIP.
-        DỰ THẢO, chưa có controller. CUSTOMER. Kiểm tra sản phẩm active; client không gửi giá/userId/TTL. Tối đa 50 productId
-        khác nhau, 1..100 mỗi sản phẩm. Đề xuất chọn kho active: ưu tiên region khớp shippingRegion đã trim, sau đó warehouse.code
-        tăng dần và inventory.id tăng dần; phân bổ tham lam, có thể tách một sản phẩm qua nhiều kho. Gọi fn_reserve_stock
-        theo inventory.id tăng dần toàn đơn trong cùng transaction; cạnh tranh thiếu hàng thì rollback toàn bộ và 409.
-        Giá snapshot tính Decimal, làm tròn HALF_UP 2 số cho giảm giá từng dòng; phí giao hàng đề xuất 0 VND. Trả 201
-        sau commit. Không có idempotency key trong schema hiện tại: gửi POST mới có thể tạo đơn mới; không tự retry khi
-        timeout, tra danh sách đơn trước.'
-      security:
-      - bearerAuth: []
+      description: Khách hàng hoàn tất đổi mật khẩu lần đầu. Các productId trong đơn phải khác nhau. Backend tính
+        tiền, chọn kho và giữ tồn kho trong giao dịch.
       requestBody:
         required: true
         content:
@@ -46,1079 +26,458 @@ paths:
               normal:
                 value:
                   items:
-                  - productId: 11111111-1111-4111-8111-111111111111
+                  - productId: 22222222-2222-4222-8222-222222222222
                     quantity: 2
                   shippingRecipient: Khách demo
                   shippingPhone: 0900000000
-                  shippingAddress: Địa chỉ demo tại TP.HCM
+                  shippingAddress: 1 Đường thử nghiệm
                   shippingRegion: Miền Nam
       responses:
         '201':
-          description: Đã commit đơn và toàn bộ giữ chỗ.
+          description: Đã tạo đơn chờ thanh toán.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderDetails'
+                $ref: '#/components/schemas/Order'
               examples:
-                holding:
+                pending:
                   value:
-                    id: 22222222-2222-4222-8222-222222222222
-                    orderCode: ORD-DEMO-001
+                    id: 11111111-1111-4111-8111-111111111111
+                    orderCode: ORD-DEMO20261119
+                    userId: 33333333-3333-4333-8333-333333333333
                     status: PENDING_PAYMENT
-                    grandTotal: '285000.00'
-                    currency: VND
-                    reservationExpiresAt: '2026-10-09T03:15:00Z'
-                    createdAt: '2026-10-09T03:00:00Z'
-                    updatedAt: '2026-10-09T03:00:00Z'
-                    subtotal: '300000.00'
-                    discountTotal: '15000.00'
+                    subtotal: '100000.00'
+                    discountTotal: '0.00'
                     shippingFee: '0.00'
+                    grandTotal: '100000.00'
+                    currency: VND
                     shippingRecipient: Khách demo
                     shippingPhone: 0900000000
-                    shippingAddress: Địa chỉ demo tại TP.HCM
+                    shippingAddress: 1 Đường thử nghiệm
                     shippingRegion: Miền Nam
+                    reservationExpiresAt: '2026-11-19T05:15:00Z'
                     cancelledReason: null
-                    confirmedAt: null
                     cancelledAt: null
+                    confirmedAt: null
+                    createdAt: '2026-11-19T05:00:00Z'
+                    updatedAt: '2026-11-19T05:00:00Z'
                     items:
-                    - id: 44444444-4444-4444-8444-444444444444
-                      productId: 11111111-1111-4111-8111-111111111111
-                      warehouseId: 33333333-3333-4333-8333-333333333333
-                      productName: Tai nghe demo
-                      sku: DEMO-001
+                    - id: 55555555-5555-4555-8555-555555555555
+                      orderId: 11111111-1111-4111-8111-111111111111
+                      productId: 22222222-2222-4222-8222-222222222222
+                      warehouseId: 44444444-4444-4444-8444-444444444444
+                      inventoryId: '9007199254740993'
+                      productName: Sản phẩm demo
+                      sku: DEMO-1
+                      unitPrice: '50000.00'
+                      discountAmount: '0.00'
                       quantity: 2
-                      unitPrice: '150000.00'
-                      discountAmount: '15000.00'
-                      lineTotal: '285000.00'
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNAUTHORIZED:
-                  value:
-                    statusCode: 401
-                    code: UNAUTHORIZED
-                    message: Cần đăng nhập bằng token hợp lệ.
-        '403':
-          description: Lỗi 403; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                FORBIDDEN:
-                  value:
-                    statusCode: 403
-                    code: FORBIDDEN
-                    message: Vai trò không được phép thực hiện thao tác này.
-                PASSWORD_CHANGE_REQUIRED:
-                  value:
-                    statusCode: 403
-                    code: PASSWORD_CHANGE_REQUIRED
-                    message: Bạn cần đổi mật khẩu lần đầu trước khi sử dụng chức năng này.
-                ACCOUNT_INACTIVE:
-                  value:
-                    statusCode: 403
-                    code: ACCOUNT_INACTIVE
-                    message: Tài khoản hiện không được phép sử dụng hệ thống.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
-                  value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
+                      lineTotal: '100000.00'
+                      createdAt: '2026-11-19T05:00:00Z'
         '400':
-          description: Lỗi 400; xử lý theo code.
+          description: Dữ liệu đầu vào không hợp lệ.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                VALIDATION_ERROR:
+                validation:
                   value:
                     statusCode: 400
+                    error: Bad Request
                     code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-        '404':
-          description: Lỗi 404; xử lý theo code.
+                    message:
+                    - Dữ liệu không hợp lệ.
+                    path: /orders
+                    timestamp: '2026-11-19T05:00:07Z'
+        '401':
+          description: Phiên đăng nhập chưa hợp lệ.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                PRODUCT_NOT_FOUND:
+                unauthorized:
                   value:
-                    statusCode: 404
-                    code: PRODUCT_NOT_FOUND
-                    message: Không tìm thấy sản phẩm.
-                INVENTORY_NOT_FOUND:
+                    statusCode: 401
+                    error: Unauthorized
+                    code: UNAUTHORIZED
+                    message: Cần đăng nhập.
+                    path: /orders
+                    timestamp: '2026-11-19T05:00:07Z'
+        '403':
+          description: Thiếu quyền hoặc cần đổi mật khẩu lần đầu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                passwordChange:
                   value:
-                    statusCode: 404
-                    code: INVENTORY_NOT_FOUND
-                    message: Không tìm thấy dòng tồn kho.
+                    statusCode: 403
+                    error: Forbidden
+                    code: PASSWORD_CHANGE_REQUIRED
+                    message: Vui lòng đổi mật khẩu lần đầu.
+                    path: /orders
+                    timestamp: '2026-11-19T05:00:07Z'
+                role:
+                  value:
+                    statusCode: 403
+                    error: Forbidden
+                    code: FORBIDDEN
+                    message: Bạn không có quyền thực hiện thao tác.
+                    path: /orders
+                    timestamp: '2026-11-19T05:00:07Z'
         '409':
-          description: Lỗi 409; xử lý theo code.
+          description: Hết hàng khả dụng.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                PRODUCT_UNAVAILABLE:
+                outOfStock:
                   value:
                     statusCode: 409
-                    code: PRODUCT_UNAVAILABLE
-                    message: Sản phẩm không còn được bán.
-                INSUFFICIENT_STOCK:
-                  value:
-                    statusCode: 409
+                    error: Conflict
                     code: INSUFFICIENT_STOCK
-                    message: Sản phẩm không đủ số lượng khả dụng.
-                RESERVATION_EXPIRED:
-                  value:
-                    statusCode: 409
-                    code: RESERVATION_EXPIRED
-                    message: Thời gian giữ chỗ đã hết.
+                    message: INSUFFICIENT_STOCK
+                    path: /orders
+                    timestamp: '2026-11-19T05:00:07Z'
+  /orders/{id}:
     get:
+      operationId: getOrder
+      summary: Đọc đơn và lịch sử trạng thái
       tags:
       - Orders
-      operationId: listMyOrders
-      summary: Danh sách đơn của khách đang đăng nhập
-      description: 'CẬP NHẬT NHÓM 09/10: Auth phải xác nhận tài khoản được phép hoạt động và đã hoàn tất đổi mật khẩu
-        lần đầu. Token chỉ dành cho đổi mật khẩu chưa được truy cập route này (403 PASSWORD_CHANGE_REQUIRED); tài khoản
-        không hoạt động trả 403 ACCOUNT_INACTIVE. Guard phía server kiểm tra trước truy vấn nghiệp vụ; frontend redirect
-        không thay thế guard. Các mã lỗi và tên thuộc tính auth context là đề xuất tích hợp, chưa có trong source ZIP.
-        CUSTOMER. Luôn lọc theo userId trong token; không nhận userId query. Sắp xếp createdAt DESC, id DESC. GET không
-        tự cleanup. PENDING_PAYMENT có expiresAt đã qua vẫn có thể xuất hiện trước lượt cleanup; frontend hiển thị hết
-        hạn, không coi còn thanh toán được. Không bảo đảm snapshot giữa các lần phân trang có dữ liệu thay đổi.'
-      security:
-      - bearerAuth: []
       parameters:
-      - name: page
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100000
-          default: 1
-        description: Trang bắt đầu từ 1.
-      - name: pageSize
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 20
-        description: Số đơn tối đa mỗi trang.
-      - name: status
-        in: query
-        schema:
-          $ref: '#/components/schemas/OrderStatus'
-        description: Bỏ qua để lấy mọi trạng thái.
-      responses:
-        '200':
-          description: Danh sách theo quyền và phân trang.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderList'
-              examples:
-                oneOrder:
-                  value:
-                    items:
-                    - id: 22222222-2222-4222-8222-222222222222
-                      orderCode: ORD-DEMO-001
-                      status: PENDING_PAYMENT
-                      grandTotal: '285000.00'
-                      currency: VND
-                      reservationExpiresAt: '2026-10-09T03:15:00Z'
-                      createdAt: '2026-10-09T03:00:00Z'
-                      updatedAt: '2026-10-09T03:00:00Z'
-                    pagination:
-                      page: 1
-                      pageSize: 20
-                      totalItems: 1
-                      totalPages: 1
-                empty:
-                  value:
-                    items: []
-                    pagination:
-                      page: 1
-                      pageSize: 20
-                      totalItems: 0
-                      totalPages: 0
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNAUTHORIZED:
-                  value:
-                    statusCode: 401
-                    code: UNAUTHORIZED
-                    message: Cần đăng nhập bằng token hợp lệ.
-        '403':
-          description: Lỗi 403; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                FORBIDDEN:
-                  value:
-                    statusCode: 403
-                    code: FORBIDDEN
-                    message: Vai trò không được phép thực hiện thao tác này.
-                PASSWORD_CHANGE_REQUIRED:
-                  value:
-                    statusCode: 403
-                    code: PASSWORD_CHANGE_REQUIRED
-                    message: Bạn cần đổi mật khẩu lần đầu trước khi sử dụng chức năng này.
-                ACCOUNT_INACTIVE:
-                  value:
-                    statusCode: 403
-                    code: ACCOUNT_INACTIVE
-                    message: Tài khoản hiện không được phép sử dụng hệ thống.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
-                  value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
-        '400':
-          description: Lỗi 400; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                VALIDATION_ERROR:
-                  value:
-                    statusCode: 400
-                    code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-  /orders/{orderId}:
-    parameters:
-    - name: orderId
-      in: path
-      required: true
-      description: UUID hợp lệ; trả 404 nếu không tồn tại hoặc thuộc khách khác.
-      schema:
-        $ref: '#/components/schemas/Uuid'
-    get:
-      tags:
-      - Orders
-      operationId: getMyOrder
-      summary: Chi tiết đơn của khách
-      description: 'CẬP NHẬT NHÓM 09/10: Auth phải xác nhận tài khoản được phép hoạt động và đã hoàn tất đổi mật khẩu
-        lần đầu. Token chỉ dành cho đổi mật khẩu chưa được truy cập route này (403 PASSWORD_CHANGE_REQUIRED); tài khoản
-        không hoạt động trả 403 ACCOUNT_INACTIVE. Guard phía server kiểm tra trước truy vấn nghiệp vụ; frontend redirect
-        không thay thế guard. Các mã lỗi và tên thuộc tính auth context là đề xuất tích hợp, chưa có trong source ZIP.
-        CUSTOMER và chủ đơn. Đơn thuộc khách khác hoặc không tồn tại đều trả 404 ORDER_NOT_FOUND. GET không đổi trạng
-        thái, trả snapshot đã lưu.'
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Chi tiết đơn.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderDetails'
-              examples:
-                holding:
-                  value:
-                    id: 22222222-2222-4222-8222-222222222222
-                    orderCode: ORD-DEMO-001
-                    status: PENDING_PAYMENT
-                    grandTotal: '285000.00'
-                    currency: VND
-                    reservationExpiresAt: '2026-10-09T03:15:00Z'
-                    createdAt: '2026-10-09T03:00:00Z'
-                    updatedAt: '2026-10-09T03:00:00Z'
-                    subtotal: '300000.00'
-                    discountTotal: '15000.00'
-                    shippingFee: '0.00'
-                    shippingRecipient: Khách demo
-                    shippingPhone: 0900000000
-                    shippingAddress: Địa chỉ demo tại TP.HCM
-                    shippingRegion: Miền Nam
-                    cancelledReason: null
-                    confirmedAt: null
-                    cancelledAt: null
-                    items:
-                    - id: 44444444-4444-4444-8444-444444444444
-                      productId: 11111111-1111-4111-8111-111111111111
-                      warehouseId: 33333333-3333-4333-8333-333333333333
-                      productName: Tai nghe demo
-                      sku: DEMO-001
-                      quantity: 2
-                      unitPrice: '150000.00'
-                      discountAmount: '15000.00'
-                      lineTotal: '285000.00'
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNAUTHORIZED:
-                  value:
-                    statusCode: 401
-                    code: UNAUTHORIZED
-                    message: Cần đăng nhập bằng token hợp lệ.
-        '403':
-          description: Lỗi 403; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                FORBIDDEN:
-                  value:
-                    statusCode: 403
-                    code: FORBIDDEN
-                    message: Vai trò không được phép thực hiện thao tác này.
-                PASSWORD_CHANGE_REQUIRED:
-                  value:
-                    statusCode: 403
-                    code: PASSWORD_CHANGE_REQUIRED
-                    message: Bạn cần đổi mật khẩu lần đầu trước khi sử dụng chức năng này.
-                ACCOUNT_INACTIVE:
-                  value:
-                    statusCode: 403
-                    code: ACCOUNT_INACTIVE
-                    message: Tài khoản hiện không được phép sử dụng hệ thống.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
-                  value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
-        '400':
-          description: Lỗi 400; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                VALIDATION_ERROR:
-                  value:
-                    statusCode: 400
-                    code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-        '404':
-          description: Lỗi 404; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                ORDER_NOT_FOUND:
-                  value:
-                    statusCode: 404
-                    code: ORDER_NOT_FOUND
-                    message: Không tìm thấy đơn hàng.
-  /orders/{orderId}/cancel:
-    parameters:
-    - name: orderId
-      in: path
-      required: true
-      description: UUID hợp lệ; trả 404 nếu không tồn tại hoặc thuộc khách khác.
-      schema:
-        $ref: '#/components/schemas/Uuid'
-    post:
-      tags:
-      - Orders
-      operationId: cancelMyOrder
-      summary: Hủy đơn chưa thanh toán
-      description: 'CẬP NHẬT NHÓM 09/10: Auth phải xác nhận tài khoản được phép hoạt động và đã hoàn tất đổi mật khẩu
-        lần đầu. Token chỉ dành cho đổi mật khẩu chưa được truy cập route này (403 PASSWORD_CHANGE_REQUIRED); tài khoản
-        không hoạt động trả 403 ACCOUNT_INACTIVE. Guard phía server kiểm tra trước truy vấn nghiệp vụ; frontend redirect
-        không thay thế guard. Các mã lỗi và tên thuộc tính auth context là đề xuất tích hợp, chưa có trong source ZIP.
-        CUSTOMER và chủ đơn. Khóa order, kiểm tra trạng thái dưới khóa. PENDING_PAYMENT chưa hết hạn: chuyển HOLDING
-        -> RELEASED, giảm reservedStock, đặt CANCELLED; PENDING_PAYMENT đã hết hạn: thực hiện expire cùng transaction
-        (EXPIRED, reason RESERVATION_EXPIRED), trả 200 đơn CANCELLED. Pending payments được đánh FAILED với lý do tương
-        ứng, callbackCount không đổi. Đơn CANCELLED gọi lại trả 200 bản hiện tại, không ghi lại lý do/lịch sử/giải phóng
-        lần hai. CONFIRMED/SHIPPING/DELIVERED trả 409 INVALID_ORDER_STATE. reason tối đa 255 ký tự, bỏ qua dùng CUSTOMER_CANCELLED.
-        Chi tiết khóa/audit trong stock-reservation-contract.md.'
-      security:
-      - bearerAuth: []
-      requestBody:
+      - name: id
+        in: path
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CancelOrderRequest'
-            examples:
-              defaultReason:
-                value: {}
-              customReason:
-                value:
-                  reason: Khách đổi ý
+        schema:
+          $ref: '#/components/schemas/Uuid'
       responses:
         '200':
-          description: Đơn đã hủy hoặc đã được hủy trước đó.
+          description: Chi tiết đơn thuộc khách đã đăng nhập.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderDetails'
               examples:
-                cancelled:
+                pending:
                   value:
-                    id: 22222222-2222-4222-8222-222222222222
-                    orderCode: ORD-DEMO-001
-                    status: CANCELLED
-                    grandTotal: '285000.00'
-                    currency: VND
-                    reservationExpiresAt: '2026-10-09T03:15:00Z'
-                    createdAt: '2026-10-09T03:00:00Z'
-                    updatedAt: '2026-10-09T03:02:00Z'
-                    subtotal: '300000.00'
-                    discountTotal: '15000.00'
+                    id: 11111111-1111-4111-8111-111111111111
+                    orderCode: ORD-DEMO20261119
+                    userId: 33333333-3333-4333-8333-333333333333
+                    status: PENDING_PAYMENT
+                    subtotal: '100000.00'
+                    discountTotal: '0.00'
                     shippingFee: '0.00'
+                    grandTotal: '100000.00'
+                    currency: VND
                     shippingRecipient: Khách demo
                     shippingPhone: 0900000000
-                    shippingAddress: Địa chỉ demo tại TP.HCM
+                    shippingAddress: 1 Đường thử nghiệm
                     shippingRegion: Miền Nam
-                    cancelledReason: CUSTOMER_CANCELLED
+                    reservationExpiresAt: '2026-11-19T05:15:00Z'
+                    cancelledReason: null
+                    cancelledAt: null
                     confirmedAt: null
-                    cancelledAt: '2026-10-09T03:02:00Z'
+                    createdAt: '2026-11-19T05:00:00Z'
+                    updatedAt: '2026-11-19T05:00:00Z'
                     items:
-                    - id: 44444444-4444-4444-8444-444444444444
-                      productId: 11111111-1111-4111-8111-111111111111
-                      warehouseId: 33333333-3333-4333-8333-333333333333
-                      productName: Tai nghe demo
-                      sku: DEMO-001
+                    - id: 55555555-5555-4555-8555-555555555555
+                      orderId: 11111111-1111-4111-8111-111111111111
+                      productId: 22222222-2222-4222-8222-222222222222
+                      warehouseId: 44444444-4444-4444-8444-444444444444
+                      inventoryId: '9007199254740993'
+                      productName: Sản phẩm demo
+                      sku: DEMO-1
+                      unitPrice: '50000.00'
+                      discountAmount: '0.00'
                       quantity: 2
-                      unitPrice: '150000.00'
-                      discountAmount: '15000.00'
-                      lineTotal: '285000.00'
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNAUTHORIZED:
+                      lineTotal: '100000.00'
+                      createdAt: '2026-11-19T05:00:00Z'
+                    statusHistory:
+                    - id: '10'
+                      orderId: 11111111-1111-4111-8111-111111111111
+                      fromStatus: null
+                      toStatus: PENDING_PAYMENT
+                      actorId: 33333333-3333-4333-8333-333333333333
+                      reason: Tạo đơn và giữ chỗ tồn kho
+                      createdAt: '2026-11-19T05:00:00Z'
+                expired:
                   value:
-                    statusCode: 401
-                    code: UNAUTHORIZED
-                    message: Cần đăng nhập bằng token hợp lệ.
-        '403':
-          description: Lỗi 403; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                FORBIDDEN:
-                  value:
-                    statusCode: 403
-                    code: FORBIDDEN
-                    message: Vai trò không được phép thực hiện thao tác này.
-                PASSWORD_CHANGE_REQUIRED:
-                  value:
-                    statusCode: 403
-                    code: PASSWORD_CHANGE_REQUIRED
-                    message: Bạn cần đổi mật khẩu lần đầu trước khi sử dụng chức năng này.
-                ACCOUNT_INACTIVE:
-                  value:
-                    statusCode: 403
-                    code: ACCOUNT_INACTIVE
-                    message: Tài khoản hiện không được phép sử dụng hệ thống.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
-                  value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
+                    id: 11111111-1111-4111-8111-111111111111
+                    orderCode: ORD-DEMO20261119
+                    userId: 33333333-3333-4333-8333-333333333333
+                    status: CANCELLED
+                    subtotal: '100000.00'
+                    discountTotal: '0.00'
+                    shippingFee: '0.00'
+                    grandTotal: '100000.00'
+                    currency: VND
+                    shippingRecipient: Khách demo
+                    shippingPhone: 0900000000
+                    shippingAddress: 1 Đường thử nghiệm
+                    shippingRegion: Miền Nam
+                    reservationExpiresAt: '2026-11-19T05:15:00Z'
+                    cancelledReason: EXPIRED
+                    cancelledAt: '2026-11-19T05:15:00Z'
+                    confirmedAt: null
+                    createdAt: '2026-11-19T05:00:00Z'
+                    updatedAt: '2026-11-19T05:15:00Z'
+                    items:
+                    - id: 55555555-5555-4555-8555-555555555555
+                      orderId: 11111111-1111-4111-8111-111111111111
+                      productId: 22222222-2222-4222-8222-222222222222
+                      warehouseId: 44444444-4444-4444-8444-444444444444
+                      inventoryId: '9007199254740993'
+                      productName: Sản phẩm demo
+                      sku: DEMO-1
+                      unitPrice: '50000.00'
+                      discountAmount: '0.00'
+                      quantity: 2
+                      lineTotal: '100000.00'
+                      createdAt: '2026-11-19T05:00:00Z'
+                    statusHistory:
+                    - id: '10'
+                      orderId: 11111111-1111-4111-8111-111111111111
+                      fromStatus: null
+                      toStatus: PENDING_PAYMENT
+                      actorId: 33333333-3333-4333-8333-333333333333
+                      reason: Tạo đơn và giữ chỗ tồn kho
+                      createdAt: '2026-11-19T05:00:00Z'
+                    - id: '11'
+                      orderId: 11111111-1111-4111-8111-111111111111
+                      fromStatus: PENDING_PAYMENT
+                      toStatus: CANCELLED
+                      actorId: null
+                      reason: EXPIRED
+                      createdAt: '2026-11-19T05:15:00Z'
         '400':
-          description: Lỗi 400; xử lý theo code.
+          description: Dữ liệu đầu vào không hợp lệ.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                VALIDATION_ERROR:
+                validation:
                   value:
                     statusCode: 400
+                    error: Bad Request
                     code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-        '404':
-          description: Lỗi 404; xử lý theo code.
+                    message:
+                    - Dữ liệu không hợp lệ.
+                    path: /orders/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+        '401':
+          description: Phiên đăng nhập chưa hợp lệ.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                ORDER_NOT_FOUND:
+                unauthorized:
+                  value:
+                    statusCode: 401
+                    error: Unauthorized
+                    code: UNAUTHORIZED
+                    message: Cần đăng nhập.
+                    path: /orders/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+        '403':
+          description: Thiếu quyền hoặc cần đổi mật khẩu lần đầu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                passwordChange:
+                  value:
+                    statusCode: 403
+                    error: Forbidden
+                    code: PASSWORD_CHANGE_REQUIRED
+                    message: Vui lòng đổi mật khẩu lần đầu.
+                    path: /orders/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+                role:
+                  value:
+                    statusCode: 403
+                    error: Forbidden
+                    code: FORBIDDEN
+                    message: Bạn không có quyền thực hiện thao tác.
+                    path: /orders/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+        '404':
+          description: Đơn không tồn tại trong tài khoản.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing:
                   value:
                     statusCode: 404
-                    code: ORDER_NOT_FOUND
+                    error: Not Found
+                    code: NOT_FOUND
                     message: Không tìm thấy đơn hàng.
-        '409':
-          description: Lỗi 409; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INVALID_ORDER_STATE:
-                  value:
-                    statusCode: 409
-                    code: INVALID_ORDER_STATE
-                    message: Trạng thái đơn không cho phép thao tác.
-  /payments:
+                    path: /orders/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+  /payments/mock/{orderId}:
     post:
+      operationId: payMockOrder
+      summary: Thử thanh toán mô phỏng trên đơn chờ
       tags:
       - Payments
-      operationId: createMockPayment
-      summary: Tạo hoặc lấy giao dịch mock đang chờ
-      description: 'CẬP NHẬT NHÓM 09/10: Auth phải xác nhận tài khoản được phép hoạt động và đã hoàn tất đổi mật khẩu
-        lần đầu. Token chỉ dành cho đổi mật khẩu chưa được truy cập route này (403 PASSWORD_CHANGE_REQUIRED); tài khoản
-        không hoạt động trả 403 ACCOUNT_INACTIVE. Guard phía server kiểm tra trước truy vấn nghiệp vụ; frontend redirect
-        không thay thế guard. Các mã lỗi và tên thuộc tính auth context là đề xuất tích hợp, chưa có trong source ZIP.
-        CUSTOMER và chủ đơn. COD trả 422 UNSUPPORTED_PAYMENT_METHOD (đề xuất phạm vi 0.1). Khóa order; cần PENDING_PAYMENT,
-        reservation HOLDING còn hạn và grandTotal > 0. Cùng order đã có PENDING cùng method/amount/currency thì trả 200
-        chính payment đó; khác method trả 409 PAYMENT_IN_PROGRESS. Payment trước FAILED có thể tạo giao dịch mới khi
-        đơn còn hợp lệ; không gia hạn reservation. Đơn có SUCCESS trả 409 ALREADY_PAID. Sinh transactionRef mới UNIQUE
-        tối đa 64 ký tự, amount lấy grandTotal và currency từ order; body không nhận giá. Cùng order bị khóa nối tiếp
-        để tránh tạo hai pending payment. 201 cho giao dịch mới, 200 cho tái sử dụng; chưa có cơ chế này trong code nền.'
-      security:
-      - bearerAuth: []
+      description: Thiết bị khách gửi kết quả mô phỏng. Đơn sử dụng số tiền do server lưu. Khi bị từ chối, khách
+        có thể thử lại trên cùng đơn trước khi hết hạn. Gửi lại cùng giao dịch trả duplicate=true.
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Uuid'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreatePaymentRequest'
+              $ref: '#/components/schemas/MockPaymentRequest'
             examples:
-              mockCard:
+              approved:
                 value:
-                  orderId: 22222222-2222-4222-8222-222222222222
+                  transactionRef: DEMO-MOCK-OK
                   method: MOCK_CARD
-              mockWallet:
+                  approved: true
+              declined:
                 value:
-                  orderId: 22222222-2222-4222-8222-222222222222
-                  method: MOCK_EWALLET
+                  transactionRef: DEMO-MOCK-NO
+                  method: MOCK_CARD
+                  approved: false
       responses:
         '201':
-          description: Giao dịch mới, chưa xác nhận thanh toán.
+          description: Kết quả lần xử lý hoặc xác nhận giao dịch đã ghi nhận.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Payment'
+                $ref: '#/components/schemas/MockPaymentResult'
               examples:
-                pending:
-                  value:
-                    id: 55555555-5555-4555-8555-555555555555
-                    orderId: 22222222-2222-4222-8222-222222222222
-                    transactionRef: MOCK-DEMO-001
-                    amount: '285000.00'
-                    currency: VND
-                    method: MOCK_CARD
-                    status: PENDING
-                    failureReason: null
-                    callbackCount: 0
-                    processedAt: null
-                    createdAt: '2026-10-09T03:01:00Z'
-                    updatedAt: '2026-10-09T03:01:00Z'
-        '200':
-          description: Tái sử dụng giao dịch PENDING phù hợp.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Payment'
-              examples:
-                existing:
-                  value:
-                    id: 55555555-5555-4555-8555-555555555555
-                    orderId: 22222222-2222-4222-8222-222222222222
-                    transactionRef: MOCK-DEMO-001
-                    amount: '285000.00'
-                    currency: VND
-                    method: MOCK_CARD
-                    status: PENDING
-                    failureReason: null
-                    callbackCount: 0
-                    processedAt: null
-                    createdAt: '2026-10-09T03:01:00Z'
-                    updatedAt: '2026-10-09T03:01:00Z'
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNAUTHORIZED:
-                  value:
-                    statusCode: 401
-                    code: UNAUTHORIZED
-                    message: Cần đăng nhập bằng token hợp lệ.
-        '403':
-          description: Lỗi 403; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                FORBIDDEN:
-                  value:
-                    statusCode: 403
-                    code: FORBIDDEN
-                    message: Vai trò không được phép thực hiện thao tác này.
-                PASSWORD_CHANGE_REQUIRED:
-                  value:
-                    statusCode: 403
-                    code: PASSWORD_CHANGE_REQUIRED
-                    message: Bạn cần đổi mật khẩu lần đầu trước khi sử dụng chức năng này.
-                ACCOUNT_INACTIVE:
-                  value:
-                    statusCode: 403
-                    code: ACCOUNT_INACTIVE
-                    message: Tài khoản hiện không được phép sử dụng hệ thống.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
-                  value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
-        '400':
-          description: Lỗi 400; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                VALIDATION_ERROR:
-                  value:
-                    statusCode: 400
-                    code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-        '404':
-          description: Lỗi 404; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                ORDER_NOT_FOUND:
-                  value:
-                    statusCode: 404
-                    code: ORDER_NOT_FOUND
-                    message: Không tìm thấy đơn hàng.
-        '409':
-          description: Lỗi 409; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INVALID_ORDER_STATE:
-                  value:
-                    statusCode: 409
-                    code: INVALID_ORDER_STATE
-                    message: Trạng thái đơn không cho phép thao tác.
-                RESERVATION_EXPIRED:
-                  value:
-                    statusCode: 409
-                    code: RESERVATION_EXPIRED
-                    message: Thời gian giữ chỗ đã hết.
-                ORDER_NOT_PAYABLE:
-                  value:
-                    statusCode: 409
-                    code: ORDER_NOT_PAYABLE
-                    message: Đơn hàng chưa đủ điều kiện thanh toán.
-                PAYMENT_IN_PROGRESS:
-                  value:
-                    statusCode: 409
-                    code: PAYMENT_IN_PROGRESS
-                    message: Đơn đang có giao dịch chờ xử lý bằng phương thức khác.
-                ALREADY_PAID:
-                  value:
-                    statusCode: 409
-                    code: ALREADY_PAID
-                    message: Đơn đã được thanh toán.
-        '422':
-          description: Lỗi 422; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNSUPPORTED_PAYMENT_METHOD:
-                  value:
-                    statusCode: 422
-                    code: UNSUPPORTED_PAYMENT_METHOD
-                    message: COD chưa được hỗ trợ trong contract mock 0.1.
-  /payments/{paymentId}:
-    parameters:
-    - name: paymentId
-      in: path
-      required: true
-      description: UUID hợp lệ; trả 404 nếu không tồn tại hoặc thuộc khách khác.
-      schema:
-        $ref: '#/components/schemas/Uuid'
-    get:
-      tags:
-      - Payments
-      operationId: getMyPayment
-      summary: Tra cứu thanh toán mock của đơn mình
-      description: 'CẬP NHẬT NHÓM 09/10: Auth phải xác nhận tài khoản được phép hoạt động và đã hoàn tất đổi mật khẩu
-        lần đầu. Token chỉ dành cho đổi mật khẩu chưa được truy cập route này (403 PASSWORD_CHANGE_REQUIRED); tài khoản
-        không hoạt động trả 403 ACCOUNT_INACTIVE. Guard phía server kiểm tra trước truy vấn nghiệp vụ; frontend redirect
-        không thay thế guard. Các mã lỗi và tên thuộc tính auth context là đề xuất tích hợp, chưa có trong source ZIP.
-        CUSTOMER; kiểm tra sở hữu thông qua payment.order.userId. Không tồn tại hoặc khác chủ trả 404 PAYMENT_NOT_FOUND.
-        Đây là route đề xuất bổ sung để frontend kiểm tra khi request/callback có độ trễ; GET không thay đổi trạng thái.'
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Trạng thái payment hiện tại.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Payment'
-              examples:
-                pending:
-                  value:
-                    id: 55555555-5555-4555-8555-555555555555
-                    orderId: 22222222-2222-4222-8222-222222222222
-                    transactionRef: MOCK-DEMO-001
-                    amount: '285000.00'
-                    currency: VND
-                    method: MOCK_CARD
-                    status: PENDING
-                    failureReason: null
-                    callbackCount: 0
-                    processedAt: null
-                    createdAt: '2026-10-09T03:01:00Z'
-                    updatedAt: '2026-10-09T03:01:00Z'
                 success:
                   value:
-                    id: 55555555-5555-4555-8555-555555555555
-                    orderId: 22222222-2222-4222-8222-222222222222
-                    transactionRef: MOCK-DEMO-001
-                    amount: '285000.00'
-                    currency: VND
-                    method: MOCK_CARD
+                    transactionRef: DEMO-MOCK-OK
                     status: SUCCESS
-                    failureReason: null
-                    callbackCount: 1
-                    processedAt: '2026-10-09T03:03:00Z'
-                    createdAt: '2026-10-09T03:01:00Z'
-                    updatedAt: '2026-10-09T03:03:00Z'
-                failed:
-                  value:
-                    id: 55555555-5555-4555-8555-555555555555
-                    orderId: 22222222-2222-4222-8222-222222222222
-                    transactionRef: MOCK-DEMO-001
-                    amount: '285000.00'
-                    currency: VND
-                    method: MOCK_CARD
-                    status: FAILED
-                    failureReason: MOCK_DECLINED
-                    callbackCount: 1
-                    processedAt: '2026-10-09T03:03:00Z'
-                    createdAt: '2026-10-09T03:01:00Z'
-                    updatedAt: '2026-10-09T03:03:00Z'
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                UNAUTHORIZED:
-                  value:
-                    statusCode: 401
-                    code: UNAUTHORIZED
-                    message: Cần đăng nhập bằng token hợp lệ.
-        '403':
-          description: Lỗi 403; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                FORBIDDEN:
-                  value:
-                    statusCode: 403
-                    code: FORBIDDEN
-                    message: Vai trò không được phép thực hiện thao tác này.
-                PASSWORD_CHANGE_REQUIRED:
-                  value:
-                    statusCode: 403
-                    code: PASSWORD_CHANGE_REQUIRED
-                    message: Bạn cần đổi mật khẩu lần đầu trước khi sử dụng chức năng này.
-                ACCOUNT_INACTIVE:
-                  value:
-                    statusCode: 403
-                    code: ACCOUNT_INACTIVE
-                    message: Tài khoản hiện không được phép sử dụng hệ thống.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
-                  value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
-        '400':
-          description: Lỗi 400; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                VALIDATION_ERROR:
-                  value:
-                    statusCode: 400
-                    code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-        '404':
-          description: Lỗi 404; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                PAYMENT_NOT_FOUND:
-                  value:
-                    statusCode: 404
-                    code: PAYMENT_NOT_FOUND
-                    message: Không tìm thấy giao dịch.
-  /payments/mock/callback:
-    post:
-      tags:
-      - Payments
-      operationId: processMockPaymentCallback
-      summary: Nhận kết quả từ mock gateway tin cậy
-      description: 'Chỉ local/test và backend mock gateway, KHÔNG phải endpoint cho browser khách tự báo đã trả tiền.
-        Đề xuất X-Mock-Callback-Token so với secret riêng MOCK_PAYMENT_CALLBACK_SECRET, chưa có trong source/env; không
-        dùng JWT_SECRET, không nhúng vào frontend. Thiếu/sai token trả 401. Đối chiếu ref/orderId/amount/currency. Khóa
-        theo contract nội bộ. Callback giống hệt một callback đã chấp nhận: 200 duplicate=true, kể cả thời hạn giữ chỗ
-        đã qua; chỉ tăng callbackCount, không lặp nghiệp vụ. Mâu thuẫn terminal callback trả 409 CALLBACK_CONFLICT. Callback
-        lần đầu cho đơn đã hủy/hết hạn trả 409; không phục hồi reservation. SUCCESS hợp lệ commit giữ chỗ và xác nhận
-        đơn; FAILED hợp lệ giữ đơn PENDING_PAYMENT, reservation HOLDING đến hạn gốc để khách thử lại. SUCCESS có failureReason
-        trả 400. FAILED bỏ failureReason được chuẩn hóa MOCK_DECLINED. Payment bị FAILED bởi cleanup/cancel không được
-        coi là callback gateway đã chấp nhận. Hết hạn dùng clock_timestamp() thực tế sau khi lấy khóa, không chỉ NOW()
-        đầu transaction.'
-      security:
-      - mockCallbackToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MockPaymentCallbackRequest'
-            examples:
-              success:
-                value:
-                  transactionRef: MOCK-DEMO-001
-                  orderId: 22222222-2222-4222-8222-222222222222
-                  amount: '285000.00'
-                  currency: VND
-                  status: SUCCESS
-              failed:
-                value:
-                  transactionRef: MOCK-DEMO-001
-                  orderId: 22222222-2222-4222-8222-222222222222
-                  amount: '285000.00'
-                  currency: VND
-                  status: FAILED
-                  failureReason: MOCK_DECLINED
-      responses:
-        '200':
-          description: Đã chấp nhận hoặc đã xử lý cùng callback trước đó.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CallbackResult'
-              examples:
-                success:
-                  value:
-                    payment:
-                      id: 55555555-5555-4555-8555-555555555555
-                      orderId: 22222222-2222-4222-8222-222222222222
-                      transactionRef: MOCK-DEMO-001
-                      amount: '285000.00'
-                      currency: VND
-                      method: MOCK_CARD
-                      status: SUCCESS
-                      failureReason: null
-                      callbackCount: 1
-                      processedAt: '2026-10-09T03:03:00Z'
-                      createdAt: '2026-10-09T03:01:00Z'
-                      updatedAt: '2026-10-09T03:03:00Z'
                     orderStatus: CONFIRMED
                     duplicate: false
-                failed:
+                declined:
                   value:
-                    payment:
-                      id: 55555555-5555-4555-8555-555555555555
-                      orderId: 22222222-2222-4222-8222-222222222222
-                      transactionRef: MOCK-DEMO-001
-                      amount: '285000.00'
-                      currency: VND
-                      method: MOCK_CARD
-                      status: FAILED
-                      failureReason: MOCK_DECLINED
-                      callbackCount: 1
-                      processedAt: '2026-10-09T03:03:00Z'
-                      createdAt: '2026-10-09T03:01:00Z'
-                      updatedAt: '2026-10-09T03:03:00Z'
+                    transactionRef: DEMO-MOCK-NO
+                    status: FAILED
                     orderStatus: PENDING_PAYMENT
                     duplicate: false
-                duplicate:
+                repeat:
                   value:
-                    payment:
-                      id: 55555555-5555-4555-8555-555555555555
-                      orderId: 22222222-2222-4222-8222-222222222222
-                      transactionRef: MOCK-DEMO-001
-                      amount: '285000.00'
-                      currency: VND
-                      method: MOCK_CARD
-                      status: SUCCESS
-                      failureReason: null
-                      callbackCount: 2
-                      processedAt: '2026-10-09T03:03:00Z'
-                      createdAt: '2026-10-09T03:01:00Z'
-                      updatedAt: '2026-10-09T03:04:00Z'
+                    transactionRef: DEMO-MOCK-OK
+                    status: SUCCESS
                     orderStatus: CONFIRMED
                     duplicate: true
-        '401':
-          description: Lỗi 401; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INVALID_CALLBACK_TOKEN:
-                  value:
-                    statusCode: 401
-                    code: INVALID_CALLBACK_TOKEN
-                    message: Không xác thực được mock callback.
         '400':
-          description: Lỗi 400; xử lý theo code.
+          description: Dữ liệu đầu vào không hợp lệ.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                VALIDATION_ERROR:
+                validation:
                   value:
                     statusCode: 400
+                    error: Bad Request
                     code: VALIDATION_ERROR
-                    message: Dữ liệu không hợp lệ.
-        '404':
-          description: Lỗi 404; xử lý theo code.
+                    message:
+                    - Dữ liệu không hợp lệ.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+        '401':
+          description: Phiên đăng nhập chưa hợp lệ.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                PAYMENT_NOT_FOUND:
+                unauthorized:
+                  value:
+                    statusCode: 401
+                    error: Unauthorized
+                    code: UNAUTHORIZED
+                    message: Cần đăng nhập.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+        '403':
+          description: Thiếu quyền hoặc cần đổi mật khẩu lần đầu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                passwordChange:
+                  value:
+                    statusCode: 403
+                    error: Forbidden
+                    code: PASSWORD_CHANGE_REQUIRED
+                    message: Vui lòng đổi mật khẩu lần đầu.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+                role:
+                  value:
+                    statusCode: 403
+                    error: Forbidden
+                    code: FORBIDDEN
+                    message: Bạn không có quyền thực hiện thao tác.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+        '404':
+          description: Đơn không tồn tại trong tài khoản.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing:
                   value:
                     statusCode: 404
-                    code: PAYMENT_NOT_FOUND
-                    message: Không tìm thấy giao dịch.
+                    error: Not Found
+                    code: NOT_FOUND
+                    message: Không tìm thấy đơn hàng.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
         '409':
-          description: Lỗi 409; xử lý theo code.
+          description: Đơn hết hạn, đã kết thúc hoặc có giao dịch xung đột.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               examples:
-                PAYMENT_MISMATCH:
+                expired:
                   value:
                     statusCode: 409
-                    code: PAYMENT_MISMATCH
-                    message: Thông tin callback không khớp giao dịch.
-                CALLBACK_CONFLICT:
-                  value:
-                    statusCode: 409
-                    code: CALLBACK_CONFLICT
-                    message: Kết quả callback mâu thuẫn với kết quả đã ghi nhận.
-                INVALID_ORDER_STATE:
-                  value:
-                    statusCode: 409
-                    code: INVALID_ORDER_STATE
-                    message: Trạng thái đơn không cho phép thao tác.
-                RESERVATION_EXPIRED:
-                  value:
-                    statusCode: 409
+                    error: Conflict
                     code: RESERVATION_EXPIRED
-                    message: Thời gian giữ chỗ đã hết.
-        '500':
-          description: Lỗi 500; xử lý theo code.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                INTERNAL_ERROR:
+                    message: Giữ chỗ đã hết hạn.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
+                conflict:
                   value:
-                    statusCode: 500
-                    code: INTERNAL_ERROR
-                    message: Không thể xử lý yêu cầu, vui lòng kiểm tra lại trạng thái trước khi gửi lại.
+                    statusCode: 409
+                    error: Conflict
+                    code: CONFLICT
+                    message: transactionRef đã thuộc giao dịch khác.
+                    path: /payments/mock/11111111-1111-4111-8111-111111111111
+                    timestamp: '2026-11-19T05:00:07Z'
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: 'CUSTOMER, tài khoản hoạt động và đã đổi mật khẩu lần đầu theo cập nhật nhóm 09/10. Bearer token riêng
-        lẻ không chứng minh đã hoàn tất bước này: guard phải xác minh trạng thái do Auth quản lý. Chưa có Auth code trong
-        ZIP nền.'
-    mockCallbackToken:
-      type: apiKey
-      in: header
-      name: X-Mock-Callback-Token
-      description: ĐỀ XUẤT secret riêng phía server/local test, chưa có cấu hình source. Không đưa token này vào frontend;
-        khi thiếu cấu hình thì endpoint phải đóng.
   schemas:
     Uuid:
       type: string
@@ -1127,23 +486,8 @@ components:
       type: string
       pattern: ^[1-9][0-9]{0,18}$
       maxLength: 19
-      description: ID PostgreSQL BIGINT dương, serialize thành chuỗi. Tầng service kiểm tra <= 9223372036854775807; không
-        chuyển sang Number.
-    Money:
-      type: string
-      pattern: ^(0|[1-9][0-9]{0,11})\.[0-9]{2}$
-      maxLength: 15
-      description: Chuỗi Decimal(14,2) không âm; tối đa 12 chữ số phần nguyên và đúng 2 chữ số thập phân.
-    PositiveMoney:
-      type: string
-      pattern: ^([1-9][0-9]{0,11}\.[0-9]{2}|0\.(0[1-9]|[1-9][0-9]))$
-      maxLength: 15
-      description: Tiền > 0, tương ứng CHECK payments.amount > 0.
-    Currency:
-      type: string
-      enum:
-      - VND
-      description: 'Đề xuất 0.1: chỉ VND. CSDL CHAR(3) có thể mở rộng sau review.'
+      description: ID PostgreSQL BIGINT dương, serialize thành chuỗi. Tầng service kiểm tra <= 9223372036854775807;
+        không chuyển sang Number.
     OrderStatus:
       type: string
       enum:
@@ -1152,13 +496,6 @@ components:
       - SHIPPING
       - DELIVERED
       - CANCELLED
-    ReservationStatus:
-      type: string
-      enum:
-      - HOLDING
-      - COMMITTED
-      - RELEASED
-      - EXPIRED
     PaymentStatus:
       type: string
       enum:
@@ -1172,333 +509,13 @@ components:
       - MOCK_EWALLET
       - COD
       description: Đúng enum DB. Đề xuất 0.1 chỉ thực hiện hai phương thức MOCK; yêu cầu COD trả 422 UNSUPPORTED_PAYMENT_METHOD.
-    ShippingRecipient:
+    ReservationStatus:
       type: string
-      minLength: 1
-      maxLength: 150
-      description: Trim trước khi kiểm tra; không chấp nhận toàn khoảng trắng.
-    ShippingPhone:
-      type: string
-      minLength: 9
-      maxLength: 20
-      pattern: ^\+?[0-9]{9,15}$
-      description: Đề xuất format số điện thoại cho bản 0.1.
-    ShippingAddress:
-      type: string
-      minLength: 1
-      maxLength: 500
-      description: Trim trước khi kiểm tra; không chấp nhận toàn khoảng trắng.
-    CreateOrderItem:
-      type: object
-      additionalProperties: false
-      required:
-      - productId
-      - quantity
-      properties:
-        productId:
-          $ref: '#/components/schemas/Uuid'
-        quantity:
-          type: integer
-          minimum: 1
-          maximum: 100
-      description: Giới hạn quantity <= 100 là đề xuất API, không phải CHECK tối đa trong DB.
-    CreateOrderRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - items
-      - shippingRecipient
-      - shippingPhone
-      - shippingAddress
-      properties:
-        items:
-          type: array
-          minItems: 1
-          maxItems: 50
-          items:
-            $ref: '#/components/schemas/CreateOrderItem'
-          description: Tối đa 50 sản phẩm khác nhau. Trùng productId trả 400; uniqueItems không thay thế kiểm tra này.
-        shippingRecipient:
-          $ref: '#/components/schemas/ShippingRecipient'
-        shippingPhone:
-          $ref: '#/components/schemas/ShippingPhone'
-        shippingAddress:
-          $ref: '#/components/schemas/ShippingAddress'
-        shippingRegion:
-          type: string
-          minLength: 1
-          maxLength: 100
-          description: Tùy chọn; trim. Ưu tiên kho có region khớp chuỗi đã trim; không phải enum.
-      description: Không nhận userId, giá, tổng tiền, warehouseId, inventoryId hoặc TTL từ khách. Giá/kho do backend
-        xác định.
-    CancelOrderRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        reason:
-          type: string
-          minLength: 1
-          maxLength: 255
-          description: Trim; tùy chọn. Mặc định CUSTOMER_CANCELLED.
-      description: Body bắt buộc; có thể gửi {}.
-    OrderItem:
-      type: object
-      additionalProperties: false
-      required:
-      - id
-      - productId
-      - warehouseId
-      - productName
-      - sku
-      - quantity
-      - unitPrice
-      - discountAmount
-      - lineTotal
-      properties:
-        id:
-          $ref: '#/components/schemas/Uuid'
-        productId:
-          $ref: '#/components/schemas/Uuid'
-        warehouseId:
-          $ref: '#/components/schemas/Uuid'
-        productName:
-          type: string
-          minLength: 1
-          maxLength: 255
-        sku:
-          type: string
-          minLength: 1
-          maxLength: 64
-        quantity:
-          type: integer
-          minimum: 1
-          maximum: 100
-        unitPrice:
-          $ref: '#/components/schemas/Money'
-        discountAmount:
-          $ref: '#/components/schemas/Money'
-        lineTotal:
-          $ref: '#/components/schemas/Money'
-      description: Snapshot theo OrderItem. Một sản phẩm có thể xuất hiện trên nhiều dòng, mỗi dòng một kho. lineTotal
-        = unitPrice * quantity - discountAmount. Không lộ inventoryId ở API khách.
-    OrderSummary:
-      type: object
-      additionalProperties: false
-      required:
-      - id
-      - orderCode
-      - status
-      - grandTotal
-      - currency
-      - reservationExpiresAt
-      - createdAt
-      - updatedAt
-      properties:
-        id:
-          $ref: '#/components/schemas/Uuid'
-        orderCode:
-          type: string
-          minLength: 1
-          maxLength: 32
-        status:
-          $ref: '#/components/schemas/OrderStatus'
-        grandTotal:
-          $ref: '#/components/schemas/Money'
-        currency:
-          $ref: '#/components/schemas/Currency'
-        reservationExpiresAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-    PageInfo:
-      type: object
-      additionalProperties: false
-      required:
-      - page
-      - pageSize
-      - totalItems
-      - totalPages
-      properties:
-        page:
-          type: integer
-          minimum: 1
-        pageSize:
-          type: integer
-          minimum: 1
-          maximum: 100
-        totalItems:
-          type: integer
-          minimum: 0
-        totalPages:
-          type: integer
-          minimum: 0
-      description: totalPages = ceil(totalItems/pageSize); dữ liệu rỗng có totalPages = 0. page vượt cuối trả items rỗng,
-        giữ nguyên page yêu cầu.
-    Error:
-      type: object
-      additionalProperties: false
-      required:
-      - statusCode
-      - code
-      - message
-      properties:
-        statusCode:
-          type: integer
-          enum:
-          - 400
-          - 401
-          - 403
-          - 404
-          - 409
-          - 422
-          - 500
-        code:
-          type: string
-          enum:
-          - VALIDATION_ERROR
-          - UNAUTHORIZED
-          - INVALID_CALLBACK_TOKEN
-          - FORBIDDEN
-          - PASSWORD_CHANGE_REQUIRED
-          - ACCOUNT_INACTIVE
-          - ORDER_NOT_FOUND
-          - PAYMENT_NOT_FOUND
-          - PRODUCT_NOT_FOUND
-          - INVENTORY_NOT_FOUND
-          - INSUFFICIENT_STOCK
-          - INVALID_ORDER_STATE
-          - RESERVATION_EXPIRED
-          - ORDER_NOT_PAYABLE
-          - PAYMENT_IN_PROGRESS
-          - ALREADY_PAID
-          - PAYMENT_MISMATCH
-          - CALLBACK_CONFLICT
-          - PRODUCT_UNAVAILABLE
-          - UNSUPPORTED_PAYMENT_METHOD
-          - INTERNAL_ERROR
-        message:
-          type: string
-          minLength: 1
-      description: Định dạng lỗi đề xuất cần Minh review. Không chứa SQL, token, stack trace; message có thể thay đổi,
-        frontend xử lý theo code.
-    CreatePaymentRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - orderId
-      - method
-      properties:
-        orderId:
-          $ref: '#/components/schemas/Uuid'
-        method:
-          $ref: '#/components/schemas/PaymentMethod'
-      description: Không nhận amount/currency/transactionRef từ khách; server lấy tiền từ snapshot đơn và sinh transactionRef.
-    Payment:
-      type: object
-      additionalProperties: false
-      required:
-      - id
-      - orderId
-      - transactionRef
-      - amount
-      - currency
-      - method
-      - status
-      - failureReason
-      - callbackCount
-      - processedAt
-      - createdAt
-      - updatedAt
-      properties:
-        id:
-          $ref: '#/components/schemas/Uuid'
-        orderId:
-          $ref: '#/components/schemas/Uuid'
-        transactionRef:
-          type: string
-          minLength: 1
-          maxLength: 64
-        amount:
-          $ref: '#/components/schemas/PositiveMoney'
-        currency:
-          $ref: '#/components/schemas/Currency'
-        method:
-          $ref: '#/components/schemas/PaymentMethod'
-        status:
-          $ref: '#/components/schemas/PaymentStatus'
-        failureReason:
-          type: string
-          nullable: true
-          maxLength: 255
-        callbackCount:
-          type: integer
-          minimum: 0
-        processedAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      description: Snapshot Payment. gatewayResponse không trả cho khách. callbackCount chỉ tăng với callback đã xác
-        thực, đối chiếu hợp lệ và được chấp nhận, gồm bản lặp giống hệt.
-    MockPaymentCallbackRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - transactionRef
-      - orderId
-      - amount
-      - currency
-      - status
-      properties:
-        transactionRef:
-          type: string
-          minLength: 1
-          maxLength: 64
-        orderId:
-          $ref: '#/components/schemas/Uuid'
-        amount:
-          $ref: '#/components/schemas/PositiveMoney'
-        currency:
-          $ref: '#/components/schemas/Currency'
-        status:
-          type: string
-          enum:
-          - SUCCESS
-          - FAILED
-        failureReason:
-          type: string
-          minLength: 1
-          maxLength: 255
-          description: Chỉ được có khi FAILED; có thể bỏ qua, backend dùng MOCK_DECLINED. SUCCESS có field này trả 400.
-      description: Body được gửi bởi mock gateway tin cậy, không phải browser khách. So khớp tuple ref/order/amount/currency
-        trước khi xử lý. Điều kiện failureReason kiểm tra ở service.
-    CallbackResult:
-      type: object
-      additionalProperties: false
-      required:
-      - payment
-      - orderStatus
-      - duplicate
-      properties:
-        payment:
-          $ref: '#/components/schemas/Payment'
-        orderStatus:
-          $ref: '#/components/schemas/OrderStatus'
-        duplicate:
-          type: boolean
-      description: orderStatus là trạng thái hiện tại. Callback lặp đã chấp nhận trả duplicate=true, không lặp side effect;
-        callbackCount và updatedAt có thể đổi.
+      enum:
+      - HOLDING
+      - COMMITTED
+      - RELEASED
+      - EXPIRED
     ReservationInternal:
       type: object
       additionalProperties: false
@@ -1539,73 +556,138 @@ components:
           type: string
           format: date-time
           nullable: true
-      description: Mô hình JSON tham chiếu nội bộ; không có endpoint công khai. SQL chỉ trả BIGINT id; service phải đọc
-        row nếu cần các field khác.
-    OrderDetails:
+      description: Mô hình JSON tham chiếu nội bộ; không có endpoint công khai. SQL chỉ trả BIGINT id; service phải
+        đọc row nếu cần các field khác.
+    Money:
+      type: string
+      pattern: ^[0-9]{1,12}\.[0-9]{2}$
+    CreateOrderRequest:
       type: object
-      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productId:
+                $ref: '#/components/schemas/Uuid'
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 100
+            required:
+            - productId
+            - quantity
+            additionalProperties: false
+          minItems: 1
+          maxItems: 50
+        shippingRecipient:
+          type: string
+          minLength: 1
+          maxLength: 150
+          pattern: \S
+        shippingPhone:
+          type: string
+          pattern: ^\+?[0-9]{9,15}$
+        shippingAddress:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: \S
+        shippingRegion:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 100
+          pattern: \S
       required:
-      - id
-      - orderCode
-      - status
-      - grandTotal
-      - currency
-      - reservationExpiresAt
-      - createdAt
-      - updatedAt
-      - subtotal
-      - discountTotal
-      - shippingFee
+      - items
       - shippingRecipient
       - shippingPhone
       - shippingAddress
-      - shippingRegion
-      - cancelledReason
-      - confirmedAt
-      - cancelledAt
-      - items
+      additionalProperties: false
+    OrderItem:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        orderId:
+          $ref: '#/components/schemas/Uuid'
+        productId:
+          $ref: '#/components/schemas/Uuid'
+        warehouseId:
+          $ref: '#/components/schemas/Uuid'
+        inventoryId:
+          $ref: '#/components/schemas/BigIntId'
+        productName:
+          type: string
+        sku:
+          type: string
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+        discountAmount:
+          $ref: '#/components/schemas/Money'
+        quantity:
+          type: integer
+          minimum: 1
+        lineTotal:
+          $ref: '#/components/schemas/Money'
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - id
+      - orderId
+      - productId
+      - warehouseId
+      - inventoryId
+      - productName
+      - sku
+      - unitPrice
+      - discountAmount
+      - quantity
+      - lineTotal
+      - createdAt
+      additionalProperties: false
+    Order:
+      type: object
       properties:
         id:
           $ref: '#/components/schemas/Uuid'
         orderCode:
           type: string
-          minLength: 1
           maxLength: 32
+        userId:
+          $ref: '#/components/schemas/Uuid'
         status:
           $ref: '#/components/schemas/OrderStatus'
-        grandTotal:
-          $ref: '#/components/schemas/Money'
-        currency:
-          $ref: '#/components/schemas/Currency'
-        reservationExpiresAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
         subtotal:
           $ref: '#/components/schemas/Money'
         discountTotal:
           $ref: '#/components/schemas/Money'
         shippingFee:
           $ref: '#/components/schemas/Money'
+        grandTotal:
+          $ref: '#/components/schemas/Money'
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
         shippingRecipient:
-          $ref: '#/components/schemas/ShippingRecipient'
+          type: string
         shippingPhone:
-          $ref: '#/components/schemas/ShippingPhone'
+          type: string
         shippingAddress:
-          $ref: '#/components/schemas/ShippingAddress'
+          type: string
         shippingRegion:
           type: string
-          maxLength: 100
+          nullable: true
+        reservationExpiresAt:
+          type: string
+          format: date-time
           nullable: true
         cancelledReason:
           type: string
-          maxLength: 255
           nullable: true
         confirmedAt:
           type: string
@@ -1615,72 +697,177 @@ components:
           type: string
           format: date-time
           nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
         items:
           type: array
-          minItems: 1
           items:
             $ref: '#/components/schemas/OrderItem'
-      description: Chỉ chủ đơn. Không trả userId của người khác. grandTotal = subtotal - discountTotal + shippingFee;
-        tổng lineTotal = subtotal - discountTotal.
-    OrderList:
-      type: object
-      additionalProperties: false
       required:
+      - id
+      - orderCode
+      - userId
+      - status
+      - subtotal
+      - discountTotal
+      - shippingFee
+      - grandTotal
+      - currency
+      - shippingRecipient
+      - shippingPhone
+      - shippingAddress
+      - shippingRegion
+      - reservationExpiresAt
+      - cancelledReason
+      - confirmedAt
+      - cancelledAt
+      - createdAt
+      - updatedAt
       - items
-      - pagination
+    OrderStatusEntry:
+      type: object
       properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrderSummary'
-        pagination:
-          $ref: '#/components/schemas/PageInfo'
-x-contract-status: DRAFT_FOR_TEAM_REVIEW
-x-source-commit: 2cc0677fd6fd1a0253f400a71a2f71d1d01ff505
-x-team-update-date: '2026-10-09'
-x-team-update-evidence:
-- image(2).png
-- image(3).png
-- image(4).png
-x-auth-integration:
-  owner: Khang — Auth, đăng ký, email Nodemailer, đổi/reset mật khẩu
-  requiredContextProposal:
-    userId: UUID ổn định, ánh xạ users.id
-    role: UserRole của schema; không đổi WAREHOUSE_STAFF thành STAFF chỉ dựa vào tên gọi chat
-    isActive: boolean đã được Auth kiểm tra
-    passwordChangeRequired: boolean đề xuất; schema ZIP chưa có field này
-  businessAccess: chỉ khi isActive=true, passwordChangeRequired=false và role CUSTOMER
-  notAssumed: Không tự coi email chứa thông tin đăng nhập là bằng chứng xác minh email; không thêm EMAIL_NOT_VERIFIED
-    khi chưa có quy tắc/token xác minh chính thức.
-  callbackExemption: Callback là service-to-service; không dùng JWT của khách hoặc cờ đổi mật khẩu để xử lý lại payment.
-    Vẫn kiểm tra secret và trạng thái đơn/reservation.
+        id:
+          $ref: '#/components/schemas/BigIntId'
+        orderId:
+          $ref: '#/components/schemas/Uuid'
+        fromStatus:
+          type: string
+          enum:
+          - PENDING_PAYMENT
+          - CONFIRMED
+          - SHIPPING
+          - DELIVERED
+          - CANCELLED
+          - null
+          nullable: true
+        toStatus:
+          $ref: '#/components/schemas/OrderStatus'
+        actorId:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - id
+      - orderId
+      - fromStatus
+      - toStatus
+      - actorId
+      - reason
+      - createdAt
+      additionalProperties: false
+    OrderDetails:
+      allOf:
+      - $ref: '#/components/schemas/Order'
+      - type: object
+        properties:
+          statusHistory:
+            type: array
+            items:
+              $ref: '#/components/schemas/OrderStatusEntry'
+        required:
+        - statusHistory
+    MockPaymentRequest:
+      type: object
+      properties:
+        transactionRef:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,64}$
+        method:
+          type: string
+          enum:
+          - MOCK_CARD
+          - MOCK_EWALLET
+        approved:
+          type: boolean
+      required:
+      - transactionRef
+      - method
+      - approved
+      additionalProperties: false
+    MockPaymentResult:
+      type: object
+      properties:
+        transactionRef:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,64}$
+        status:
+          type: string
+          enum:
+          - SUCCESS
+          - FAILED
+        orderStatus:
+          $ref: '#/components/schemas/OrderStatus'
+        duplicate:
+          type: boolean
+      required:
+      - transactionRef
+      - status
+      - orderStatus
+      - duplicate
+      additionalProperties: false
+    Error:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          minimum: 400
+          maximum: 599
+        error:
+          type: string
+        code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]+$
+        message:
+          oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        path:
+          type: string
+          pattern: ^/
+        timestamp:
+          type: string
+          format: date-time
+      required:
+      - statusCode
+      - error
+      - code
+      - message
+      - path
+      - timestamp
+      additionalProperties: false
 x-error-status-map:
   VALIDATION_ERROR: 400
+  BAD_REQUEST: 400
   UNAUTHORIZED: 401
-  INVALID_CALLBACK_TOKEN: 401
-  FORBIDDEN: 403
   PASSWORD_CHANGE_REQUIRED: 403
-  ACCOUNT_INACTIVE: 403
-  ORDER_NOT_FOUND: 404
-  PAYMENT_NOT_FOUND: 404
-  PRODUCT_NOT_FOUND: 404
+  FORBIDDEN: 403
+  NOT_FOUND: 404
   INVENTORY_NOT_FOUND: 404
   INSUFFICIENT_STOCK: 409
-  INVALID_ORDER_STATE: 409
   RESERVATION_EXPIRED: 409
-  ORDER_NOT_PAYABLE: 409
-  PAYMENT_IN_PROGRESS: 409
-  ALREADY_PAID: 409
-  PAYMENT_MISMATCH: 409
-  CALLBACK_CONFLICT: 409
-  PRODUCT_UNAVAILABLE: 409
-  UNSUPPORTED_PAYMENT_METHOD: 422
+  RESERVATION_CONFLICT: 409
+  RESERVATION_NOT_FOUND: 404
+  ORDER_NOT_FOUND: 404
+  CONFLICT: 409
   INTERNAL_ERROR: 500
 x-internal-stock-reservation:
   publicHttpEndpoint: false
   sourceFile: backend/prisma/migrations/20261008012516_manual_constraints_and_functions/migration.sql
-  sqlSignature: fn_reserve_stock(p_inventory_id BIGINT, p_order_id UUID, p_quantity INTEGER, p_ttl_minutes INTEGER DEFAULT
-    15) RETURNS BIGINT
+  sqlSignature: fn_reserve_stock(p_inventory_id BIGINT, p_order_id UUID, p_quantity INTEGER, p_ttl_minutes INTEGER
+    DEFAULT 15) RETURNS BIGINT
   resultMeaning: stock_reservations.id
   schemaReference: '#/components/schemas/ReservationInternal'
   example:

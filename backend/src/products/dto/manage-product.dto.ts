@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   Matches,
@@ -37,11 +38,15 @@ export class CreateProductDto {
   @IsString()
   @Matches(percent)
   discountPercent?: string;
-  @ValidateIf((_o, value) => value !== undefined)
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   @Matches(/^(?:\/(?!\/)|https?:\/\/)/)
-  imageUrl?: string;
+  imageUrl?: string | null;
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  description?: string | null;
   @ValidateIf((_o, value) => value !== undefined)
   @IsBoolean()
   isActive?: boolean;
@@ -80,11 +85,15 @@ export class UpdateProductDto {
   @IsString()
   @Matches(percent)
   discountPercent?: string;
-  @ValidateIf((_o, value) => value !== undefined)
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   @Matches(/^(?:\/(?!\/)|https?:\/\/)/)
-  imageUrl?: string;
+  imageUrl?: string | null;
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  description?: string | null;
   @ValidateIf((_o, value) => value !== undefined)
   @IsBoolean()
   isActive?: boolean;

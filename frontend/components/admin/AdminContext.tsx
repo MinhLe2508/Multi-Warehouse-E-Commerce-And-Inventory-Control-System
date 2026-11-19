@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { apiGet } from '../../shared/lib/apiClient';
 import type { Warehouse } from '../../shared/types/admin';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -9,6 +9,7 @@ interface Ctx {
   warehouses: Warehouse[];
   warehouseId: string;
   setWarehouseId: (id: string) => void;
+  refreshWarehouses: () => void;
 }
 
 const AdminCtx = createContext<Ctx | null>(null);
@@ -16,6 +17,8 @@ const AdminCtx = createContext<Ctx | null>(null);
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseId, setWarehouseId] = useState('ALL');
+  const [revision, setRevision] = useState(0);
+  const refreshWarehouses = useCallback(() => setRevision((current) => current + 1), []);
   const session = useAuthStore((s) => s.session);
 
   useEffect(() => {
@@ -28,6 +31,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       .then((list) => {
         if (!cancelled && Array.isArray(list)) {
           setWarehouses(list);
+          setWarehouseId((current) =>
+            current === 'ALL' || list.some(({ id }) => id === current)
+              ? current
+              : 'ALL',
+          );
         }
       })
       .catch(() => {
@@ -37,10 +45,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [revision, session]);
 
   return (
-    <AdminCtx.Provider value={{ warehouses, warehouseId, setWarehouseId }}>
+    <AdminCtx.Provider value={{ warehouses, warehouseId, setWarehouseId, refreshWarehouses }}>
       {children}
     </AdminCtx.Provider>
   );

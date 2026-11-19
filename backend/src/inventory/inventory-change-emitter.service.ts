@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { InventoryPubSubService } from './inventory-pubsub.service';
+import {
+  InventoryPubSubService,
+  type InventoryChangedEvent,
+} from './inventory-pubsub.service';
 
 interface InventorySnapshot {
   id: bigint;
@@ -15,9 +18,8 @@ interface InventorySnapshot {
   occurred_at: string;
 }
 
-/** Only transaction owners call this AFTER await $transaction(...).
- * Reads committed, whitelisted fields. Redis/notification failure must never
- * turn an already committed stock mutation into an HTTP failure/retry.
+/** Publish only after a transaction commits. A caller can read the snapshot
+ * in its transaction so publishing only needs to wait for Redis.
  */
 @Injectable()
 export class InventoryChangeEmitter {
@@ -28,13 +30,15 @@ export class InventoryChangeEmitter {
     private readonly pubsub: InventoryPubSubService,
   ) {}
 
-  async publishInventory(inventoryIds: bigint[]): Promise<void> {
-    if (inventoryIds.length === 0) return;
-    try {
-      const ids = [...new Set(inventoryIds)].sort((a, b) =>
-        a < b ? -1 : a > b ? 1 : 0,
-      );
-      const rows = await this.prisma.$queryRaw<InventorySnapshot[]>`
+  async readSnapshots(
+    inventoryIds: bigint[],
+    client: Pick<PrismaService, '$queryRaw'> = this.prisma,
+  ): Promise<InventoryChangedEvent[]> {
+    if (inventoryIds.length === 0) return [];
+    const ids = [...new Set(inventoryIds)].sort((a, b) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    const rows = await client.$queryRaw<InventorySnapshot[]>`
         SELECT i.id, i.product_id, i.warehouse_id, i.stock, i.reserved_stock,
                i.available_stock, i.threshold, i.version,
                COALESCE(i.threshold, w.default_low_stock_threshold) AS effective_threshold,
@@ -43,23 +47,38 @@ export class InventoryChangeEmitter {
          WHERE i.id = ANY(${ids}::bigint[])
          ORDER BY i.id
       `;
+    return rows.map((row) => ({
+      inventoryId: row.id.toString(),
+      productId: row.product_id,
+      warehouseId: row.warehouse_id,
+      stock: row.stock,
+      reservedStock: row.reserved_stock,
+      availableStock: row.available_stock,
+      threshold: row.threshold,
+      effectiveThreshold: row.effective_threshold,
+      isLowStock: row.available_stock <= row.effective_threshold,
+      version: row.version,
+      occurredAt: row.occurred_at,
+    }));
+  }
+
+  async publishSnapshots(snapshots: InventoryChangedEvent[]): Promise<void> {
+    try {
       await Promise.all(
-        rows.map(async (row) => {
-          await this.pubsub.notifyInventoryChanged({
-            inventoryId: row.id.toString(),
-            productId: row.product_id,
-            warehouseId: row.warehouse_id,
-            stock: row.stock,
-            reservedStock: row.reserved_stock,
-            availableStock: row.available_stock,
-            threshold: row.threshold,
-            effectiveThreshold: row.effective_threshold,
-            isLowStock: row.available_stock <= row.effective_threshold,
-            version: row.version,
-            occurredAt: row.occurred_at,
-          });
-        }),
+        snapshots.map((snapshot) =>
+          this.pubsub.notifyInventoryChanged(snapshot),
+        ),
       );
+    } catch (error) {
+      this.logger.warn(
+        `Inventory committed; realtime publish failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  }
+
+  async publishInventory(inventoryIds: bigint[]): Promise<void> {
+    try {
+      await this.publishSnapshots(await this.readSnapshots(inventoryIds));
     } catch (error) {
       this.logger.warn(
         `Inventory committed; realtime refresh failed: ${error instanceof Error ? error.message : 'unknown error'}`,

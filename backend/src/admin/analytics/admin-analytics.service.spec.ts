@@ -6,7 +6,8 @@ import { AdminAnalyticsService } from './admin-analytics.service';
 describe('AdminAnalyticsService (FR-DASH-02)', () => {
   let service: AdminAnalyticsService;
 
-  const mockPrisma = {
+  const mockTx = {
+    $executeRaw: jest.fn(),
     order: {
       groupBy: jest.fn(),
       aggregate: jest.fn(),
@@ -29,6 +30,13 @@ describe('AdminAnalyticsService (FR-DASH-02)', () => {
     },
   };
 
+  const mockPrisma = {
+    ...mockTx,
+    $transaction: jest.fn((work: (tx: typeof mockTx) => Promise<unknown>) =>
+      work(mockTx),
+    ),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new AdminAnalyticsService(mockPrisma as unknown as PrismaService);
@@ -38,6 +46,13 @@ describe('AdminAnalyticsService (FR-DASH-02)', () => {
     await expect(
       service.getSummary({ fromDate: '2026-11-15', toDate: '2026-11-10' }),
     ).rejects.toThrow(UnprocessableEntityException);
+  });
+
+  it('rejects impossible calendar dates before opening a transaction', async () => {
+    await expect(
+      service.getRevenueSeries({ fromDate: '2026-02-30' }),
+    ).rejects.toThrow(UnprocessableEntityException);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('returns zeroed metrics and string revenue when there are no orders', async () => {
@@ -63,6 +78,7 @@ describe('AdminAnalyticsService (FR-DASH-02)', () => {
       toDate: '2026-11-12',
     });
 
+    expect(mockTx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(res.revenue.total).toBe('0.00');
     expect(typeof res.revenue.total).toBe('string');
     expect(res.revenue.orderCount).toBe(0);

@@ -23,6 +23,30 @@ export function loadEnvironment(): void {
   if (existsSync(path)) process.loadEnvFile(path);
 }
 
+export function selectLoadTestDatabase(preparing = false): void {
+  const explicitUrl = process.env.LOAD_TEST_DATABASE_URL?.trim();
+  const connection = explicitUrl || process.env.DATABASE_URL?.trim();
+  let database: URL;
+  try {
+    database = new URL(connection ?? "");
+    if (!["postgres:", "postgresql:"].includes(database.protocol) || !database.pathname.slice(1)) {
+      throw new Error("invalid database");
+    }
+  } catch {
+    throw new Error("Cần URL PostgreSQL của môi trường kiểm thử.");
+  }
+
+  if (
+    preparing &&
+    !explicitUrl &&
+    (process.env.ALLOW_LOAD_TEST_SETUP !== "true" ||
+      !["localhost", "127.0.0.1", "[::1]"].includes(database.hostname))
+  ) {
+    throw new Error("Đặt LOAD_TEST_DATABASE_URL hoặc bật ALLOW_LOAD_TEST_SETUP=true cho PostgreSQL local.");
+  }
+  process.env.DATABASE_URL = database.href;
+}
+
 export function resolveGitCommit(): string {
   let commit = process.env.GIT_COMMIT?.trim() ?? "";
   try {

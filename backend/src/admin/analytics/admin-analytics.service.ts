@@ -1,10 +1,21 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { OrderStatus, Prisma, ReservationStatus } from '@prisma/client';
+import { isDateString } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
   AnalyticsQueryDto,
   RevenueSeriesQueryDto,
 } from './dto/analytics-query.dto';
+
+interface ReportingRange {
+  fromDate: string;
+  toDate: string;
+  startUtc: Date;
+  endExclusiveUtc: Date;
+}
+
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const REVENUE_STATUSES: OrderStatus[] = [
   OrderStatus.CONFIRMED,
@@ -61,27 +72,23 @@ export interface RevenueSeriesResponse {
 export class AdminAnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private parseRange(query: AnalyticsQueryDto): {
-    fromDate: string;
-    toDate: string;
-    startUtc: Date;
-    endExclusiveUtc: Date;
-  } {
+  private parseRange(query: AnalyticsQueryDto): ReportingRange {
     const now = new Date();
     // Mặc định 14 ngày gần nhất theo giờ Việt Nam (UTC+7)
-    const vnNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const vnNow = new Date(now.getTime() + VIETNAM_OFFSET_MS);
     const defaultTo = vnNow.toISOString().slice(0, 10);
-    const vnFrom = new Date(vnNow.getTime() - 13 * 24 * 60 * 60 * 1000);
+    const vnFrom = new Date(vnNow.getTime() - 13 * DAY_MS);
     const defaultFrom = vnFrom.toISOString().slice(0, 10);
 
     const fromDate = query.fromDate ?? defaultFrom;
     const toDate = query.toDate ?? defaultTo;
 
-    const startUtc = new Date(`${fromDate}T00:00:00.000+07:00`);
-    const endStartUtc = new Date(`${toDate}T00:00:00.000+07:00`);
     if (
-      Number.isNaN(startUtc.getTime()) ||
-      Number.isNaN(endStartUtc.getTime())
+      [fromDate, toDate].some(
+        (date) =>
+          !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+          !isDateString(date, { strict: true }),
+      )
     ) {
       throw new UnprocessableEntityException(
         'Khoảng ngày fromDate/toDate không hợp lệ',
@@ -94,11 +101,23 @@ export class AdminAnalyticsService {
       );
     }
 
-    const endExclusiveUtc = new Date(
-      endStartUtc.getTime() + 24 * 60 * 60 * 1000,
-    );
+    const startUtc = new Date(`${fromDate}T00:00:00.000+07:00`);
+    const endStartUtc = new Date(`${toDate}T00:00:00.000+07:00`);
+    const endExclusiveUtc = new Date(endStartUtc.getTime() + DAY_MS);
 
     return { fromDate, toDate, startUtc, endExclusiveUtc };
+  }
+
+  private readInUtc<T>(read: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        // The adapter binds DateTime values in UTC. Keep the session zone aligned
+        // with those values for comparisons against PostgreSQL timestamptz.
+        await tx.$executeRaw`SET LOCAL TIME ZONE 'UTC'`;
+        return read(tx);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   private decimalToString(
@@ -118,10 +137,17 @@ export class AdminAnalyticsService {
   async getSummary(
     query: AnalyticsQueryDto,
   ): Promise<AnalyticsSummaryResponse> {
-    const { fromDate, toDate, startUtc, endExclusiveUtc } =
-      this.parseRange(query);
-    const warehouseId = query.warehouseId ?? null;
+    const range = this.parseRange(query);
+    return this.readInUtc((tx) =>
+      this.readSummary(tx, query.warehouseId ?? null, range),
+    );
+  }
 
+  private async readSummary(
+    tx: Prisma.TransactionClient,
+    warehouseId: string | null,
+    { fromDate, toDate, startUtc, endExclusiveUtc }: ReportingRange,
+  ): Promise<AnalyticsSummaryResponse> {
     const orderWhereBase: Prisma.OrderWhereInput = {
       createdAt: {
         gte: startUtc,
@@ -137,7 +163,7 @@ export class AdminAnalyticsService {
     };
 
     // 1. Số đơn theo trạng thái
-    const statusGroups = await this.prisma.order.groupBy({
+    const statusGroups = await tx.order.groupBy({
       by: ['status'],
       where: orderWhereBase,
       _count: { _all: true },
@@ -160,7 +186,7 @@ export class AdminAnalyticsService {
     let revenueOrderCount = 0;
 
     if (!warehouseId) {
-      const agg = await this.prisma.order.aggregate({
+      const agg = await tx.order.aggregate({
         where: {
           ...orderWhereBase,
           status: { in: REVENUE_STATUSES },
@@ -171,7 +197,7 @@ export class AdminAnalyticsService {
       revenueTotal = this.decimalToString(agg._sum.grandTotal);
       revenueOrderCount = agg._count._all;
     } else {
-      const agg = await this.prisma.orderItem.aggregate({
+      const agg = await tx.orderItem.aggregate({
         where: {
           warehouseId,
           order: {
@@ -181,7 +207,7 @@ export class AdminAnalyticsService {
         },
         _sum: { lineTotal: true },
       });
-      const distinctOrders = await this.prisma.order.count({
+      const distinctOrders = await tx.order.count({
         where: {
           ...orderWhereBase,
           status: { in: REVENUE_STATUSES },
@@ -192,7 +218,7 @@ export class AdminAnalyticsService {
     }
 
     // 3. Top sản phẩm bán chạy
-    const topRaw = await this.prisma.orderItem.groupBy({
+    const topRaw = await tx.orderItem.groupBy({
       by: ['productId', 'sku'],
       where: {
         ...(warehouseId ? { warehouseId } : {}),
@@ -225,7 +251,7 @@ export class AdminAnalyticsService {
     }));
 
     // 4. Low-stock theo kho (available_stock <= COALESCE(inventory.threshold, warehouse.defaultLowStockThreshold))
-    const warehouses = await this.prisma.warehouse.findMany({
+    const warehouses = await tx.warehouse.findMany({
       where: warehouseId ? { id: warehouseId } : undefined,
       select: {
         id: true,
@@ -236,7 +262,7 @@ export class AdminAnalyticsService {
       orderBy: { code: 'asc' },
     });
 
-    const invRows = await this.prisma.inventory.findMany({
+    const invRows = await tx.inventory.findMany({
       where: warehouseId ? { warehouseId } : undefined,
       select: {
         warehouseId: true,
@@ -282,7 +308,7 @@ export class AdminAnalyticsService {
     );
 
     // 5. Reservation hết hạn trong khoảng ngày (theo releasedAt)
-    const expiredReservations = await this.prisma.stockReservation.count({
+    const expiredReservations = await tx.stockReservation.count({
       where: {
         status: ReservationStatus.EXPIRED,
         releasedAt: {
@@ -318,10 +344,17 @@ export class AdminAnalyticsService {
   async getRevenueSeries(
     query: RevenueSeriesQueryDto,
   ): Promise<RevenueSeriesResponse> {
-    const { fromDate, toDate, startUtc, endExclusiveUtc } =
-      this.parseRange(query);
-    const warehouseId = query.warehouseId ?? null;
+    const range = this.parseRange(query);
+    return this.readInUtc((tx) =>
+      this.readRevenueSeries(tx, query.warehouseId ?? null, range),
+    );
+  }
 
+  private async readRevenueSeries(
+    tx: Prisma.TransactionClient,
+    warehouseId: string | null,
+    { fromDate, toDate, startUtc, endExclusiveUtc }: ReportingRange,
+  ): Promise<RevenueSeriesResponse> {
     // Tạo danh sách đầy đủ các ngày từ fromDate -> toDate
     const seriesMap = new Map<
       string,
@@ -340,7 +373,7 @@ export class AdminAnalyticsService {
     }
 
     if (!warehouseId) {
-      const orders = await this.prisma.order.findMany({
+      const orders = await tx.order.findMany({
         where: {
           status: { in: REVENUE_STATUSES },
           createdAt: { gte: startUtc, lt: endExclusiveUtc },
@@ -353,7 +386,7 @@ export class AdminAnalyticsService {
       });
 
       for (const ord of orders) {
-        const vnDate = new Date(ord.createdAt.getTime() + 7 * 60 * 60 * 1000)
+        const vnDate = new Date(ord.createdAt.getTime() + VIETNAM_OFFSET_MS)
           .toISOString()
           .slice(0, 10);
         const bucket = seriesMap.get(vnDate);
@@ -363,7 +396,7 @@ export class AdminAnalyticsService {
         }
       }
     } else {
-      const items = await this.prisma.orderItem.findMany({
+      const items = await tx.orderItem.findMany({
         where: {
           warehouseId,
           order: {
@@ -382,7 +415,7 @@ export class AdminAnalyticsService {
 
       for (const item of items) {
         const vnDate = new Date(
-          item.order.createdAt.getTime() + 7 * 60 * 60 * 1000,
+          item.order.createdAt.getTime() + VIETNAM_OFFSET_MS,
         )
           .toISOString()
           .slice(0, 10);

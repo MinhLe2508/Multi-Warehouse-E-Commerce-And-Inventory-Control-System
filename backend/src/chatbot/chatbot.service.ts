@@ -10,7 +10,11 @@ import {
 } from '@google/genai';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { RetrievalService, RetrievedDocument } from './rag/retrieval.service';
+import {
+  RetrievalService,
+  type RetrievedDocument,
+  type RetrievalMode,
+} from './rag/retrieval.service';
 import {
   CHATBOT_SYSTEM_PROMPT,
   buildAugmentedUserMessage,
@@ -55,6 +59,8 @@ export interface SendMessageResult {
   toolCalls: ToolCallRecord[];
   latencyMs: number;
   tokenUsage?: number;
+  generationSource: 'CLAUDE' | 'GEMINI' | 'LOCAL';
+  retrievalMode: RetrievalMode;
 }
 
 interface GenerationResult {
@@ -373,6 +379,8 @@ export class ChatbotService {
         isFallback: false,
         escalatedToHuman: true,
         retrievedDocuments: [],
+        generationSource: 'LOCAL',
+        retrievalMode: 'NONE',
         toolCalls: [],
         latencyMs,
       };
@@ -421,6 +429,7 @@ export class ChatbotService {
     };
 
     // 6. Bước GENERATION: Gọi LLM (Anthropic Claude hoặc Google Gemini)
+    let generationSource: SendMessageResult['generationSource'] = 'LOCAL';
     let replyText = '';
     let isFallback = false;
     let tokenUsage = 0;
@@ -439,6 +448,7 @@ export class ChatbotService {
           claudeMessages,
           toolCtx,
         );
+        generationSource = 'CLAUDE';
         replyText = generation.replyText;
         tokenUsage = generation.tokenUsage;
         toolCalls = generation.toolCalls;
@@ -472,6 +482,7 @@ export class ChatbotService {
           toolCtx,
           priorHistory,
         );
+        generationSource = 'GEMINI';
         replyText = generation.replyText;
         tokenUsage = generation.tokenUsage;
         toolCalls = generation.toolCalls;
@@ -559,6 +570,8 @@ export class ChatbotService {
       isFallback,
       escalatedToHuman: shouldEscalate,
       retrievedDocuments: retrievedDocs,
+      generationSource,
+      retrievalMode: retrievalResult.mode ?? 'NONE',
       toolCalls,
       latencyMs,
       tokenUsage: tokenUsage > 0 ? tokenUsage : undefined,

@@ -10,6 +10,7 @@ import {
   loadEnvironment,
   OUTPUT_DIR,
   resolveGitCommit,
+  selectLoadTestDatabase,
   TEST_DATA_PATH,
   type LoadTestFixture,
 } from "./load-test-fixture";
@@ -22,12 +23,7 @@ export const RESERVATION_TTL_MINUTES = 15;
 export async function setupTestData(): Promise<void> {
   try {
     loadEnvironment();
-    if (
-      process.env.NODE_ENV === "production" &&
-      process.env.ALLOW_LOAD_TEST_SETUP !== "true"
-    ) {
-      throw new Error("Demo load test yêu cầu môi trường kiểm thử.");
-    }
+    selectLoadTestDatabase(true);
     const secret = process.env.JWT_ACCESS_SECRET;
     if (!secret)
       throw new Error("Thiếu JWT_ACCESS_SECRET của môi trường kiểm thử.");

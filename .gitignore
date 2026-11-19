@@ -11,3 +11,8 @@ coverage/
 tmp/
 outputs/
 backend/tmp/
+
+load-tests/.generated/
+load-tests/test-data.json
+load-tests/test-data.json.*.tmp
+backend/test/load-test/test-data.json

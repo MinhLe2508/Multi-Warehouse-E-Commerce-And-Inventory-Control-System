@@ -1,485 +1,412 @@
 'use client';
 
-import React, { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
+import { Plus, RefreshCw } from 'lucide-react';
+import { useAdminProducts } from '../../hooks/useAdminProducts';
 import { useCurrentAdminUser } from '../../hooks/useCurrentAdminUser';
-import { useAdminProducts, type AdminProductItem } from '../../hooks/useAdminProducts';
-import { formatVnd, formatTime } from '../../shared/lib/format';
 import {
-  Plus,
-  Edit2,
-  Trash2,
-  Eye,
-  EyeOff,
-  AlertTriangle,
-  CheckCircle2,
-  Search,
-  Package,
-} from 'lucide-react';
+  createManagedProduct,
+  deleteManagedProduct,
+  updateManagedProduct,
+  type ManagedProduct,
+  type ProductFields,
+} from '../../shared/lib/adminProductsApi';
+import { extractErrorMessage } from '../../shared/lib/apiClient';
+import { formatVnd } from '../../shared/lib/format';
+
+const MONEY_PATTERN = '[0-9]{1,12}(\\.[0-9]{1,2})?';
+const PERCENT_PATTERN = '([0-9]{1,2}(\\.[0-9]{1,2})?|100(\\.0{1,2})?)';
 
 export default function ManageProducts() {
   const { isAdmin } = useCurrentAdminUser();
-  const {
-    products,
-    loading,
-    error,
-    setError,
-    addProduct,
-    updateProduct,
-    toggleProductActive,
-    deleteProduct,
-  } = useAdminProducts();
+  const catalog = useAdminProducts();
+  const [editing, setEditing] = useState<ManagedProduct | 'new' | null>(null);
+  const [notice, setNotice] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(false);
+  const current = editing === 'new' ? null : editing;
 
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [editingProduct, setEditingProduct] = useState<AdminProductItem | 'new' | null>(null);
-  const [priceWarning, setPriceWarning] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  function startEditing(target: ManagedProduct | 'new') {
+    setActionError('');
+    setNotice('');
+    setEditing(target);
+  }
 
-  // Lọc sản phẩm
-  const filtered = products.filter(p => {
-    const matchSearch =
-      (p.name + p.sku).toLowerCase().includes(search.toLowerCase());
-    const matchCategory =
-      selectedCategory === 'ALL' || p.categoryName === selectedCategory;
-    return matchSearch && matchCategory;
-  });
-
-  const categories = Array.from(new Set(products.map(p => p.categoryName)));
-
-  // Xử lý submit form thêm/sửa
-  const handleSubmitForm = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-
-    const sku = String(form.get('sku') || '').trim();
-    const name = String(form.get('name') || '').trim();
-    const categoryName = String(form.get('categoryName') || '').trim();
-    const costPrice = isAdmin ? Number(form.get('costPrice') || 0) : undefined;
-    const basePrice = Number(form.get('basePrice') || 0);
-    const discountPercent = Number(form.get('discountPercent') || 0);
-    const imageUrl = String(form.get('imageUrl') || '').trim();
-    const description = String(form.get('description') || '').trim();
-
-    // Validation
-    if (costPrice !== undefined && costPrice < 0) {
-      setError('Giá nhập không được nhỏ hơn 0.');
-      return;
+  async function runMutation(work: () => Promise<unknown>, success: string) {
+    if (pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    setActionError('');
+    setNotice('');
+    try {
+      await work();
+      setEditing(null);
+      setNotice(success);
+      catalog.refresh();
+    } catch (error: unknown) {
+      setActionError(
+        extractErrorMessage(error, 'Không lưu được thay đổi sản phẩm.'),
+      );
+    } finally {
+      pending.current = false;
+      setSaving(false);
     }
-    if (basePrice < 0) {
-      setError('Giá bán lẻ không được nhỏ hơn 0.');
-      return;
-    }
-    if (discountPercent < 0 || discountPercent > 100) {
-      setError('Giảm giá phải nằm trong khoảng 0 - 100%.');
-      return;
-    }
+  }
 
-    if (costPrice !== undefined && basePrice < costPrice) {
-      setPriceWarning('Lưu ý: Giá bán lẻ đang thấp hơn giá nhập.');
+  function saveProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const text = (name: string) => String(form.get(name) ?? '').trim();
+    const fields: ProductFields = {
+      sku: text('sku'),
+      name: text('name'),
+      basePrice: text('basePrice'),
+      discountPercent: text('discountPercent') || '0',
+      imageUrl: text('imageUrl') || null,
+      description: text('description') || null,
+    };
+    const costPrice = text('costPrice');
+    const categoryId = text('categoryId');
+
+    if (current) {
+      void runMutation(
+        () =>
+          updateManagedProduct(current.id, {
+            ...fields,
+            ...(categoryId && categoryId !== current.categoryId
+              ? { categoryId }
+              : {}),
+            ...(costPrice ? { costPrice } : {}),
+          }),
+        'Đã lưu sản phẩm.',
+      );
     } else {
-      setPriceWarning(null);
+      const slug = fields.sku
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      if (!slug || !categoryId) {
+        setActionError('Nhập SKU có chữ hoặc số và chọn danh mục.');
+        return;
+      }
+      void runMutation(
+        () => createManagedProduct({ ...fields, slug, categoryId, costPrice }),
+        'Đã thêm sản phẩm.',
+      );
     }
+  }
 
-    if (editingProduct === 'new') {
-      await addProduct({
-        sku,
-        name,
-        slug: sku.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        categoryId: 'cat-default',
-        categoryName,
-        costPrice,
-        basePrice,
-        discountPercent,
-        imageUrl: imageUrl || null,
-        description: description || null,
-        isActive: true,
-      });
-      setNotice('Đã thêm sản phẩm mới thành công.');
-    } else if (editingProduct) {
-      await updateProduct(editingProduct.id, {
-        sku,
-        name,
-        categoryName,
-        costPrice,
-        basePrice,
-        discountPercent,
-        imageUrl: imageUrl || null,
-        description: description || null,
-      });
-      setNotice('Đã cập nhật sản phẩm.');
-    }
-
-    setEditingProduct(null);
-  };
-
-  const handleDelete = async (p: AdminProductItem) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa sản phẩm ${p.name} (${p.sku})?`)) {
-      return;
-    }
-    const res = await deleteProduct(p.id);
-    if (res.success) {
-      setNotice(`Đã xóa sản phẩm ${p.sku}.`);
-    }
-  };
-
-  const current = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
+  function removeProduct(product: ManagedProduct) {
+    if (!window.confirm(`Xóa sản phẩm ${product.sku}?`)) return;
+    void runMutation(
+      () => deleteManagedProduct(product.id),
+      `Đã xóa ${product.sku}.`,
+    );
+  }
 
   return (
     <div className="container-fluid p-0">
-      {/* Header */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-          <h1 className="h4 fw-bold mb-1 text-dark">Quản lý sản phẩm</h1>
-          <p className="text-secondary small mb-0">
-            {isAdmin
-              ? 'Toàn quyền thêm, chỉnh sửa, định giá gốc và ẩn/xóa sản phẩm.'
-              : 'Quyền xem danh mục và thông tin sản phẩm (không hiển thị giá nhập).'}
-          </p>
-        </div>
-
-        {isAdmin && (
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h1 className="h4 fw-bold mb-0">Sản phẩm</h1>
+        <div className="d-flex gap-2">
           <button
             type="button"
-            onClick={() => {
-              setEditingProduct('new');
-              setPriceWarning(null);
-              setError(null);
-            }}
-            className="btn btn-primary d-flex align-items-center gap-1.5 px-3 py-2"
-            style={{ borderRadius: '8px', fontSize: '0.875rem' }}
+            className="btn btn-outline-secondary btn-sm"
+            onClick={catalog.refresh}
+            disabled={catalog.loading || saving}
           >
-            <Plus size={16} />
-            <span>Thêm sản phẩm</span>
+            <RefreshCw size={15} /> Làm mới
           </button>
-        )}
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={saving}
+              onClick={() => startEditing('new')}
+            >
+              <Plus size={15} /> Thêm sản phẩm
+            </button>
+          )}
+        </div>
       </div>
 
       {notice && (
-        <div className="alert alert-success alert-dismissible fade show small d-flex align-items-center justify-content-between mb-3" role="status">
-          <div className="d-flex align-items-center gap-2">
-            <CheckCircle2 size={16} />
-            <span>{notice}</span>
-          </div>
-          <button type="button" className="btn-close" onClick={() => setNotice(null)} />
+        <div className="alert alert-success py-2" role="status">
+          {notice}
+        </div>
+      )}
+      {(catalog.error || catalog.categoryError || actionError) && (
+        <div className="alert alert-danger py-2" role="alert">
+          {actionError || catalog.error || catalog.categoryError}
         </div>
       )}
 
-      {error && (
-        <div className="alert alert-danger alert-dismissible fade show small d-flex align-items-center justify-content-between mb-3" role="alert">
-          <div className="d-flex align-items-center gap-2">
-            <AlertTriangle size={16} />
-            <span>{error}</span>
-          </div>
-          <button type="button" className="btn-close" onClick={() => setError(null)} />
-        </div>
-      )}
-
-      {/* Form Thêm / Sửa (CHỈ ADMIN) */}
-      {isAdmin && editingProduct && (
-        <div className="card shadow-sm border-0 mb-4" style={{ borderRadius: '12px', border: '1px solid #ede9fe' }}>
-          <div className="card-header bg-light py-3 border-bottom d-flex align-items-center justify-content-between">
-            <h5 className="card-title h6 fw-bold mb-0 text-dark">
-              {current ? `Sửa sản phẩm: ${current.sku}` : 'Thêm sản phẩm mới'}
-            </h5>
-            <button
-              type="button"
-              className="btn-close"
-              onClick={() => setEditingProduct(null)}
-              aria-label="Đóng"
-            />
-          </div>
-
-          <form onSubmit={handleSubmitForm} className="card-body p-4">
-            {priceWarning && (
-              <div className="alert alert-warning small d-flex align-items-center gap-2 mb-3">
-                <AlertTriangle size={16} />
-                <span>{priceWarning}</span>
-              </div>
-            )}
-
+      {isAdmin && editing && (
+        <form
+          key={current?.id ?? 'new'}
+          onSubmit={saveProduct}
+          className="card card-body mb-3"
+        >
+          <h2 className="h6 fw-bold mb-3">
+            {current ? `Sửa ${current.sku}` : 'Thêm sản phẩm'}
+          </h2>
+          <fieldset disabled={saving}>
             <div className="row g-3">
-              <div className="col-12 col-md-4">
-                <label className="form-label small fw-semibold text-secondary">Mã SKU</label>
+              <label className="col-12 col-md-4">
+                SKU
                 <input
                   name="sku"
-                  type="text"
+                  className="form-control"
+                  defaultValue={current?.sku}
+                  pattern={String.raw`[A-Za-z0-9_\-]+`}
+                  maxLength={64}
                   required
-                  defaultValue={current?.sku ?? ''}
-                  className="form-control form-control-sm"
-                  placeholder="Ví dụ: MWH-IP15-128"
                 />
-              </div>
-
-              <div className="col-12 col-md-5">
-                <label className="form-label small fw-semibold text-secondary">Tên sản phẩm</label>
+              </label>
+              <label className="col-12 col-md-8">
+                Tên sản phẩm
                 <input
                   name="name"
-                  type="text"
+                  className="form-control"
+                  defaultValue={current?.name}
+                  maxLength={255}
                   required
-                  defaultValue={current?.name ?? ''}
-                  className="form-control form-control-sm"
-                  placeholder="Nhập tên sản phẩm đầy đủ"
                 />
-              </div>
-
-              <div className="col-12 col-md-3">
-                <label className="form-label small fw-semibold text-secondary">Danh mục</label>
+              </label>
+              <label className="col-12 col-md-6">
+                Danh mục
                 <select
-                  name="categoryName"
-                  required
-                  defaultValue={current?.categoryName ?? categories[0] ?? 'Điện thoại & Tablet'}
-                  className="form-select form-select-sm"
+                  name="categoryId"
+                  className="form-select"
+                  defaultValue={current?.categoryId ?? ''}
+                  required={!current}
                 >
-                  {categories.map(c => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="" disabled={Boolean(current?.categoryId)}>
+                    Chọn danh mục
+                  </option>
+                  {current?.category &&
+                    !catalog.categories.some(
+                      ({ id }) => id === current.categoryId,
+                    ) && (
+                      <option value={current.category.id}>
+                        {current.category.name} (hiện tại)
+                      </option>
+                    )}
+                  {catalog.categories.map(({ id, name }) => (
+                    <option key={id} value={id}>
+                      {name}
                     </option>
                   ))}
                 </select>
-              </div>
-
-              {/* Giá nhập (CHỈ ADMIN THẤY) */}
-              <div className="col-12 col-md-4">
-                <label className="form-label small fw-semibold text-secondary">
-                  Giá nhập (VNĐ) <span className="text-primary">· Chỉ Admin</span>
-                </label>
-                <input
-                  name="costPrice"
-                  type="number"
-                  min="0"
-                  step="1000"
-                  required
-                  defaultValue={current?.costPrice ?? 0}
-                  className="form-control form-control-sm"
-                  placeholder="Giá vốn"
-                />
-              </div>
-
-              <div className="col-12 col-md-4">
-                <label className="form-label small fw-semibold text-secondary">Giá bán lẻ niêm yết (VNĐ)</label>
-                <input
-                  name="basePrice"
-                  type="number"
-                  min="0"
-                  step="1000"
-                  required
-                  defaultValue={current?.basePrice ?? 0}
-                  className="form-control form-control-sm"
-                  placeholder="Giá bán lẻ"
-                />
-              </div>
-
-              <div className="col-12 col-md-4">
-                <label className="form-label small fw-semibold text-secondary">Giảm giá (%)</label>
+              </label>
+              <label className="col-12 col-md-6">
+                Giảm giá (%)
                 <input
                   name="discountPercent"
-                  type="number"
-                  min="0"
-                  max="100"
-                  defaultValue={current?.discountPercent ?? 0}
-                  className="form-control form-control-sm"
-                  placeholder="0 - 100"
+                  className="form-control"
+                  inputMode="decimal"
+                  pattern={PERCENT_PATTERN}
+                  defaultValue={current?.discountPercent ?? '0'}
                 />
-              </div>
-
-              <div className="col-12 col-md-6">
-                <label className="form-label small fw-semibold text-secondary">URL hình ảnh (tùy chọn)</label>
+              </label>
+              <label className="col-12 col-md-6">
+                Giá vốn (VND)
+                <input
+                  name="costPrice"
+                  className="form-control"
+                  inputMode="decimal"
+                  pattern={MONEY_PATTERN}
+                  defaultValue={current?.costPrice ?? ''}
+                  required={!current}
+                />
+              </label>
+              <label className="col-12 col-md-6">
+                Giá bán (VND)
+                <input
+                  name="basePrice"
+                  className="form-control"
+                  inputMode="decimal"
+                  pattern={MONEY_PATTERN}
+                  defaultValue={current?.basePrice}
+                  required
+                />
+              </label>
+              <label className="col-12">
+                Đường dẫn ảnh
                 <input
                   name="imageUrl"
-                  type="url"
+                  className="form-control"
                   defaultValue={current?.imageUrl ?? ''}
-                  className="form-control form-control-sm"
-                  placeholder="https://..."
+                  maxLength={500}
                 />
-              </div>
-
-              <div className="col-12 col-md-6">
-                <label className="form-label small fw-semibold text-secondary">Mô tả ngắn</label>
-                <input
+              </label>
+              <label className="col-12">
+                Mô tả
+                <textarea
                   name="description"
-                  type="text"
+                  className="form-control"
                   defaultValue={current?.description ?? ''}
-                  className="form-control form-control-sm"
-                  placeholder="Thông số, tính năng chính"
+                  rows={3}
+                  maxLength={5000}
                 />
-              </div>
+              </label>
             </div>
-
-            <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+            <div className="d-flex gap-2 mt-3">
+              <button type="submit" className="btn btn-primary btn-sm">
+                {saving ? 'Đang lưu…' : 'Lưu sản phẩm'}
+              </button>
               <button
                 type="button"
-                onClick={() => setEditingProduct(null)}
-                className="btn btn-outline-secondary btn-sm px-3"
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => setEditing(null)}
               >
                 Hủy
               </button>
-              <button
-                type="submit"
-                className="btn btn-primary btn-sm px-4"
-              >
-                {current ? 'Lưu thay đổi' : 'Thêm mới'}
-              </button>
             </div>
-          </form>
-        </div>
+          </fieldset>
+        </form>
       )}
 
-      {/* Bộ lọc tìm kiếm */}
       <div className="d-flex flex-wrap gap-2 mb-3">
-        <div className="input-group input-group-sm" style={{ maxWidth: '300px' }}>
-          <span className="input-group-text bg-white border-end-0">
-            <Search size={14} className="text-secondary" />
-          </span>
-          <input
-            type="search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Tìm theo tên hoặc SKU…"
-            className="form-control border-start-0"
-            aria-label="Tìm sản phẩm"
-          />
-        </div>
-
+        <input
+          className="form-control form-control-sm w-auto"
+          aria-label="Tìm sản phẩm"
+          placeholder="Tìm tên hoặc SKU"
+          maxLength={200}
+          value={catalog.search}
+          onChange={(event) => catalog.setSearch(event.target.value)}
+        />
         <select
-          value={selectedCategory}
-          onChange={e => setSelectedCategory(e.target.value)}
-          className="form-select form-select-sm"
-          style={{ maxWidth: '200px' }}
-          aria-label="Lọc theo danh mục"
+          className="form-select form-select-sm w-auto"
+          aria-label="Lọc danh mục"
+          value={catalog.categoryId}
+          onChange={(event) => catalog.setCategoryId(event.target.value)}
         >
-          <option value="ALL">Tất cả danh mục</option>
-          {categories.map(c => (
-            <option key={c} value={c}>
-              {c}
+          <option value="">Tất cả danh mục</option>
+          {catalog.categories.map(({ id, name }) => (
+            <option key={id} value={id}>
+              {name}
             </option>
           ))}
         </select>
       </div>
 
-      {/* Bảng sản phẩm */}
-      {loading ? (
-        <p className="text-secondary small">Đang tải sản phẩm…</p>
-      ) : filtered.length === 0 ? (
-        <div className="card p-5 text-center text-secondary small bg-white border">
-          <Package size={32} className="mx-auto mb-2 text-muted" />
-          Không tìm thấy sản phẩm nào phù hợp.
-        </div>
+      {catalog.loading ? (
+        <p role="status">Đang tải sản phẩm…</p>
       ) : (
-        <div className="table-responsive bg-white rounded-3 border shadow-sm" style={{ borderColor: '#ede9fe' }}>
-          <table className="table table-hover align-middle mb-0 text-sm">
-            <thead style={{ backgroundColor: '#faf5ff' }}>
-              <tr className="text-secondary small fw-semibold">
-                <th className="px-3 py-2.5" style={{ width: '60px' }}>Ảnh</th>
-                <th className="px-3 py-2.5">SKU / Tên sản phẩm</th>
-                <th className="px-3 py-2.5">Danh mục</th>
-                {isAdmin && <th className="px-3 py-2.5 text-end text-primary">Giá nhập</th>}
-                <th className="px-3 py-2.5 text-end">Giá bán lẻ</th>
-                <th className="px-3 py-2.5 text-center">Giảm giá</th>
-                <th className="px-3 py-2.5 text-center">Trạng thái</th>
-                <th className="px-3 py-2.5 text-secondary">Ngày tạo</th>
-                {isAdmin && <th className="px-3 py-2.5 text-center">Thao tác</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(p => (
-                <tr key={p.id}>
-                  <td className="px-3 py-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.imageUrl || 'https://via.placeholder.com/40'}
-                      alt={p.name}
-                      className="rounded object-fit-cover"
-                      style={{ width: '40px', height: '40px' }}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="fw-semibold text-dark">{p.name}</div>
-                    <code className="text-muted" style={{ fontSize: '0.75rem' }}>
-                      {p.sku}
-                    </code>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="badge bg-light text-secondary border small">
-                      {p.categoryName}
-                    </span>
-                  </td>
-                  {/* Cột giá nhập - CHỈ RENDER CHO ADMIN (T8) */}
-                  {isAdmin && (
-                    <td className="px-3 py-2 text-end fw-semibold text-primary">
-                      {p.costPrice !== undefined && p.costPrice !== null
-                        ? formatVnd(p.costPrice)
-                        : '—'}
-                    </td>
+        !catalog.error && (
+          <div className="card">
+            <div className="table-responsive">
+              <table className="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">SKU</th>
+                    <th scope="col">Tên</th>
+                    <th scope="col">Danh mục</th>
+                    {isAdmin && <th scope="col">Giá vốn</th>}
+                    <th scope="col">Giá bán</th>
+                    <th scope="col">Trạng thái</th>
+                    {isAdmin && <th scope="col">Thao tác</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {catalog.products.map((product) => (
+                    <tr key={product.id}>
+                      <td>{product.sku}</td>
+                      <td>{product.name}</td>
+                      <td>{product.category?.name ?? 'Chưa phân loại'}</td>
+                      {isAdmin && (
+                        <td>
+                          {product.costPrice == null
+                            ? '—'
+                            : formatVnd(Number(product.costPrice))}
+                        </td>
+                      )}
+                      <td>{formatVnd(Number(product.basePrice))}</td>
+                      <td>{product.isActive ? 'Đang bán' : 'Ngừng bán'}</td>
+                      {isAdmin && (
+                        <td>
+                          <div className="d-flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              disabled={saving}
+                              onClick={() => startEditing(product)}
+                            >
+                              Sửa
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              disabled={saving}
+                              onClick={() =>
+                                void runMutation(
+                                  () =>
+                                    updateManagedProduct(product.id, {
+                                      isActive: !product.isActive,
+                                    }),
+                                  'Đã lưu trạng thái sản phẩm.',
+                                )
+                              }
+                            >
+                              {product.isActive ? 'Ngừng bán' : 'Mở bán'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              disabled={saving}
+                              onClick={() => removeProduct(product)}
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {!catalog.products.length && (
+                    <tr>
+                      <td
+                        colSpan={isAdmin ? 7 : 5}
+                        className="text-center py-4"
+                      >
+                        Không có sản phẩm khớp bộ lọc.
+                      </td>
+                    </tr>
                   )}
-                  <td className="px-3 py-2 text-end fw-semibold text-dark">
-                    {formatVnd(p.basePrice)}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {p.discountPercent > 0 ? (
-                      <span className="badge bg-danger-subtle text-danger small">
-                        -{p.discountPercent}%
-                      </span>
-                    ) : (
-                      <span className="text-muted small">0%</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {p.isActive ? (
-                      <span className="badge bg-success-subtle text-success small">
-                        Đang bán
-                      </span>
-                    ) : (
-                      <span className="badge bg-secondary-subtle text-secondary small">
-                        Đã ẩn
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-secondary" style={{ fontSize: '0.8rem' }}>
-                    {formatTime(p.createdAt)}
-                  </td>
-                  {/* Các nút thao tác - CHỈ RENDER CHO ADMIN (T8) */}
-                  {isAdmin && (
-                    <td className="px-3 py-2 text-center">
-                      <div className="d-flex align-items-center justify-content-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => toggleProductActive(p.id)}
-                          className="btn btn-outline-secondary btn-sm p-1.5"
-                          title={p.isActive ? 'Ẩn sản phẩm' : 'Hiện sản phẩm'}
-                          style={{ borderRadius: '6px' }}
-                        >
-                          {p.isActive ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingProduct(p);
-                            setPriceWarning(null);
-                            setError(null);
-                          }}
-                          className="btn btn-outline-primary btn-sm p-1.5"
-                          title="Sửa sản phẩm"
-                          style={{ borderRadius: '6px' }}
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(p)}
-                          className="btn btn-outline-danger btn-sm p-1.5"
-                          title="Xóa sản phẩm"
-                          style={{ borderRadius: '6px' }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+            <nav
+              aria-label="Phân trang sản phẩm"
+              className="p-3 d-flex flex-wrap gap-2 align-items-center justify-content-between"
+            >
+              <span className="small text-secondary">
+                {catalog.total} sản phẩm · Trang {catalog.page}/
+                {catalog.totalPages}
+              </span>
+              <div className="d-flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  disabled={catalog.page <= 1}
+                  onClick={() => catalog.setPage(catalog.page - 1)}
+                >
+                  Trang trước
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  disabled={catalog.page >= catalog.totalPages}
+                  onClick={() => catalog.setPage(catalog.page + 1)}
+                >
+                  Trang sau
+                </button>
+              </div>
+            </nav>
+          </div>
+        )
       )}
     </div>
   );

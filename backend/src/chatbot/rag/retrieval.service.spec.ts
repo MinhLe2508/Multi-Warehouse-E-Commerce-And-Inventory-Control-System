@@ -118,6 +118,68 @@ describe('RetrievalService', () => {
     expect(result.hasHighConfidence).toBe(false);
   });
 
+  it('retrieves hotline hours from the customer-support article when vectors are unavailable', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
+    const findMany = jest.fn().mockResolvedValueOnce([
+      {
+        id: 'support-policy',
+        title: 'Hướng dẫn liên hệ chăm sóc khách hàng',
+        docType: 'faq',
+        chunkIndex: 0,
+        content:
+          'Gọi Hotline để liên hệ chăm sóc khách hàng từ 8:00 đến 21:00.',
+        sourceUrl: null,
+      },
+    ]);
+    Object.assign(prisma, { kbDocument: { findMany } });
+
+    const result = await service.searchKnowledgeBase(
+      'Hotline làm việc từ mấy giờ?',
+      { docType: 'faq' },
+    );
+    expect(result.mode).toBe('KEYWORD');
+    expect(result.hasHighConfidence).toBe(true);
+    expect(result.documents[0]?.content).toContain('8:00 đến 21:00');
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ docType: 'faq', isActive: true }),
+      }),
+    );
+  });
+
+  it.each([
+    [
+      'Shop hỗ trợ những hình thức thanh toán nào?',
+      'Chính sách bảo mật thanh toán',
+      'Phương thức thanh toán hỗ trợ',
+    ],
+    [
+      'Giao hàng ra tỉnh mất mấy ngày?',
+      'Cập nhật địa chỉ giao hàng',
+      'Thời gian giao hàng dự kiến',
+    ],
+  ])(
+    'ưu tiên tài liệu trả lời đúng chủ đề của câu hỏi %s',
+    async (query, broadTitle, specificTitle) => {
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+      const findMany = jest.fn().mockResolvedValueOnce(
+        [broadTitle, specificTitle].map((title, index) => ({
+          id: `doc-${index}`,
+          title,
+          docType: 'faq',
+          chunkIndex: 0,
+          content: title,
+          sourceUrl: null,
+        })),
+      );
+      Object.assign(prisma, { kbDocument: { findMany } });
+
+      const result = await service.searchKnowledgeBase(query);
+      expect(result.mode).toBe('KEYWORD');
+      expect(result.documents[0]?.title).toBe(specificTitle);
+    },
+  );
+
   it('xử lý khi embedding provider bị lỗi (429 rate limit hoặc mất mạng) fallback êm dịu', async () => {
     embeddingService.embedQuery.mockRejectedValueOnce(
       new Error('Voyage AI 429 Too Many Requests'),
