@@ -4,7 +4,7 @@ export interface AdminNavItem {
   href: string;
   label: string;
   roles: AdminRole[];
-  ready: boolean;
+  warehouseScoped?: boolean;
   badge?: string;
 }
 
@@ -24,9 +24,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/admin/dashboard',
+        warehouseScoped: true,
         label: 'Dashboard',
         roles: ['ADMIN'],
-        ready: true,
       },
     ],
   },
@@ -36,15 +36,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/admin/orders',
+        warehouseScoped: true,
         label: 'Đơn hàng',
         roles: ['ADMIN'],
-        ready: true,
       },
       {
         href: '/admin/payments',
         label: 'Thanh toán',
         roles: ['ADMIN'],
-        ready: false,
       },
     ],
   },
@@ -56,31 +55,30 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/warehouses',
         label: 'Quản lý kho hàng',
         roles: ['ADMIN'],
-        ready: true,
       },
       {
         href: '/admin/inventory',
+        warehouseScoped: true,
         label: 'Tồn kho',
         roles: ['ADMIN'],
-        ready: true,
       },
       {
         href: '/admin/inventory/reservations',
+        warehouseScoped: true,
         label: 'Giữ hàng',
         roles: ['ADMIN'],
-        ready: false,
       },
       {
         href: '/admin/inventory/alerts',
+        warehouseScoped: true,
         label: 'Cảnh báo tồn kho',
         roles: ['ADMIN'],
-        ready: true,
       },
       {
         href: '/admin/inventory/audit-logs',
+        warehouseScoped: true,
         label: 'Lịch sử biến động',
         roles: ['ADMIN'],
-        ready: false,
       },
     ],
   },
@@ -92,13 +90,11 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/products',
         label: 'Sản phẩm',
         roles: ['ADMIN', 'WAREHOUSE_STAFF'],
-        ready: true,
       },
       {
         href: '/admin/categories',
         label: 'Danh mục',
         roles: ['ADMIN'],
-        ready: true,
       },
     ],
   },
@@ -110,13 +106,11 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/ai/chats',
         label: 'Phiên hội thoại',
         roles: ['ADMIN'],
-        ready: false,
       },
       {
         href: '/admin/ai/knowledge',
         label: 'Kho tri thức RAG',
         roles: ['ADMIN'],
-        ready: false,
       },
     ],
   },
@@ -128,13 +122,11 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/users/customers',
         label: 'Khách hàng',
         roles: ['ADMIN'],
-        ready: false,
       },
       {
         href: '/admin/users/staff',
         label: 'Nhân viên',
         roles: ['ADMIN'],
-        ready: false,
       },
     ],
   },
@@ -145,22 +137,21 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/admin/reports',
+        warehouseScoped: true,
         label: 'Thống kê & báo cáo',
         roles: ['ADMIN'],
-        ready: false,
       },
     ],
   },
   {
     id: 'settings',
-    title: 'Cài đặt & tính năng chờ BE',
+    title: 'Cài đặt',
     isSingle: true,
     items: [
       {
         href: '/admin/settings',
-        label: 'Cài đặt & tính năng chờ BE',
+        label: 'Cài đặt',
         roles: ['ADMIN'],
-        ready: true,
       },
     ],
   },
@@ -177,7 +168,6 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
         href: '/staff/dashboard',
         label: 'Dashboard',
         roles: ['WAREHOUSE_STAFF'],
-        ready: true,
       },
     ],
   },
@@ -190,7 +180,6 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
         href: '/staff/orders',
         label: 'Đơn hàng',
         roles: ['WAREHOUSE_STAFF'],
-        ready: true,
       },
     ],
   },
@@ -203,7 +192,6 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
         href: '/staff/inventory',
         label: 'Tồn kho',
         roles: ['WAREHOUSE_STAFF'],
-        ready: true,
       },
     ],
   },
@@ -216,7 +204,6 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
         href: '/staff/inventory/alerts',
         label: 'Cảnh báo',
         roles: ['WAREHOUSE_STAFF'],
-        ready: true,
       },
     ],
   },
@@ -229,8 +216,22 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
         href: '/staff/products',
         label: 'Sản phẩm',
         roles: ['WAREHOUSE_STAFF'],
-        ready: true,
       },
     ],
   },
 ];
+
+export function activeAdminNavItem(path: string, groups: AdminNavGroup[]) {
+  let match: AdminNavItem | undefined;
+  for (const { items } of groups) {
+    for (const item of items) {
+      if (
+        (path === item.href || path.startsWith(item.href + '/')) &&
+        (!match || item.href.length > match.href.length)
+      ) {
+        match = item;
+      }
+    }
+  }
+  return match;
+}

@@ -193,6 +193,233 @@ describeDb('Admin data access with PostgreSQL', () => {
     }
   }, 30_000);
 
+  it('protects the operational Admin routes and validates pagination and filters', async () => {
+    const routes = [
+      '/admin/payments',
+      '/admin/inventory/reservations',
+      '/admin/inventory/audit-logs',
+      '/admin/customers',
+      `/admin/customers/${fixture.users.customerA.id}/orders`,
+      '/admin/ai/chats',
+      `/admin/ai/chats/${fixture.chat.a.id}/messages`,
+      '/admin/ai/knowledge',
+      '/admin/ai/knowledge/stats',
+    ];
+    for (const route of routes) {
+      await http().get(route).expect(401);
+      await read(route, 'staff').expect(403);
+      await read(route, 'customerA').expect(403);
+    }
+    await read('/admin/payments?status=invalid', 'admin').expect(400);
+    await read('/admin/payments?limit=101', 'admin').expect(400);
+    await read(
+      '/admin/inventory/audit-logs?warehouseId=invalid',
+      'admin',
+    ).expect(400);
+    await read(
+      `/admin/customers/${fixture.users.staff.id}/orders`,
+      'admin',
+    ).expect(404);
+  });
+
+  it('shows real payments, reservations and inventory changes scoped to the correct warehouse', async () => {
+    const payment = await db.payment.create({
+      data: {
+        orderId: fixture.orders.a.id,
+        transactionRef: `QA-${fixture.runId}`,
+        amount: '250001.00',
+        method: 'MOCK_CARD',
+        status: 'SUCCESS',
+        gatewayResponse: { privateDetail: 'internal fixture' },
+      },
+    });
+    const audit = await db.inventoryAuditLog.create({
+      data: {
+        inventoryId: BigInt(fixture.inventory.b.id),
+        reason: 'RESERVE',
+        stockBefore: 20,
+        stockAfter: 20,
+        reservedBefore: 0,
+        reservedAfter: 1,
+        quantityDelta: 0,
+        actorId: fixture.users.customerA.id,
+        referenceType: 'ORDER',
+        referenceId: fixture.orders.pending.id,
+      },
+    });
+    try {
+      const payments = await read(
+        `/admin/payments?search=${payment.transactionRef}&status=SUCCESS`,
+        'admin',
+      ).expect(200);
+      expect(payments.body).toMatchObject({
+        total: 1,
+        items: [{ amount: '250001.00', order: { id: fixture.orders.a.id } }],
+      });
+      expect(
+        (payments.body as { items: object[] }).items[0],
+      ).not.toHaveProperty('gatewayResponse');
+      const reservations = await read(
+        `/admin/inventory/reservations?search=${fixture.product.sku}&warehouseId=${fixture.warehouses.b.id}`,
+        'admin',
+      ).expect(200);
+      expect(reservations.body).toMatchObject({
+        total: 1,
+        items: [
+          {
+            order: { id: fixture.orders.pending.id },
+            inventory: { id: fixture.inventory.b.id },
+            status: 'HOLDING',
+          },
+        ],
+      });
+      const logs = await read(
+        `/admin/inventory/audit-logs?search=${fixture.product.sku}&reason=RESERVE&warehouseId=${fixture.warehouses.b.id}`,
+        'admin',
+      ).expect(200);
+      expect(logs.body).toMatchObject({
+        total: 1,
+        items: [
+          { id: audit.id.toString(), reservedBefore: 0, reservedAfter: 1 },
+        ],
+      });
+      const anotherWarehouse = await read(
+        `/admin/inventory/audit-logs?search=${fixture.product.sku}&warehouseId=${fixture.warehouses.a.id}`,
+        'admin',
+      ).expect(200);
+      expect(anotherWarehouse.body).toMatchObject({ total: 0 });
+    } finally {
+      await db.payment.delete({ where: { id: payment.id } });
+      await db.inventoryAuditLog.delete({ where: { id: audit.id } });
+    }
+  });
+
+  it('shows customer orders and conversation text without exposing access tokens or internal prompts', async () => {
+    const accounts = await read(
+      `/admin/customers?search=${fixture.prefix}&limit=1`,
+      'admin',
+    ).expect(200);
+    expect(accounts.body).toMatchObject({ total: 2, totalPages: 2 });
+    const first = (accounts.body as { items: object[] }).items[0];
+    expect(first).not.toHaveProperty('passwordHash');
+    expect(first).not.toHaveProperty('refreshTokens');
+    const orders = await read(
+      `/admin/customers/${fixture.users.customerA.id}/orders`,
+      'admin',
+    ).expect(200);
+    expect(orders.body).toMatchObject({ total: 2 });
+
+    const id = fixture.chat.a.id;
+    const system = await db.chatMessage.create({
+      data: { sessionId: id, role: 'SYSTEM', content: 'internal fixture' },
+    });
+    try {
+      const sessions = await read(
+        `/admin/ai/chats?search=${id}`,
+        'admin',
+      ).expect(200);
+      expect(sessions.body).toMatchObject({ total: 1, items: [{ id }] });
+      expect(
+        (sessions.body as { items: object[] }).items[0],
+      ).not.toHaveProperty('sessionToken');
+      const messages = await read(
+        `/admin/ai/chats/${id}/messages`,
+        'admin',
+      ).expect(200);
+      expect(messages.body).toMatchObject({
+        total: 1,
+        items: [{ content: fixture.chat.a.message, role: 'USER' }],
+      });
+      expect(
+        (messages.body as { items: object[] }).items[0],
+      ).not.toHaveProperty('toolCalls');
+    } finally {
+      await db.chatMessage.delete({ where: { id: system.id } });
+    }
+  });
+
+  it('imports and revises knowledge in local mode, with idempotent concurrent saves and reversible visibility', async () => {
+    const url = '/admin/ai/knowledge';
+    const title = `Chính sách đổi trả ${fixture.runId}`;
+    const document = {
+      title,
+      docType: 'policy',
+      content: 'Chính sách đổi trả trong vòng 10 ngày.',
+    };
+    const write = (body: typeof document, role: Account = 'admin') =>
+      http().post(url).auth(tokens[role], bearer).send(body);
+    try {
+      await write(document, 'staff').expect(403);
+      await write({ ...document, content: '  ' }).expect(400);
+      const saves = await Promise.all([
+        write(document).expect(200),
+        write(document).expect(200),
+      ]);
+      expect(
+        saves
+          .map(({ body }) => (body as { chunksCreated: number }).chunksCreated)
+          .sort(),
+      ).toEqual([0, 1]);
+      const list = await read(
+        `${url}?search=${fixture.runId}&status=ACTIVE`,
+        'admin',
+      ).expect(200);
+      const chunk = (
+        list.body as { items: { id: string; title: string }[] }
+      ).items.find((row) => row.title === title)!;
+      expect(chunk).toMatchObject({
+        hasEmbedding: false,
+        content: document.content,
+      });
+
+      const vector = `[${new Array<number>(1024).fill(0.01).join(',')}]`;
+      await db.$executeRaw`UPDATE kb_documents SET embedding = ${vector}::vector WHERE id = ${chunk.id}::uuid`;
+      await write({
+        ...document,
+        content: 'Chính sách đổi trả trong vòng 15 ngày.',
+      }).expect(200);
+      const updated = await read(
+        `${url}?search=${encodeURIComponent(title)}`,
+        'admin',
+      ).expect(200);
+      expect(updated.body).toMatchObject({
+        total: 1,
+        items: [{ id: chunk.id, hasEmbedding: false }],
+      });
+
+      const visibility = (isActive: boolean) =>
+        http()
+          .patch(`${url}/${chunk.id}`)
+          .auth(tokens.admin, bearer)
+          .send({ isActive });
+      await visibility(false).expect(200);
+      const hidden = await read(
+        `${url}?status=HIDDEN&search=${encodeURIComponent(title)}`,
+        'admin',
+      ).expect(200);
+      expect(hidden.body).toMatchObject({
+        total: 1,
+        items: [{ id: chunk.id, isActive: false }],
+      });
+      await visibility(true).expect(200);
+      const active = await read(
+        `${url}?status=ACTIVE&search=${encodeURIComponent(title)}`,
+        'admin',
+      ).expect(200);
+      expect(active.body).toMatchObject({
+        total: 1,
+        items: [{ id: chunk.id, isActive: true }],
+      });
+      await http()
+        .post(`${url}/sync`)
+        .auth(tokens.admin, bearer)
+        .send({})
+        .expect(503);
+    } finally {
+      await db.kbDocument.deleteMany({ where: { title } });
+    }
+  });
+
   it('creates one administrator, one warehouse staff member and two customers', async () => {
     const roles = await db.user.groupBy({
       by: ['role'],

@@ -18,6 +18,7 @@ import {
 import {
   ADMIN_NAV_GROUPS,
   STAFF_NAV_GROUPS,
+  activeAdminNavItem,
   type AdminNavGroup,
 } from '../../shared/config/adminNav';
 import { useCurrentAdminUser } from '../../hooks/useCurrentAdminUser';
@@ -73,15 +74,8 @@ export function SidebarContent({
   const isStaffVariant = variant === 'staff';
   const navGroups = isStaffVariant ? STAFF_NAV_GROUPS : ADMIN_NAV_GROUPS;
 
-  const isItemActive = useCallback(
-    (href: string) => {
-      if (href === '/admin/dashboard' || href === '/staff/dashboard') {
-        return pathname === href;
-      }
-      return pathname.startsWith(href);
-    },
-    [pathname]
-  );
+  const activeHref = activeAdminNavItem(pathname, navGroups)?.href;
+  const isItemActive = useCallback((href: string) => href === activeHref, [activeHref]);
 
   // Chỉ mở nhóm accordion chứa route đang active, các nhóm khác mặc định đóng (svg hướng xuống)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -127,19 +121,6 @@ export function SidebarContent({
             {item.badge && (
               <span className="badge rounded-pill bg-danger" style={{ fontSize: '0.65rem' }}>
                 {item.badge}
-              </span>
-            )}
-            {!item.ready && (
-              <span
-                className="badge rounded-pill"
-                style={{
-                  fontSize: '0.625rem',
-                  backgroundColor: '#f5f3ff',
-                  color: '#7c3aed',
-                  border: '1px solid #ddd6fe',
-                }}
-              >
-                Sắp có
               </span>
             )}
           </Link>
@@ -194,19 +175,6 @@ export function SidebarContent({
                     aria-current={subActive ? 'page' : undefined}
                   >
                     <span className="text-truncate me-2">{subItem.label}</span>
-                    {!subItem.ready && (
-                      <span
-                        className="badge rounded-pill ms-auto flex-shrink-0"
-                        style={{
-                          fontSize: '0.625rem',
-                          backgroundColor: '#f5f3ff',
-                          color: '#7c3aed',
-                          border: '1px solid #ddd6fe',
-                        }}
-                      >
-                        Sắp có
-                      </span>
-                    )}
                   </Link>
                 );
               })}

@@ -3,6 +3,11 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, T
 import { formatVnd } from '../../shared/lib/format';
 import type { RevenuePoint } from '../../shared/types/admin';
 
+const compactAmount = new Intl.NumberFormat('vi-VN', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
 export function RevenueChart({ data }: { data: RevenuePoint[] }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -12,7 +17,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-            <YAxis yAxisId="rev" tick={{ fontSize: 12 }} tickFormatter={(v: number) => `${Math.round(v / 1_000_000)}tr`} width={44} />
+            <YAxis yAxisId="rev" tick={{ fontSize: 12 }} tickFormatter={(value: number) => compactAmount.format(value)} width={56} />
             <YAxis yAxisId="ord" orientation="right" tick={{ fontSize: 12 }} width={36} />
             <Tooltip formatter={(value, name) => (name === 'Doanh thu' ? formatVnd(Number(value) || 0) : value)} />
             <Legend />

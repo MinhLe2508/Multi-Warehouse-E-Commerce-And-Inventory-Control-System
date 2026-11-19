@@ -16,7 +16,7 @@ interface ApiAdminOrderItem {
   lineTotal: string;
 }
 
-interface ApiAdminOrder {
+export interface ApiAdminOrder {
   id: string;
   orderCode: string;
   status: OrderStatus;
@@ -70,7 +70,7 @@ type OrdersSnapshot = {
   error: string | null;
 };
 
-function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
+export function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
   const warehouseSet = new Set<string>();
   const items = raw.items.map((item) => {
     const warehouseCode = item.warehouse?.code ?? '';

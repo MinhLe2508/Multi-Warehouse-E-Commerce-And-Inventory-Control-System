@@ -7,6 +7,7 @@ import { Dropdown } from 'react-bootstrap';
 import { Bell, AlertTriangle } from 'lucide-react';
 import { useAdminCtx } from './AdminContext';
 import { useStockAlerts } from '../../hooks/useStockAlerts';
+import { ADMIN_NAV_GROUPS, activeAdminNavItem } from '../../shared/config/adminNav';
 import { formatTime } from '../../shared/lib/format';
 
 export interface HeaderProps {
@@ -53,6 +54,13 @@ export function Header({
   }, []);
 
   const isStaff = variant === 'staff';
+  const adminItem = activeAdminNavItem(pathname, ADMIN_NAV_GROUPS);
+  const isOrderDetail = pathname.startsWith('/admin/orders/');
+  const adminTitle = isOrderDetail ? 'Chi tiết đơn hàng'
+    : pathname === '/admin/alerts' ? 'Cảnh báo tồn kho'
+      : adminItem?.label ?? 'Quản trị';
+  const showWarehouseSelector = isStaff || pathname === '/admin/alerts' ||
+    (adminItem?.warehouseScoped && !isOrderDetail);
   const alertsPageUrl = isStaff ? '/staff/inventory/alerts' : '/admin/inventory/alerts';
 
   return (
@@ -84,11 +92,11 @@ export function Header({
             </button>
 
             <span className="fw-semibold text-dark fs-6" style={{ letterSpacing: '-0.01em' }}>
-              {getPageTitle()}
+              {isStaff ? getPageTitle() : adminTitle}
             </span>
 
             {/* Dropdown chọn kho đang xem */}
-            <div className="d-none d-md-flex align-items-center gap-2 ms-3">
+            {showWarehouseSelector && <div className="d-none d-md-flex align-items-center gap-2 ms-3">
               <select
                 value={warehouseId}
                 onChange={e => setWarehouseId(e.target.value)}
@@ -109,7 +117,7 @@ export function Header({
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
           </div>
 
           {/* Cụm phải: Chuông cảnh báo (Dropdown T5) & Nhãn vai trò */}

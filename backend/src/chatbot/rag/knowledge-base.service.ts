@@ -1,4 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmbeddingService } from './embedding.service';
 import { chunkText, ChunkOptions } from './text-chunker';
@@ -227,6 +234,116 @@ export class KnowledgeBaseService {
     };
   }
 
+  /** Store searchable text locally. Generating vectors is a separate operation. */
+  async saveTextDocument(input: IngestDocumentInput): Promise<IngestResult> {
+    const title = input.title.trim();
+    const docType = input.docType.trim();
+    const sourceUrl = input.sourceUrl ?? null;
+    const chunks = chunkText(input.content, input.chunkOptions);
+    if (!title || !docType || chunks.length === 0) {
+      throw new BadRequestException(
+        'Tiêu đề, loại và nội dung tài liệu là bắt buộc.',
+      );
+    }
+
+    return this.withDocumentLock(title, docType, async (tx) => {
+      const existing = await tx.kbDocument.findMany({
+        where: { title, docType, isActive: true },
+        select: { id: true, chunkIndex: true, content: true, sourceUrl: true },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      });
+      const byIndex = new Map<number, (typeof existing)[number]>();
+      for (const row of existing) {
+        if (!byIndex.has(row.chunkIndex)) byIndex.set(row.chunkIndex, row);
+      }
+
+      let chunksCreated = 0;
+      let chunksUpdated = 0;
+      const retainedIds: string[] = [];
+      for (const [chunkIndex, content] of chunks.entries()) {
+        const old = byIndex.get(chunkIndex);
+        const tokenCount = Math.ceil(content.length / 4);
+        if (!old) {
+          const row = await tx.kbDocument.create({
+            data: {
+              title,
+              docType,
+              sourceUrl,
+              chunkIndex,
+              content,
+              tokenCount,
+            },
+            select: { id: true },
+          });
+          retainedIds.push(row.id);
+          chunksCreated++;
+        } else {
+          retainedIds.push(old.id);
+          if (old.content !== content || old.sourceUrl !== sourceUrl) {
+            await tx.$executeRaw`
+              UPDATE kb_documents SET content = ${content}, source_url = ${sourceUrl},
+                token_count = ${tokenCount}, updated_at = NOW(),
+                embedding = CASE WHEN content = ${content} THEN embedding ELSE NULL END
+              WHERE id = ${old.id}::uuid
+            `;
+            chunksUpdated++;
+          }
+        }
+      }
+      await tx.kbDocument.updateMany({
+        where: { title, docType, isActive: true, id: { notIn: retainedIds } },
+        data: { isActive: false },
+      });
+      return {
+        title,
+        docType,
+        chunksCreated,
+        chunksUpdated,
+        chunksUnchanged: chunks.length - chunksCreated - chunksUpdated,
+        totalTokens: 0,
+      };
+    });
+  }
+
+  async setChunkActive(
+    id: string,
+    isActive: boolean,
+  ): Promise<{ isActive: boolean }> {
+    const chunk = await this.prisma.kbDocument.findUnique({
+      where: { id },
+      select: { title: true, docType: true, chunkIndex: true },
+    });
+    if (!chunk) throw new NotFoundException('Không tìm thấy đoạn tri thức.');
+    return this.withDocumentLock(chunk.title, chunk.docType, async (tx) => {
+      if (isActive) {
+        const replacement = await tx.kbDocument.findFirst({
+          where: { ...chunk, id: { not: id }, isActive: true },
+          select: { id: true },
+        });
+        if (replacement) {
+          throw new ConflictException('Đoạn này đã có phiên bản đang sử dụng.');
+        }
+      }
+      await tx.kbDocument.updateMany({
+        where: { id, isActive: !isActive },
+        data: { isActive },
+      });
+      return { isActive };
+    });
+  }
+
+  private withDocumentLock<T>(
+    title: string,
+    docType: string,
+    callback: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    const key = JSON.stringify(['kb-document', title, docType]);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text`;
+      return callback(tx);
+    });
+  }
+
   /**
    * Đồng bộ embedding cho các bản ghi kb_documents chưa có vector (embedding IS NULL)
    * Phù hợp cho việc sync các bản ghi đã seed từ trước
@@ -257,17 +374,19 @@ export class KnowledgeBaseService {
     const contents = unindexedRows.map((r) => r.content);
     const { vectors } = await this.embeddingService.embedDocuments(contents);
 
+    let processed = 0;
     for (let i = 0; i < unindexedRows.length; i++) {
       const row = unindexedRows[i];
       const vectorLiteral = toVectorLiteral(vectors[i]);
       const estimatedTokens = Math.ceil(row.content.length / 4);
 
-      await this.prisma.$executeRaw`
+      processed += await this.prisma.$executeRaw`
         UPDATE "kb_documents"
         SET "embedding" = ${vectorLiteral}::vector,
             "token_count" = COALESCE("token_count", ${estimatedTokens}),
             "updated_at" = NOW()
-        WHERE "id" = ${row.id}::uuid;
+        WHERE "id" = ${row.id}::uuid AND "content" = ${row.content}
+          AND "is_active" = true AND "embedding" IS NULL;
       `;
     }
 
@@ -282,11 +401,11 @@ export class KnowledgeBaseService {
     const remaining = Number(remainingCountResult[0]?.count ?? 0);
 
     this.logger.log(
-      `Đã đồng bộ vector cho ${unindexedRows.length} chunks. Còn lại: ${remaining}`,
+      `Đã đồng bộ vector cho ${processed} chunks. Còn lại: ${remaining}`,
     );
 
     return {
-      processed: unindexedRows.length,
+      processed,
       remaining,
     };
   }
