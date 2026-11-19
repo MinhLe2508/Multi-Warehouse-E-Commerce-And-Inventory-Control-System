@@ -8,11 +8,12 @@ import { OrderBadge } from './StatusBadge';
 
 interface Props {
   order: AdminOrder | null;
+  updating: boolean;
   onClose: () => void;
   onAdvance: (id: string) => void;
 }
 
-export function OrderDrawer({ order, onClose, onAdvance }: Props) {
+export function OrderDrawer({ order, updating, onClose, onAdvance }: Props) {
   if (!order) return null;
   const next = NEXT_STATUS[order.status];
 
@@ -58,13 +59,14 @@ export function OrderDrawer({ order, onClose, onAdvance }: Props) {
           </h6>
           <div className="list-group list-group-flush mt-2 border rounded-3">
             {order.items.map(item => (
-              <div key={item.sku} className="list-group-item d-flex justify-content-between align-items-center p-3">
+              <div key={item.id} className="list-group-item d-flex justify-content-between align-items-center p-3">
                 <div className="min-w-0 pe-2">
                   <div className="fw-semibold text-dark small text-truncate">
                     {item.productName} × {item.quantity}
                   </div>
                   <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                    SKU: {item.sku} · Kho: <strong>{item.warehouseCode}</strong>
+                    SKU: {item.sku} · Kho: <strong>{item.warehouseCode || '—'}</strong>
+                    {item.warehouseName && ` · ${item.warehouseName}`}
                   </div>
                 </div>
                 <div className="fw-bold text-dark small text-nowrap">
@@ -102,18 +104,19 @@ export function OrderDrawer({ order, onClose, onAdvance }: Props) {
 
         {/* Nút hành động */}
         <div className="mt-auto pt-3 border-top">
-          {next ? (
+          {next === 'SHIPPING' || next === 'DELIVERED' ? (
             <button
               type="button"
+              disabled={updating}
               onClick={() => onAdvance(order.id)}
               className="btn btn-primary w-100 py-2.5 fw-semibold d-flex align-items-center justify-content-center gap-2"
               style={{ minHeight: '44px', borderRadius: '8px' }}
             >
-              <span>Chuyển trạng thái: “{STATUS_LABEL[next]}”</span>
+              <span>{updating ? 'Đang cập nhật…' : `Chuyển trạng thái: “${STATUS_LABEL[next]}”`}</span>
             </button>
           ) : (
             <div className="alert alert-light border small text-muted text-center mb-0" role="status">
-              Đơn hàng ở trạng thái “{STATUS_LABEL[order.status]}” (kết thúc luồng xử lý).
+              Đơn hàng đang ở trạng thái “{STATUS_LABEL[order.status]}”.
             </div>
           )}
         </div>

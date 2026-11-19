@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
+import { PasswordChangedGuard } from '../../core/guards/password-changed.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import {
@@ -10,7 +11,7 @@ import {
 } from './dto/analytics-query.dto';
 
 @Controller('admin/analytics')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminAnalyticsController {
   constructor(private readonly analyticsService: AdminAnalyticsService) {}

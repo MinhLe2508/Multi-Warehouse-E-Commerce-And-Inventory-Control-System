@@ -57,6 +57,10 @@ jobs:
         if: matrix.app == 'frontend'
         run: npm run lint
 
+      - name: Chạy kiểm thử Frontend
+        if: matrix.app == 'frontend'
+        run: npm test
+
       - name: Chạy unit test Backend
         if: matrix.app == 'backend'
         run: npm test -- --ci --passWithNoTests --coverage --runInBand
@@ -119,6 +123,19 @@ jobs:
           docker compose exec -T postgres \
             psql -v ON_ERROR_STOP=1 -U warehouse -d warehouse \
             -c "SELECT '[1,2,3]'::vector;"
+
+      - name: Chạy E2E với PostgreSQL cho Admin Orders và thanh toán
+        working-directory: backend
+        run: |
+          docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" cnpm_e2e_test_ci'
+          E2E_TEST_DATABASE_URL="$(node --env-file=../.env -p "const url = new URL(process.env.DATABASE_URL); url.pathname = '/cnpm_e2e_test_ci'; url.href")"
+          export E2E_TEST_DATABASE_URL
+          export DATABASE_URL="$E2E_TEST_DATABASE_URL"
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run test:e2e -- --runInBand --runTestsByPath \
+            test/e2e/admin-data-access.e2e-spec.ts \
+            test/e2e/order-payment.e2e-spec.ts
 
       - name: Dựng và khởi động Backend cùng Frontend
         run: docker compose --profile full up -d --build --wait --wait-timeout 180

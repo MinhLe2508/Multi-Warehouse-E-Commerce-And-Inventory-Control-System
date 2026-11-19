@@ -50,6 +50,9 @@ export class AdminOrdersQueryService {
     const search = query.q?.trim();
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
+      ...(query.warehouseId
+        ? { items: { some: { warehouseId: query.warehouseId } } }
+        : {}),
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
       ...(search
         ? {
@@ -62,68 +65,79 @@ export class AdminOrdersQueryService {
         : {}),
     };
 
-    const [total, orders] = await Promise.all([
-      this.prisma.order.count({ where }),
-      this.prisma.order.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              fullName: true,
-              email: true,
-            },
+    const listQuery = {
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip,
+      take: limit,
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            email: true,
           },
-          items: {
-            select: {
-              id: true,
-              productId: true,
-              warehouseId: true,
-              productName: true,
-              sku: true,
-              unitPrice: true,
-              quantity: true,
-              lineTotal: true,
-            },
+        },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            warehouseId: true,
+            productName: true,
+            sku: true,
+            unitPrice: true,
+            quantity: true,
+            lineTotal: true,
+            warehouse: { select: { id: true, code: true, name: true } },
           },
-          payments: {
-            orderBy: { createdAt: 'desc' },
-            select: {
-              id: true,
-              method: true,
-              status: true,
-              amount: true,
-              transactionRef: true,
-              processedAt: true,
-              createdAt: true,
-            },
+        },
+        payments: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            method: true,
+            status: true,
+            amount: true,
+            transactionRef: true,
+            processedAt: true,
+            createdAt: true,
           },
-          statusHistory: {
-            orderBy: { createdAt: 'asc' },
-            select: {
-              id: true,
-              fromStatus: true,
-              toStatus: true,
-              actorId: true,
-              reason: true,
-              createdAt: true,
-              actor: {
-                select: {
-                  id: true,
-                  username: true,
-                  fullName: true,
-                  role: true,
-                },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            actorId: true,
+            reason: true,
+            createdAt: true,
+            actor: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+                role: true,
               },
             },
           },
         },
-      }),
-    ]);
+      },
+    } satisfies Prisma.OrderFindManyArgs;
+
+    const [total, orders] = await this.prisma.$transaction(
+      async (tx) => {
+        if (createdAtFilter) {
+          // Bind Prisma DateTime parameters in UTC for this transaction only.
+          await tx.$executeRaw`SET LOCAL TIME ZONE 'UTC'`;
+        }
+        const total = await tx.order.count({ where });
+        const orders = await tx.order.findMany(listQuery);
+        return [total, orders] as const;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
     return {
       items: orders.map((order) => this.serializeOrder(order)),

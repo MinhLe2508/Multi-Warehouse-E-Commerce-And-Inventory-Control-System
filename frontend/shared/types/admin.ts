@@ -17,7 +17,8 @@ export interface StockAlert {
 }
 
 export interface AdminOrderItem {
-  productName: string; sku: string; quantity: number; unitPrice: number; lineTotal: number; warehouseCode: string;
+  id: string; productName: string; sku: string; quantity: number; unitPrice: number;
+  lineTotal: number; warehouseCode: string; warehouseName: string;
 }
 export interface OrderHistoryItem { fromStatus: OrderStatus | null; toStatus: OrderStatus; actor: string; createdAt: string }
 export interface AdminOrder {

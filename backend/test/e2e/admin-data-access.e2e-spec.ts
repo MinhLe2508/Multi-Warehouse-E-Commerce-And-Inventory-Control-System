@@ -1,16 +1,19 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { type PrismaClient, type UserRole } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient, type UserRole } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { type Server } from 'node:http';
 import { createRequire } from 'node:module';
 import request from 'supertest';
 import { AdminModule } from '../../src/admin/admin.module';
+import { AdminOrdersQueryService } from '../../src/admin/orders/admin-orders.service';
 import { AdminApiModule } from '../../src/adminapi/adminapi.module';
 import { ChatbotModule } from '../../src/chatbot/chatbot.module';
 import { configureHttpApp } from '../../src/configure-app';
 import { InventoryPubSubService } from '../../src/inventory/inventory-pubsub.service';
 import { MailService } from '../../src/mail/mail.service';
+import { OrdersService } from '../../src/orders/orders.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ProductsModule } from '../../src/products/products.module';
 
@@ -248,6 +251,103 @@ describeDb('Admin data access with PostgreSQL', () => {
       status: 'CONFIRMED',
       grandTotal: '375001.50',
     });
+  });
+
+  it('filters orders by warehouse before pagination and returns real warehouse codes', async () => {
+    const path = '/admin/orders';
+    const q = fixture.prefix;
+    const warehouseA = await read(path, 'admin')
+      .query({ q, warehouseId: fixture.warehouses.a.id, limit: 1 })
+      .expect(200);
+    expect(warehouseA.body).toMatchObject({
+      total: 1,
+      totalPages: 1,
+      items: [
+        {
+          id: fixture.orders.a.id,
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              warehouse: expect.objectContaining(fixture.warehouses.a),
+            }),
+            expect.objectContaining({
+              warehouse: expect.objectContaining(fixture.warehouses.b),
+            }),
+          ]),
+        },
+      ],
+    });
+
+    const ids: string[] = [];
+    for (const page of [1, 2, 3]) {
+      const response = await read(path, 'staff')
+        .query({ q, warehouseId: fixture.warehouses.b.id, limit: 1, page })
+        .expect(200);
+      const body = response.body as { items: Array<{ id: string }> };
+      expect(response.body).toMatchObject({ total: 3, totalPages: 3, page });
+      expect(body.items).toHaveLength(1);
+      ids.push(body.items[0].id);
+    }
+    expect(ids.sort()).toEqual(
+      Object.values(fixture.orders)
+        .map(({ id }) => id)
+        .sort(),
+    );
+    await read(path, 'admin').query({ warehouseId: 'invalid' }).expect(400);
+    await read(path, 'admin').query({ from: '2026-02-30' }).expect(400);
+  });
+
+  it('uses the same Vietnamese calendar day across PostgreSQL session time zones', async () => {
+    const orderCodePrefix = `${fixture.prefix}-T`;
+    const userId = fixture.users.customerA.id;
+    const timestamps = [
+      '2026-11-17T16:59:59.999Z',
+      '2026-11-17T17:00:00.000Z',
+      '2026-11-18T16:59:59.999Z',
+      '2026-11-18T17:00:00.000Z',
+    ];
+    const scope = { userId, orderCode: { startsWith: orderCodePrefix } };
+    try {
+      await db.$transaction(async (tx) => {
+        for (const [index, timestamp] of timestamps.entries()) {
+          await tx.$executeRaw`
+            INSERT INTO orders
+              (order_code, user_id, shipping_recipient, shipping_phone,
+               shipping_address, created_at, updated_at)
+            VALUES (${orderCodePrefix + index}, ${userId}::uuid, 'QA',
+                    '0900000000', 'HCM', ${timestamp}::timestamptz, NOW())
+          `;
+        }
+      });
+
+      for (const timeZone of ['UTC', 'Asia/Ho_Chi_Minh']) {
+        const session = new PrismaClient({
+          adapter: new PrismaPg({
+            connectionString: url,
+            options: `-c timezone=${timeZone}`,
+          }),
+        });
+        try {
+          const service = new AdminOrdersQueryService(
+            session as PrismaService,
+            app.get(OrdersService),
+          );
+          const result = await service.findAll({
+            q: orderCodePrefix,
+            from: '2026-11-18',
+            to: '2026-11-18',
+          });
+          expect(result.total).toBe(2);
+          expect(result.items.map(({ orderCode }) => orderCode)).toEqual([
+            `${orderCodePrefix}2`,
+            `${orderCodePrefix}1`,
+          ]);
+        } finally {
+          await session.$disconnect();
+        }
+      }
+    } finally {
+      await db.order.deleteMany({ where: scope });
+    }
   });
 
   it('calculates revenue from confirmed fixture lines for each warehouse', async () => {
@@ -584,12 +684,19 @@ describeDb('Admin data access with PostgreSQL', () => {
     } finally {
       await db.user.update({ where: staff, data: { isActive: true } });
     }
+    const adminReads = [
+      '/admin/orders',
+      `/admin/orders/${fixture.orders.a.id}`,
+      '/admin/analytics/summary',
+      '/admin/analytics/revenue-series',
+    ];
     await db.user.update({ where: admin, data: { mustChangePassword: true } });
     try {
       for (const path of [
         '/admin/staff',
         '/admin/inventory',
         '/admin/inventory/summary',
+        ...adminReads,
       ]) {
         const res = await read(path, 'admin').expect(403);
         expect(res.body).toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' });
@@ -603,6 +710,9 @@ describeDb('Admin data access with PostgreSQL', () => {
     await read('/admin/staff', 'admin')
       .query({ search: fixture.users.staff.username })
       .expect(200);
+    for (const path of adminReads) {
+      await read(path, 'admin').expect(200);
+    }
   });
 
   it.each([

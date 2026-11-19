@@ -3,7 +3,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { OrdersService } from '../../orders/orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminOrdersQueryService } from './admin-orders.service';
@@ -11,12 +11,19 @@ import { AdminOrdersQueryService } from './admin-orders.service';
 describe('AdminOrdersQueryService (FR-ORD-05)', () => {
   let service: AdminOrdersQueryService;
 
-  const mockPrisma = {
+  const tx = {
+    $executeRaw: jest.fn(),
     order: {
       count: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
+  };
+  const mockPrisma = {
+    order: tx.order,
+    $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) =>
+      run(tx),
+    ),
   };
 
   const mockOrdersService = {
@@ -35,6 +42,51 @@ describe('AdminOrdersQueryService (FR-ORD-05)', () => {
     await expect(
       service.findAll({ from: '2026-11-12', to: '2026-11-01' }),
     ).rejects.toThrow(UnprocessableEntityException);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('uses the same warehouse and date filter for count and page queries', async () => {
+    const warehouseId = 'aa147233-506a-4181-a913-c6766b575a36';
+    tx.order.count.mockResolvedValue(3);
+    tx.order.findMany.mockResolvedValue([]);
+
+    const result = await service.findAll({
+      warehouseId,
+      status: OrderStatus.CONFIRMED,
+      from: '2026-11-18',
+      to: '2026-11-18',
+      page: 2,
+      limit: 2,
+    });
+
+    const where = {
+      items: { some: { warehouseId } },
+      status: OrderStatus.CONFIRMED,
+      createdAt: {
+        gte: new Date('2026-11-17T17:00:00.000Z'),
+        lt: new Date('2026-11-18T17:00:00.000Z'),
+      },
+    };
+    expect(tx.order.count).toHaveBeenCalledWith({ where });
+    expect(tx.order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where,
+        skip: 2,
+        take: 2,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      }),
+    );
+    expect(tx.$executeRaw).toHaveBeenCalledWith(["SET LOCAL TIME ZONE 'UTC'"]);
+    expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
+    expect(result).toEqual({
+      items: [],
+      total: 3,
+      page: 2,
+      limit: 2,
+      totalPages: 2,
+    });
   });
 
   it('findOne throws 404 when order does not exist', async () => {

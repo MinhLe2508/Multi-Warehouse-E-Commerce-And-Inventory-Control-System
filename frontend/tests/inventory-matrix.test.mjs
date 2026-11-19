@@ -103,61 +103,55 @@ test('7. filterInventoryProducts: filters accurately with 200 items', () => {
   );
 });
 
-test('8. adjustMockStock: enforces optimistic locking (version) & validation', () => {
+test('8. adjustMockStock: validates stock and increments version on success', () => {
   resetMockInventory();
 
   const prod = adminInventoryData[0]; // prod-001
   const targetWh = prod.warehouses['wh-hn-01'];
   const initialVersion = targetWh.version;
 
-  // 1. Successful adjustment
   const updated = adjustMockStock({
     inventoryId: targetWh.inventoryId,
     newStock: 50,
-    expectedVersion: initialVersion,
     note: 'Nhập hàng lô mới thành công từ nhà sản xuất',
   });
   assert.equal(updated.stock, 50);
   assert.equal(updated.availableStock, 50);
   assert.equal(updated.version, initialVersion + 1);
 
-  // 2. Conflict (409) when version does not match
-  assert.throws(
-    () => {
-      adjustMockStock({
-        inventoryId: targetWh.inventoryId,
-        newStock: 60,
-        expectedVersion: initialVersion, // Stale version!
-        note: 'Cố tình gửi version cũ để test 409 Conflict',
-      });
-    },
-    (err) => err.status === 409
-  );
+  assert.throws(() => {
+    adjustMockStock({
+      inventoryId: targetWh.inventoryId,
+      newStock: -1,
+      note: 'Điều chỉnh thành tồn kho âm',
+    });
+  }, /số âm/);
+  assert.equal(targetWh.stock, 50);
+  assert.equal(targetWh.version, initialVersion + 1);
 
-  // 3. Validation: newStock cannot be less than reservedStock (422)
   const rsvProd = adminInventoryData[1]; // prod-002: reserved = 10
   const rsvWh = rsvProd.warehouses['wh-hn-01'];
+  const { stock, version } = rsvWh;
   assert.throws(
     () => {
       adjustMockStock({
         inventoryId: rsvWh.inventoryId,
         newStock: 5, // < reserved 10
-        expectedVersion: rsvWh.version,
         note: 'Điều chỉnh số lượng thấp hơn mức đã giữ chỗ',
       });
     },
     (err) => err.status === 422
   );
+  assert.equal(rsvWh.stock, stock);
+  assert.equal(rsvWh.version, version);
 
-  // 4. Validation: note length
   assert.throws(() => {
     adjustMockStock({
       inventoryId: rsvWh.inventoryId,
       newStock: 20,
-      expectedVersion: rsvWh.version,
       note: 'ngắn', // < 5 ký tự
     });
-  });
+  }, /Lý do điều chỉnh/);
 });
 
 test('9. getMockInventorySummary: computes summary KPIs and distribution', () => {

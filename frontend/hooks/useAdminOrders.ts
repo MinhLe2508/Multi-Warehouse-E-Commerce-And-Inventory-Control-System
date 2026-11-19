@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPatch, AuthError, extractErrorMessage } from '../shared/lib/apiClient';
 import { NEXT_STATUS } from '../shared/lib/format';
-import type { AdminOrder, OrderStatus } from '../shared/types/admin';
+import type { AdminOrder, OrderStatus, Warehouse } from '../shared/types/admin';
 
 interface ApiAdminOrderItem {
   id: string;
   productId: string;
-  warehouseId: string;
+  warehouse?: Pick<Warehouse, 'code' | 'name'>;
   productName: string;
   sku: string;
   unitPrice: string;
@@ -51,27 +51,39 @@ interface ApiAdminOrdersResponse {
   totalPages: number;
 }
 
-export interface OrderFilters {
-  status?: OrderStatus | 'ALL';
-  from?: string;
-  to?: string;
-  q?: string;
-  page?: number;
-  limit?: number;
+interface OrderFilters {
+  warehouseId: string;
+  status: OrderStatus | 'ALL';
+  from: string;
+  to: string;
+  q: string;
+  page: number;
+  limit: number;
 }
+
+type OrdersSnapshot = {
+  filters: OrderFilters;
+  orders: AdminOrder[];
+  total: number;
+  totalPages: number;
+  lastUpdated: string;
+  error: string | null;
+};
 
 function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
   const warehouseSet = new Set<string>();
   const items = raw.items.map((item) => {
-    const whShort = item.warehouseId.slice(0, 8).toUpperCase();
-    warehouseSet.add(whShort);
+    const warehouseCode = item.warehouse?.code ?? '';
+    if (warehouseCode) warehouseSet.add(warehouseCode);
     return {
+      id: item.id,
       productName: item.productName,
       sku: item.sku,
       quantity: item.quantity,
       unitPrice: Number(item.unitPrice),
       lineTotal: Number(item.lineTotal),
-      warehouseCode: whShort,
+      warehouseCode,
+      warehouseName: item.warehouse?.name ?? '',
     };
   });
 
@@ -100,97 +112,97 @@ function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
   };
 }
 
-export function useAdminOrders(initialFilters: OrderFilters = {}) {
-  const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [totalPages, setTotalPages] = useState<number>(1);
+export function useAdminOrders(warehouseId: string) {
   const [filters, setFilters] = useState<OrderFilters>({
-    status: initialFilters.status ?? 'ALL',
-    from: initialFilters.from ?? '',
-    to: initialFilters.to ?? '',
-    q: initialFilters.q ?? '',
-    page: initialFilters.page ?? 1,
-    limit: initialFilters.limit ?? 20,
+    warehouseId,
+    status: 'ALL',
+    from: '',
+    to: '',
+    q: '',
+    page: 1,
+    limit: 20,
   });
+  if (filters.warehouseId !== warehouseId) {
+    setFilters({ ...filters, warehouseId, page: 1 });
+  }
 
-  const [loading, setLoading] = useState<boolean>(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string>(() =>
-    new Date().toLocaleTimeString('vi-VN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  );
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<OrdersSnapshot | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
-  const isFetchingRef = useRef(false);
+  const isUpdating = useRef(false);
 
-  const fetchOrders = useCallback(async (overrideFilters?: OrderFilters) => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-    const active = overrideFilters ?? filters;
-
-    try {
-      const params = new URLSearchParams();
-      if (active.status && active.status !== 'ALL') {
-        params.set('status', active.status);
-      }
-      if (active.from) params.set('from', active.from);
-      if (active.to) params.set('to', active.to);
-      if (active.q?.trim()) params.set('q', active.q.trim());
-      params.set('page', String(active.page ?? 1));
-      params.set('limit', String(active.limit ?? 20));
-
-      const data = await apiGet<ApiAdminOrdersResponse>(
-        `/admin/orders?${params.toString()}`
-      );
-
-      setOrders((data.items || []).map(mapApiOrder));
-      setTotal(data.total ?? 0);
-      setTotalPages(data.totalPages ?? 1);
-      setLastUpdated(
-        new Date().toLocaleTimeString('vi-VN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      );
-      setError(null);
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Không tải được danh sách đơn hàng từ máy chủ.'));
-    } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
-    }
-  }, [filters]);
+  const refreshOrders = useCallback(() => {
+    setRevision((current) => current + 1);
+  }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchOrders();
+    let active = true;
+    const timer = setTimeout(async () => {
+      const params = new URLSearchParams({
+        page: String(filters.page),
+        limit: String(filters.limit),
+      });
+      if (filters.warehouseId !== 'ALL') params.set('warehouseId', filters.warehouseId);
+      if (filters.status !== 'ALL') params.set('status', filters.status);
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      if (filters.q.trim()) params.set('q', filters.q.trim());
+
+      try {
+        const data = await apiGet<ApiAdminOrdersResponse>(`/admin/orders?${params.toString()}`);
+        if (!active) return;
+        if (filters.page > data.totalPages) {
+          setFilters((current) =>
+            current === filters ? { ...current, page: data.totalPages } : current
+          );
+          return;
+        }
+
+        setSnapshot({
+          filters,
+          orders: data.items.map(mapApiOrder),
+          total: data.total,
+          totalPages: data.totalPages,
+          lastUpdated: new Date().toLocaleTimeString('vi-VN'),
+          error: null,
+        });
+      } catch (err: unknown) {
+        if (active) {
+          setSnapshot({
+            filters,
+            orders: [],
+            total: 0,
+            totalPages: 1,
+            lastUpdated: '—',
+            error: extractErrorMessage(err, 'Không tải được danh sách đơn hàng từ máy chủ.'),
+          });
+        }
+      }
     }, 0);
 
-    const interval = setInterval(() => {
-      void fetchOrders();
-    }, 30000);
-
-    const onFocus = () => {
-      void fetchOrders();
-    };
-    window.addEventListener('focus', onFocus);
-
     return () => {
+      active = false;
       clearTimeout(timer);
-      clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
     };
-  }, [fetchOrders]);
+  }, [filters, revision]);
 
-  const updateFilters = useCallback((patch: Partial<OrderFilters>) => {
+  useEffect(() => {
+    const interval = setInterval(refreshOrders, 30000);
+    window.addEventListener('focus', refreshOrders);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshOrders);
+    };
+  }, [refreshOrders]);
+
+  const updateFilters = useCallback((patch: Partial<Omit<OrderFilters, 'warehouseId'>>) => {
+    setUpdateError(null);
     setFilters((prev) => ({
       ...prev,
       ...patch,
-      page: patch.page !== undefined ? patch.page : 1,
+      page: patch.page ?? 1,
     }));
   }, []);
 
@@ -200,65 +212,63 @@ export function useAdminOrders(initialFilters: OrderFilters = {}) {
       targetStatus: 'SHIPPING' | 'DELIVERED',
       note?: string
     ): Promise<boolean> => {
+      if (isUpdating.current) return false;
+      isUpdating.current = true;
       setConflictNotice(null);
-      setUpdatingId(orderId);
+      setUpdateError(null);
+      setUpdating(true);
       try {
-        const updatedRaw = await apiPatch<ApiAdminOrder>(`/admin/orders/${orderId}/status`, {
+        await apiPatch<ApiAdminOrder>(`/admin/orders/${orderId}/status`, {
           targetStatus,
           ...(note ? { note } : {}),
         });
-        const mapped = mapApiOrder(updatedRaw);
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? mapped : o)));
-        setLastUpdated(
-          new Date().toLocaleTimeString('vi-VN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })
-        );
+        refreshOrders();
         return true;
       } catch (err: unknown) {
         if (err instanceof AuthError && err.status === 409) {
           setConflictNotice(
             'Trạng thái đã thay đổi bởi thao tác khác. Dữ liệu đã được tải lại.'
           );
-          await fetchOrders();
+          refreshOrders();
         } else {
-          setError(extractErrorMessage(err, 'Không thể cập nhật trạng thái đơn hàng.'));
+          setUpdateError(extractErrorMessage(err, 'Không thể cập nhật trạng thái đơn hàng.'));
         }
         return false;
       } finally {
-        setUpdatingId(null);
+        isUpdating.current = false;
+        setUpdating(false);
       }
     },
-    [fetchOrders]
+    [refreshOrders]
   );
 
+  const current = snapshot?.filters === filters ? snapshot : null;
   const advanceStatus = useCallback(
     async (orderId: string) => {
-      const currentOrder = orders.find((o) => o.id === orderId);
+      const currentOrder = current?.orders.find((o) => o.id === orderId);
       if (!currentOrder) return;
       const next = NEXT_STATUS[currentOrder.status];
       if (next !== 'SHIPPING' && next !== 'DELIVERED') return;
       await updateStatus(orderId, next);
     },
-    [orders, updateStatus]
+    [current, updateStatus]
   );
 
   return {
-    orders,
-    total,
-    totalPages,
+    orders: current?.orders ?? [],
+    total: current?.total ?? 0,
+    totalPages: current?.totalPages ?? 1,
     filters,
-    loading,
-    updatingId,
-    error,
-    lastUpdated,
+    loading: current === null,
+    updating,
+    error: current?.error ?? null,
+    updateError,
+    lastUpdated: current?.lastUpdated ?? '—',
     conflictNotice,
     setConflictNotice,
     updateFilters,
     updateStatus,
     advanceStatus,
-    refreshOrders: () => fetchOrders(),
+    refreshOrders,
   };
 }

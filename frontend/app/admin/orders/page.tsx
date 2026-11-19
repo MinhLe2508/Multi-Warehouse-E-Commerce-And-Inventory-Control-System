@@ -10,26 +10,26 @@ import type { OrderStatus } from '../../../shared/types/admin';
 import { RefreshCw, AlertCircle, Info } from 'lucide-react';
 
 export default function AdminOrdersPage() {
+  const { warehouseId } = useAdminCtx();
   const {
     orders,
+    total,
+    totalPages,
     filters,
     loading,
+    updating,
     error,
+    updateError,
     lastUpdated,
     conflictNotice,
     setConflictNotice,
     updateFilters,
     advanceStatus,
     refreshOrders,
-  } = useAdminOrders();
+  } = useAdminOrders(warehouseId);
 
-  const { warehouses, warehouseId } = useAdminCtx();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const whCode = warehouses.find(w => w.id === warehouseId)?.code;
-  const list = orders.filter(
-    o => !whCode || o.warehouseCodes.includes(whCode) || o.warehouseCodes.length === 0
-  );
   const selected = orders.find(o => o.id === selectedId) ?? null;
 
   return (
@@ -67,6 +67,10 @@ export default function AdminOrdersPage() {
             aria-label="Đóng"
           />
         </div>
+      )}
+
+      {updateError && (
+        <div role="alert" className="alert alert-danger mb-3 small">{updateError}</div>
       )}
 
       {/* Bộ lọc tìm kiếm, trạng thái và khoảng ngày */}
@@ -124,7 +128,7 @@ export default function AdminOrdersPage() {
         </div>
       ) : loading ? (
         <p className="text-sm text-secondary">Đang tải đơn hàng…</p>
-      ) : list.length === 0 ? (
+      ) : orders.length === 0 ? (
         <div className="rounded-3 border border-dashed p-5 text-center text-secondary small bg-white">
           Không có đơn hàng khớp bộ lọc. Thử đổi trạng thái hoặc kho.
         </div>
@@ -146,11 +150,11 @@ export default function AdminOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map(o => (
+              {orders.map(o => (
                 <tr key={o.id}>
                   <td className="px-3 py-2.5 font-monospace fw-bold text-dark">{o.orderCode}</td>
                   <td className="px-3 py-2.5 text-dark">{o.customerName}</td>
-                  <td className="px-3 py-2.5 text-secondary">{o.warehouseCodes.join(', ')}</td>
+                  <td className="px-3 py-2.5 text-secondary">{o.warehouseCodes.join(', ') || '—'}</td>
                   <td className="px-3 py-2.5 text-end fw-semibold text-dark">{formatVnd(o.grandTotal)}</td>
                   <td className="px-3 py-2.5">
                     <OrderBadge status={o.status} />
@@ -174,8 +178,33 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
+      {!loading && !error && total > 0 && (
+        <nav aria-label="Phân trang đơn hàng" className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3 small text-secondary">
+          <span>{total} đơn hàng · Trang {filters.page}/{totalPages}</span>
+          <div className="d-flex gap-2">
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={filters.page <= 1}
+              onClick={() => updateFilters({ page: filters.page - 1 })}
+            >
+              Trang trước
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={filters.page >= totalPages}
+              onClick={() => updateFilters({ page: filters.page + 1 })}
+            >
+              Trang sau
+            </button>
+          </div>
+        </nav>
+      )}
+
       <OrderDrawer
         order={selected}
+        updating={updating}
         onClose={() => setSelectedId(null)}
         onAdvance={advanceStatus}
       />
