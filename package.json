@@ -1,0 +1,7 @@
+{
+  "name": "multi-warehouse-e-commerce-and-inventory-control-system",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/admin-local.cjs"
+  }
+}

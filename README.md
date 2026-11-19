@@ -74,20 +74,20 @@ npm install
 npx prisma migrate deploy
 npx prisma db seed
 npm run sync:kb
-npm run start:dev
 ```
 
-Backend mặc định lắng nghe tại `http://localhost:3001`.
+### Bước 4: Chạy Backend và Frontend
 
-### Bước 4: Khởi chạy Frontend
+Chạy tại thư mục gốc repo.
 
 ```bash
-cd frontend
-npm install
+npm --prefix frontend install
 npm run dev
 ```
 
-Frontend mặc định lắng nghe tại `http://localhost:3000`.
+`npm run dev` khởi động backend, kiểm tra các tuyến Admin rồi đưa địa chỉ API của phiên này vào Next.js. Lệnh cũng chạy được từ `frontend/`. Mở URL ở dòng `[Admin] Mở .../login`. Nếu sửa mã backend, khởi động lại phiên dev để biên dịch lại.
+
+Khi cần chạy hai tiến trình riêng để theo dõi thay đổi backend, chạy `npm run start:dev` trong `backend/` và `npm run dev:frontend` trong `frontend/`. Cấu hình `NEXT_PUBLIC_API_URL` của frontend theo địa chỉ backend đang chạy.
 
 ---
 

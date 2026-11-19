@@ -266,6 +266,7 @@ export function AdminCollection<Row extends { id: string }>({
   version,
   actions,
   beforeTable,
+  onRefresh,
 }: {
   title: string;
   description?: string;
@@ -277,7 +278,8 @@ export function AdminCollection<Row extends { id: string }>({
   empty: string;
   version?: number;
   actions?: ReactNode;
-  beforeTable?: ReactNode;
+  beforeTable?: (listError: string | undefined) => ReactNode;
+  onRefresh?: () => void;
 }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [filtersApplied, setFiltersApplied] = useState('');
@@ -293,6 +295,11 @@ export function AdminCollection<Row extends { id: string }>({
     `${endpoint}?${params}`,
     version,
   );
+
+  function refresh() {
+    result.refresh();
+    onRefresh?.();
+  }
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -313,11 +320,11 @@ export function AdminCollection<Row extends { id: string }>({
       actions={
         <>
           {actions}
-          <RefreshButton onClick={result.refresh} disabled={result.loading} />
+          <RefreshButton onClick={refresh} disabled={result.loading} />
         </>
       }
     >
-      {beforeTable}
+      {beforeTable?.(result.error)}
       <form
         className="admin-workspace-panel admin-workspace-filters"
         onSubmit={search}
@@ -400,7 +407,7 @@ export function AdminCollection<Row extends { id: string }>({
         ) : (
           <AdminFeedback
             error={result.error}
-            retry={result.refresh}
+            retry={refresh}
             loading={result.loading}
           />
         )}

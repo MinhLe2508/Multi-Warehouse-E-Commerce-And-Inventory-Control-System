@@ -118,6 +118,7 @@ export function KnowledgeView() {
           },
         ]}
         version={version}
+        onRefresh={stats.refresh}
         empty="Không có đoạn tri thức phù hợp."
         actions={
           <button
@@ -129,7 +130,7 @@ export function KnowledgeView() {
             <Plus size={16} aria-hidden="true" /> Nhập tài liệu
           </button>
         }
-        beforeTable={
+        beforeTable={(listError) => (
           <>
             {notice && (
               <div className="alert alert-success mb-0" role="status">
@@ -182,15 +183,11 @@ export function KnowledgeView() {
                   )}
                 </div>
               </section>
-            ) : (
-              <AdminFeedback
-                error={stats.error}
-                loading={stats.loading}
-                retry={stats.refresh}
-              />
-            )}
+            ) : stats.error && stats.error !== listError ? (
+              <AdminFeedback error={stats.error} retry={stats.refresh} />
+            ) : null}
           </>
-        }
+        )}
         columns={[
           {
             heading: 'Tài liệu',
