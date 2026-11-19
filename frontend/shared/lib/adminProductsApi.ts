@@ -84,14 +84,26 @@ export function listProductCategories() {
   return apiGet<ProductCategory[]>('/products/categories');
 }
 
-export function createManagedProduct(input: ProductCreateInput) {
-  return apiPost<ManagedProduct>(PRODUCTS, input);
+function productBody(input: ProductUpdateInput, image?: File) {
+  if (!image) return input;
+  const form = new FormData();
+  form.set('product', JSON.stringify(input));
+  form.set('image', image);
+  return form;
 }
 
-export function updateManagedProduct(id: string, input: ProductUpdateInput) {
+export function createManagedProduct(input: ProductCreateInput, image?: File) {
+  return apiPost<ManagedProduct>(PRODUCTS, productBody(input, image));
+}
+
+export function updateManagedProduct(
+  id: string,
+  input: ProductUpdateInput,
+  image?: File,
+) {
   return apiPatch<ManagedProduct>(
     `${PRODUCTS}/${encodeURIComponent(id)}`,
-    input,
+    productBody(input, image),
   );
 }
 

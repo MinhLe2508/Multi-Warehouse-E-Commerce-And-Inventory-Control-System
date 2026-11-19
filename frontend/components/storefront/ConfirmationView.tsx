@@ -6,6 +6,7 @@ import { getWarehouseName } from "@/shared/lib/mockData";
 import { useOrderExpiry } from "@/hooks/useOrderExpiry";
 import Image from "next/image";
 import Link from "next/link";
+import { resolveProductImageSource } from "@/components/products/ProductImage";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useCheckoutStore } from "@/store/useCheckoutStore";
@@ -129,7 +130,7 @@ export default function ConfirmationView() {
           {order.items.map((i) => (
             <li key={`${i.productId}-${i.warehouseId}`} className="flex items-center gap-4 py-3">
               <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-brand-50 ring-1 ring-slate-100">
-                <Image src={i.image} alt={i.name} fill unoptimized sizes="56px" className="object-cover" />
+                <Image src={resolveProductImageSource(i.image)} alt={i.name} fill unoptimized sizes="56px" className="object-cover" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-sm font-medium text-slate-800">{i.name}</p>

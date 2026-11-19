@@ -2,8 +2,15 @@
 
 import { useState } from 'react';
 import Image, { type ImageProps } from 'next/image';
+import { getApiBaseUrl } from '../../shared/lib/apiClient';
 
 const PLACEHOLDER = '/product-placeholder.svg';
+
+export function resolveProductImageSource(path: string): string {
+  return path.startsWith('/products/uploads/')
+    ? `${getApiBaseUrl()}${path}`
+    : path;
+}
 
 export function normalizeProductImageUrl(value?: string | null): string | null {
   const source = value?.trim();
@@ -39,7 +46,8 @@ function ImageWithFallback({ alt, src, ...props }: ProductImageProps) {
 }
 
 export default function ProductImage({ src, ...props }: ProductImageProps) {
-  const source = normalizeProductImageUrl(src);
+  const path = normalizeProductImageUrl(src);
+  const source = path && resolveProductImageSource(path);
   return (
     <ImageWithFallback key={source ?? PLACEHOLDER} src={source} {...props} />
   );

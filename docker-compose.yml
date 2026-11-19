@@ -57,6 +57,8 @@ services:
       PASSWORD_RESET_TTL_SECONDS: ${PASSWORD_RESET_TTL_SECONDS:-900}
     ports:
       - "127.0.0.1:${PORT:-3001}:3001"
+    volumes:
+      - product_images:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,3 +94,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  product_images:

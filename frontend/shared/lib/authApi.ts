@@ -69,6 +69,7 @@ export async function authRequest<T>(
     throw new RangeError(`timeoutMs phải là số nguyên từ 1 đến ${MAX_TIMEOUT_MS}.`);
   }
 
+  const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
   let response: Response;
   try {
     response = await fetch(`${API}${path}`, {
@@ -76,10 +77,10 @@ export async function authRequest<T>(
       cache: "no-store",
       referrerPolicy: "no-referrer",
       headers: {
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(body !== undefined && !isMultipart ? { "Content-Type": "application/json" } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined ? { body: isMultipart ? body : JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (cause: unknown) {

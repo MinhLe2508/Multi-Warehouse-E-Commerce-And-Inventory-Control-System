@@ -4,6 +4,7 @@ import { useOrderExpiry } from "@/hooks/useOrderExpiry";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { resolveProductImageSource } from "@/components/products/ProductImage";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useHydrated } from "@/hooks/useHydrated";
@@ -491,7 +492,7 @@ function CheckoutForm() {
                 {items.map((i) => (
                   <li key={i.productId} className="flex items-center gap-4 py-3">
                     <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-brand-50 ring-1 ring-slate-100">
-                      <Image src={i.image} alt={i.name} fill unoptimized sizes="56px" className="object-cover" />
+                      <Image src={resolveProductImageSource(i.image)} alt={i.name} fill unoptimized sizes="56px" className="object-cover" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-2 text-sm font-medium text-slate-800">{i.name}</p>
@@ -583,7 +584,7 @@ function CheckoutForm() {
               {items.map((i) => (
                 <li key={i.productId} className="flex items-center gap-3 text-sm">
                   <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-brand-50 ring-1 ring-slate-100">
-                    <Image src={i.image} alt="" fill unoptimized sizes="40px" className="object-cover" />
+                    <Image src={resolveProductImageSource(i.image)} alt="" fill unoptimized sizes="40px" className="object-cover" />
                   </span>
                   <span className="line-clamp-1 flex-1 text-slate-600">
                     {i.name} <span className="text-slate-400">× {i.quantity}</span>

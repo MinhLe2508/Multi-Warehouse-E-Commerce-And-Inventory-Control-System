@@ -28,6 +28,19 @@ test('validation arrays and server errors are displayed safely', () => {
   assert.equal(apiErrorMessage({ message: ['Email sai', 'Tên thiếu'] }, 400), 'Email sai Tên thiếu');
   assert.ok(!apiErrorMessage({ message: 'database password=secret' }, 500).includes('secret'));
 });
+test('authenticated multipart requests leave the content type boundary to fetch', async (t) => {
+  const { authRequest } = load('../shared/lib/authApi.ts', { './authContract': { apiErrorMessage } });
+  const body = new FormData();
+  body.set('image', new File(['bytes'], 'phone.png', { type: 'image/png' }));
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => Response.json({ id: 'p1' }));
+
+  await authRequest('/admin/products', body, 'test-access-token', 'POST');
+
+  const [, options] = fetchMock.mock.calls[0].arguments;
+  assert.equal(options.body, body);
+  assert.equal(options.headers.Authorization, 'Bearer test-access-token');
+  assert.equal(options.headers['Content-Type'], undefined);
+});
 const session = { tokens: { accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresAt: 9999999999 }, user: { id: '1', role: 'ADMIN', fullName: 'Admin' } };
 function setup() {
   const disk = new Map();

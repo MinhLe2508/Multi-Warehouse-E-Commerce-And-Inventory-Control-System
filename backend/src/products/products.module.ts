@@ -6,10 +6,11 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
+import { ProductImagesService } from './product-images.service';
 
 @Module({
   imports: [PrismaModule, AuthModule, CategoriesModule],
   controllers: [ProductsController, ManagedProductsController],
-  providers: [ProductsService, ManagedProductsService],
+  providers: [ProductsService, ManagedProductsService, ProductImagesService],
 })
 export class ProductsModule {}

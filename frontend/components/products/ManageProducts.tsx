@@ -1,6 +1,13 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
+import Image from 'next/image';
 import { Plus, Search } from 'lucide-react';
 import { useAdminProducts } from '../../hooks/useAdminProducts';
 import { useCurrentAdminUser } from '../../hooks/useCurrentAdminUser';
@@ -26,6 +33,7 @@ import ProductImage, { normalizeProductImageUrl } from './ProductImage';
 
 const MONEY_PATTERN = '[0-9]{1,12}(\\.[0-9]{1,2})?';
 const PERCENT_PATTERN = '([0-9]{1,2}(\\.[0-9]{1,2})?|100(\\.0{1,2})?)';
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export default function ManageProducts() {
   const { isAdmin } = useCurrentAdminUser();
@@ -34,13 +42,55 @@ export default function ManageProducts() {
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
   const [imagePreview, setImagePreview] = useState('');
+  const [selectedImage, setSelectedImage] = useState<{
+    file: File;
+    preview: string;
+  } | null>(null);
+  const [imageError, setImageError] = useState('');
   const [saving, setSaving] = useState(false);
   const pending = useRef(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const current = editing === 'new' ? null : editing;
+
+  useEffect(() => {
+    if (!selectedImage) return;
+    return () => URL.revokeObjectURL(selectedImage.preview);
+  }, [selectedImage]);
+
+  function clearImageSelection() {
+    setSelectedImage(null);
+    setImageError('');
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }
+
+  function selectImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) {
+      clearImageSelection();
+      return;
+    }
+    if (file.size === 0 || file.size > MAX_IMAGE_BYTES) {
+      setSelectedImage(null);
+      setImageError(
+        file.size === 0 ? 'Tệp ảnh đang trống.' : 'Ảnh minh họa tối đa 5 MB.',
+      );
+      return;
+    }
+    setImageError('');
+    setSelectedImage({ file, preview: URL.createObjectURL(file) });
+  }
+
+  function closeEditor() {
+    if (pending.current) return;
+    setEditing(null);
+    setActionError('');
+    clearImageSelection();
+  }
 
   function startEditing(target: ManagedProduct | 'new') {
     setActionError('');
     setNotice('');
+    clearImageSelection();
     setEditing(target);
     setImagePreview(target === 'new' ? '' : (target.imageUrl ?? ''));
   }
@@ -54,6 +104,7 @@ export default function ManageProducts() {
     try {
       await work();
       setEditing(null);
+      clearImageSelection();
       setNotice(success);
       catalog.refresh();
     } catch (error: unknown) {
@@ -68,6 +119,7 @@ export default function ManageProducts() {
 
   function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (imageError) return;
     const form = new FormData(event.currentTarget);
     const text = (name: string) => String(form.get(name) ?? '').trim();
     const imageInput = text('imageUrl');
@@ -92,13 +144,17 @@ export default function ManageProducts() {
     if (current) {
       void runMutation(
         () =>
-          updateManagedProduct(current.id, {
-            ...fields,
-            ...(categoryId && categoryId !== current.categoryId
-              ? { categoryId }
-              : {}),
-            ...(costPrice ? { costPrice } : {}),
-          }),
+          updateManagedProduct(
+            current.id,
+            {
+              ...fields,
+              ...(categoryId && categoryId !== current.categoryId
+                ? { categoryId }
+                : {}),
+              ...(costPrice ? { costPrice } : {}),
+            },
+            selectedImage?.file,
+          ),
         'Đã lưu sản phẩm.',
       );
     } else {
@@ -111,7 +167,11 @@ export default function ManageProducts() {
         return;
       }
       void runMutation(
-        () => createManagedProduct({ ...fields, slug, categoryId, costPrice }),
+        () =>
+          createManagedProduct(
+            { ...fields, slug, categoryId, costPrice },
+            selectedImage?.file,
+          ),
         'Đã thêm sản phẩm.',
       );
     }
@@ -166,12 +226,7 @@ export default function ManageProducts() {
         <AdminDialog
           key={current?.id ?? 'new'}
           title={current ? `Sửa sản phẩm ${current.sku}` : 'Thêm sản phẩm'}
-          onClose={() => {
-            if (!pending.current) {
-              setEditing(null);
-              setActionError('');
-            }
-          }}
+          onClose={closeEditor}
         >
           <form onSubmit={saveProduct}>
             {actionError && (
@@ -261,34 +316,89 @@ export default function ManageProducts() {
                   />
                 </label>
                 <div className="col-12">
-                  <div className="d-flex align-items-center gap-3">
+                  <div className="d-flex align-items-start gap-3">
                     <div className="admin-catalog-image admin-catalog-image-preview">
-                      <ProductImage
-                        src={imagePreview}
-                        alt="Xem trước ảnh sản phẩm"
-                        fill
-                      />
+                      {selectedImage ? (
+                        <Image
+                          src={selectedImage.preview}
+                          alt="Xem trước ảnh sản phẩm"
+                          fill
+                          sizes="82px"
+                          unoptimized
+                        />
+                      ) : (
+                        <ProductImage
+                          src={imagePreview}
+                          alt="Xem trước ảnh sản phẩm"
+                          fill
+                          sizes="82px"
+                        />
+                      )}
                     </div>
-                    <div className="flex-grow-1">
-                      <label htmlFor="product-image-url" className="form-label">
-                        Đường dẫn ảnh
+                    <div className="flex-grow-1 min-w-0">
+                      <label
+                        htmlFor="product-image-file"
+                        className="form-label"
+                      >
+                        Chọn ảnh từ máy
                       </label>
                       <input
-                        id="product-image-url"
-                        name="imageUrl"
+                        id="product-image-file"
+                        ref={imageInputRef}
+                        type="file"
                         className="form-control"
-                        defaultValue={current?.imageUrl ?? ''}
-                        placeholder="/products/iphone18duo.webp"
-                        aria-describedby="product-image-help"
-                        onBlur={(event) =>
-                          setImagePreview(event.currentTarget.value)
+                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                        onChange={selectImage}
+                        aria-invalid={Boolean(imageError)}
+                        aria-describedby={
+                          imageError
+                            ? 'product-image-error'
+                            : 'product-image-help'
                         }
-                        maxLength={500}
                       />
                       <div id="product-image-help" className="form-text">
-                        Dùng đường dẫn từ thư mục ảnh hoặc URL của ảnh. Ảnh xem
-                        trước cập nhật khi rời ô.
+                        PNG, JPG hoặc WebP, tối đa 5 MB. Ảnh được tải lên khi
+                        lưu sản phẩm.
                       </div>
+                      {imageError && (
+                        <div
+                          id="product-image-error"
+                          className="form-text text-danger"
+                          role="alert"
+                        >
+                          {imageError}
+                        </div>
+                      )}
+                      {(selectedImage || imageError) && (
+                        <button
+                          type="button"
+                          className="btn btn-link btn-sm px-0 mt-1"
+                          onClick={clearImageSelection}
+                        >
+                          Bỏ ảnh đã chọn
+                        </button>
+                      )}
+                      <details className="mt-2">
+                        <summary className="small">Dùng đường dẫn ảnh</summary>
+                        <label
+                          htmlFor="product-image-url"
+                          className="visually-hidden"
+                        >
+                          Đường dẫn ảnh
+                        </label>
+                        <input
+                          id="product-image-url"
+                          name="imageUrl"
+                          className="form-control mt-2"
+                          defaultValue={current?.imageUrl ?? ''}
+                          placeholder="/products/iphone18duo.webp"
+                          disabled={Boolean(selectedImage)}
+                          onBlur={(event) =>
+                            setImagePreview(event.currentTarget.value)
+                          }
+                          maxLength={500}
+                        />
+                      </details>
                     </div>
                   </div>
                 </div>
@@ -307,16 +417,14 @@ export default function ManageProducts() {
                 <button
                   type="submit"
                   className="btn btn-gradient-purple admin-workspace-button"
+                  disabled={Boolean(imageError)}
                 >
                   {saving ? 'Đang lưu…' : 'Lưu sản phẩm'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline-secondary btn-sm"
-                  onClick={() => {
-                    setEditing(null);
-                    setActionError('');
-                  }}
+                  onClick={closeEditor}
                 >
                   Hủy
                 </button>

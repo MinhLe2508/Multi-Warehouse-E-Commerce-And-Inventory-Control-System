@@ -86,3 +86,24 @@ test('product updates use real write endpoints and preserve decimal strings and 
     { method: 'DELETE', path: '/admin/products/id' },
   ]);
 });
+
+test('product writes with a local image send the file and preserve JSON field types', () => {
+  const calls = [];
+  const api = load({
+    apiPost: (path, body) => calls.push({ path, body }),
+    apiPatch: (path, body) => calls.push({ path, body }),
+  });
+  const image = new File(['image bytes'], 'ảnh-iPhone.PNG', { type: 'image/png' });
+  const product = { sku: 'SKU-TEST', basePrice: '2000.30', imageUrl: null };
+  const update = { isActive: false, description: null };
+  api.createManagedProduct(product, image);
+  api.updateManagedProduct('id', update, image);
+  assert.deepEqual(calls.map(({ path }) => path), ['/admin/products', '/admin/products/id']);
+  for (const [index, fields] of [product, update].entries()) {
+    const { body } = calls[index];
+    assert.ok(body instanceof FormData);
+    assert.deepEqual(JSON.parse(body.get('product')), fields);
+    assert.equal(body.get('image').name, image.name);
+    assert.equal(body.get('image').size, image.size);
+  }
+});

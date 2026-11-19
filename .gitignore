@@ -11,6 +11,8 @@ coverage/
 tmp/
 outputs/
 backend/tmp/
+backend/uploads/
+frontend/public/products/uploads/
 
 load-tests/.generated/
 load-tests/test-data.json

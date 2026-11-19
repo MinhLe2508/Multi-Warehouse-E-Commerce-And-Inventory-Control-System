@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import request from 'supertest';
 import { CategoriesService } from '../categories/categories.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductImagesService } from './product-images.service';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
 
@@ -56,6 +57,7 @@ describe('Products HTTP contract', () => {
       controllers: [ProductsController],
       providers: [
         ProductsService,
+        ProductImagesService,
         CategoriesService,
         { provide: PrismaService, useValue: prisma },
       ],

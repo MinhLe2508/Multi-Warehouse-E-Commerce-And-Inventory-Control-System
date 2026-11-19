@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { resolveProductImageSource } from "@/components/products/ProductImage";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useHydrated } from "@/hooks/useHydrated";
 import { selectTotalItems, useCartStore } from "@/store/useCartStore";
@@ -149,7 +150,7 @@ export default function CartView() {
                     className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-brand-50 ring-1 ring-slate-100"
                   >
                     <Image
-                      src={item.image}
+                      src={resolveProductImageSource(item.image)}
                       alt={item.name}
                       fill
                       unoptimized

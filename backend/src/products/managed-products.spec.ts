@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { ManagedProductsController } from './managed-products.controller';
 import { ManagedProductsService } from './managed-products.service';
+import { ProductImagesService } from './product-images.service';
 
 const id = 'ad8fb080-6e3a-4a26-81b2-e948711312ac';
 const categoryId = '27ea271e-395e-4196-918a-866a38a11fb4';
@@ -53,6 +54,7 @@ describe('Managed products: real JWT, RBAC, DTO and service; database boundary m
       controllers: [ManagedProductsController],
       providers: [
         ManagedProductsService,
+        ProductImagesService,
         JwtStrategy,
         { provide: PrismaService, useValue: prisma },
       ],

@@ -29,6 +29,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/package.json ./package.json
 
+RUN mkdir -p /app/uploads/products && chown -R node:node /app/uploads
+
 USER node
 
 EXPOSE 3001
