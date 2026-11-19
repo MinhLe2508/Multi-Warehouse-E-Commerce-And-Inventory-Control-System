@@ -542,9 +542,7 @@ export function getMockInventorySummary(): InventorySummaryResponse {
 
   const warehouseDistribution = MOCK_WAREHOUSES.map((w) => {
     const stat = whMap[w.id];
-    // Giả lập capacity chuẩn
-    const capacityLimit = 20000;
-    const capacityRate = Math.min(100, Math.round((stat.stock / capacityLimit) * 100));
+    const capacity = 20000;
     return {
       warehouseId: w.id,
       warehouseCode: w.code,
@@ -552,7 +550,9 @@ export function getMockInventorySummary(): InventorySummaryResponse {
       totalStock: stat.stock,
       totalReserved: stat.reserved,
       totalAvailable: stat.available,
-      capacityRate,
+      capacity,
+      occupiedStock: stat.stock,
+      capacityRate: Math.round((stat.stock / capacity) * 100),
     };
   });
 

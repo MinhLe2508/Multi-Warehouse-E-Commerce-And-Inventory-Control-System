@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { useAdminProducts } from '../../hooks/useAdminProducts';
 import { useCurrentAdminUser } from '../../hooks/useCurrentAdminUser';
 import {
@@ -13,6 +13,16 @@ import {
 } from '../../shared/lib/adminProductsApi';
 import { extractErrorMessage } from '../../shared/lib/apiClient';
 import { formatVnd } from '../../shared/lib/format';
+import {
+  AdminDataTable,
+  AdminDialog,
+  AdminFeedback,
+  AdminPageFrame,
+  AdminPager,
+  RecordStatus,
+  RefreshButton,
+} from '../admin/operations/AdminUi';
+import ProductImage, { normalizeProductImageUrl } from './ProductImage';
 
 const MONEY_PATTERN = '[0-9]{1,12}(\\.[0-9]{1,2})?';
 const PERCENT_PATTERN = '([0-9]{1,2}(\\.[0-9]{1,2})?|100(\\.0{1,2})?)';
@@ -23,6 +33,7 @@ export default function ManageProducts() {
   const [editing, setEditing] = useState<ManagedProduct | 'new' | null>(null);
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
+  const [imagePreview, setImagePreview] = useState('');
   const [saving, setSaving] = useState(false);
   const pending = useRef(false);
   const current = editing === 'new' ? null : editing;
@@ -31,6 +42,7 @@ export default function ManageProducts() {
     setActionError('');
     setNotice('');
     setEditing(target);
+    setImagePreview(target === 'new' ? '' : (target.imageUrl ?? ''));
   }
 
   async function runMutation(work: () => Promise<unknown>, success: string) {
@@ -58,12 +70,20 @@ export default function ManageProducts() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const text = (name: string) => String(form.get(name) ?? '').trim();
+    const imageInput = text('imageUrl');
+    const imageUrl = normalizeProductImageUrl(imageInput);
+    if (imageInput && !imageUrl) {
+      setActionError(
+        'Nhập đường dẫn ảnh bắt đầu bằng / hoặc URL ảnh HTTP(S) hợp lệ.',
+      );
+      return;
+    }
     const fields: ProductFields = {
       sku: text('sku'),
       name: text('name'),
       basePrice: text('basePrice'),
       discountPercent: text('discountPercent') || '0',
-      imageUrl: text('imageUrl') || null,
+      imageUrl,
       description: text('description') || null,
     };
     const costPrice = text('costPrice');
@@ -106,232 +126,314 @@ export default function ManageProducts() {
   }
 
   return (
-    <div className="container-fluid p-0">
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <h1 className="h4 fw-bold mb-0">Sản phẩm</h1>
-        <div className="d-flex gap-2">
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
+    <AdminPageFrame
+      title="Sản phẩm"
+      description={
+        isAdmin
+          ? 'Quản lý danh mục, giá bán và hình ảnh hiển thị trên cửa hàng.'
+          : 'Tra cứu danh mục và giá niêm yết của sản phẩm.'
+      }
+      actions={
+        <>
+          <RefreshButton
             onClick={catalog.refresh}
             disabled={catalog.loading || saving}
-          >
-            <RefreshCw size={15} /> Làm mới
-          </button>
+          />
           {isAdmin && (
             <button
               type="button"
-              className="btn btn-primary btn-sm"
+              className="btn btn-gradient-purple btn-sm admin-workspace-button"
               disabled={saving}
               onClick={() => startEditing('new')}
             >
-              <Plus size={15} /> Thêm sản phẩm
+              <Plus size={16} aria-hidden="true" /> Thêm sản phẩm
             </button>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {notice && (
-        <div className="alert alert-success py-2" role="status">
+        <div className="alert alert-success py-2 mb-0" role="status">
           {notice}
         </div>
       )}
-      {(catalog.error || catalog.categoryError || actionError) && (
-        <div className="alert alert-danger py-2" role="alert">
-          {actionError || catalog.error || catalog.categoryError}
-        </div>
-      )}
+      <AdminFeedback
+        error={(!editing && actionError) || catalog.categoryError || undefined}
+        retry={catalog.categoryError ? catalog.refresh : undefined}
+      />
 
       {isAdmin && editing && (
-        <form
+        <AdminDialog
           key={current?.id ?? 'new'}
-          onSubmit={saveProduct}
-          className="card card-body mb-3"
+          title={current ? `Sửa sản phẩm ${current.sku}` : 'Thêm sản phẩm'}
+          onClose={() => {
+            if (!pending.current) {
+              setEditing(null);
+              setActionError('');
+            }
+          }}
         >
-          <h2 className="h6 fw-bold mb-3">
-            {current ? `Sửa ${current.sku}` : 'Thêm sản phẩm'}
-          </h2>
-          <fieldset disabled={saving}>
-            <div className="row g-3">
-              <label className="col-12 col-md-4">
-                SKU
-                <input
-                  name="sku"
-                  className="form-control"
-                  defaultValue={current?.sku}
-                  pattern={String.raw`[A-Za-z0-9_\-]+`}
-                  maxLength={64}
-                  required
-                />
-              </label>
-              <label className="col-12 col-md-8">
-                Tên sản phẩm
-                <input
-                  name="name"
-                  className="form-control"
-                  defaultValue={current?.name}
-                  maxLength={255}
-                  required
-                />
-              </label>
-              <label className="col-12 col-md-6">
-                Danh mục
-                <select
-                  name="categoryId"
-                  className="form-select"
-                  defaultValue={current?.categoryId ?? ''}
-                  required={!current}
-                >
-                  <option value="" disabled={Boolean(current?.categoryId)}>
-                    Chọn danh mục
-                  </option>
-                  {current?.category &&
-                    !catalog.categories.some(
-                      ({ id }) => id === current.categoryId,
-                    ) && (
-                      <option value={current.category.id}>
-                        {current.category.name} (hiện tại)
-                      </option>
-                    )}
-                  {catalog.categories.map(({ id, name }) => (
-                    <option key={id} value={id}>
-                      {name}
+          <form onSubmit={saveProduct}>
+            {actionError && (
+              <div className="alert alert-danger py-2" role="alert">
+                {actionError}
+              </div>
+            )}
+            <fieldset disabled={saving}>
+              <div className="row g-3">
+                <label className="col-12 col-md-4">
+                  SKU
+                  <input
+                    name="sku"
+                    className="form-control"
+                    defaultValue={current?.sku}
+                    pattern={String.raw`[A-Za-z0-9_\-]+`}
+                    maxLength={64}
+                    required
+                  />
+                </label>
+                <label className="col-12 col-md-8">
+                  Tên sản phẩm
+                  <input
+                    name="name"
+                    className="form-control"
+                    defaultValue={current?.name}
+                    maxLength={255}
+                    required
+                  />
+                </label>
+                <label className="col-12 col-md-6">
+                  Danh mục
+                  <select
+                    name="categoryId"
+                    className="form-select"
+                    defaultValue={current?.categoryId ?? ''}
+                    required={!current}
+                  >
+                    <option value="" disabled={Boolean(current?.categoryId)}>
+                      Chọn danh mục
                     </option>
-                  ))}
-                </select>
-              </label>
-              <label className="col-12 col-md-6">
-                Giảm giá (%)
-                <input
-                  name="discountPercent"
-                  className="form-control"
-                  inputMode="decimal"
-                  pattern={PERCENT_PATTERN}
-                  defaultValue={current?.discountPercent ?? '0'}
-                />
-              </label>
-              <label className="col-12 col-md-6">
-                Giá vốn (VND)
-                <input
-                  name="costPrice"
-                  className="form-control"
-                  inputMode="decimal"
-                  pattern={MONEY_PATTERN}
-                  defaultValue={current?.costPrice ?? ''}
-                  required={!current}
-                />
-              </label>
-              <label className="col-12 col-md-6">
-                Giá bán (VND)
-                <input
-                  name="basePrice"
-                  className="form-control"
-                  inputMode="decimal"
-                  pattern={MONEY_PATTERN}
-                  defaultValue={current?.basePrice}
-                  required
-                />
-              </label>
-              <label className="col-12">
-                Đường dẫn ảnh
-                <input
-                  name="imageUrl"
-                  className="form-control"
-                  defaultValue={current?.imageUrl ?? ''}
-                  maxLength={500}
-                />
-              </label>
-              <label className="col-12">
-                Mô tả
-                <textarea
-                  name="description"
-                  className="form-control"
-                  defaultValue={current?.description ?? ''}
-                  rows={3}
-                  maxLength={5000}
-                />
-              </label>
-            </div>
-            <div className="d-flex gap-2 mt-3">
-              <button type="submit" className="btn btn-primary btn-sm">
-                {saving ? 'Đang lưu…' : 'Lưu sản phẩm'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline-secondary btn-sm"
-                onClick={() => setEditing(null)}
-              >
-                Hủy
-              </button>
-            </div>
-          </fieldset>
-        </form>
+                    {current?.category &&
+                      !catalog.categories.some(
+                        ({ id }) => id === current.categoryId,
+                      ) && (
+                        <option value={current.category.id}>
+                          {current.category.name} (hiện tại)
+                        </option>
+                      )}
+                    {catalog.categories.map(({ id, name }) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="col-12 col-md-6">
+                  Giảm giá (%)
+                  <input
+                    name="discountPercent"
+                    className="form-control"
+                    inputMode="decimal"
+                    pattern={PERCENT_PATTERN}
+                    defaultValue={current?.discountPercent ?? '0'}
+                  />
+                </label>
+                <label className="col-12 col-md-6">
+                  Giá vốn (VND)
+                  <input
+                    name="costPrice"
+                    className="form-control"
+                    inputMode="decimal"
+                    pattern={MONEY_PATTERN}
+                    defaultValue={current?.costPrice ?? ''}
+                    required={!current}
+                  />
+                </label>
+                <label className="col-12 col-md-6">
+                  Giá bán (VND)
+                  <input
+                    name="basePrice"
+                    className="form-control"
+                    inputMode="decimal"
+                    pattern={MONEY_PATTERN}
+                    defaultValue={current?.basePrice}
+                    required
+                  />
+                </label>
+                <div className="col-12">
+                  <div className="d-flex align-items-center gap-3">
+                    <div className="admin-catalog-image admin-catalog-image-preview">
+                      <ProductImage
+                        src={imagePreview}
+                        alt="Xem trước ảnh sản phẩm"
+                        fill
+                      />
+                    </div>
+                    <div className="flex-grow-1">
+                      <label htmlFor="product-image-url" className="form-label">
+                        Đường dẫn ảnh
+                      </label>
+                      <input
+                        id="product-image-url"
+                        name="imageUrl"
+                        className="form-control"
+                        defaultValue={current?.imageUrl ?? ''}
+                        placeholder="/products/iphone18duo.webp"
+                        aria-describedby="product-image-help"
+                        onBlur={(event) =>
+                          setImagePreview(event.currentTarget.value)
+                        }
+                        maxLength={500}
+                      />
+                      <div id="product-image-help" className="form-text">
+                        Dùng đường dẫn từ thư mục ảnh hoặc URL của ảnh. Ảnh xem
+                        trước cập nhật khi rời ô.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <label className="col-12">
+                  Mô tả
+                  <textarea
+                    name="description"
+                    className="form-control"
+                    defaultValue={current?.description ?? ''}
+                    rows={3}
+                    maxLength={5000}
+                  />
+                </label>
+              </div>
+              <div className="d-flex gap-2 mt-3">
+                <button
+                  type="submit"
+                  className="btn btn-gradient-purple admin-workspace-button"
+                >
+                  {saving ? 'Đang lưu…' : 'Lưu sản phẩm'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  onClick={() => {
+                    setEditing(null);
+                    setActionError('');
+                  }}
+                >
+                  Hủy
+                </button>
+              </div>
+            </fieldset>
+          </form>
+        </AdminDialog>
       )}
 
-      <div className="d-flex flex-wrap gap-2 mb-3">
-        <input
-          className="form-control form-control-sm w-auto"
-          aria-label="Tìm sản phẩm"
-          placeholder="Tìm tên hoặc SKU"
-          maxLength={200}
-          value={catalog.search}
-          onChange={(event) => catalog.setSearch(event.target.value)}
-        />
-        <select
-          className="form-select form-select-sm w-auto"
-          aria-label="Lọc danh mục"
-          value={catalog.categoryId}
-          onChange={(event) => catalog.setCategoryId(event.target.value)}
-        >
-          <option value="">Tất cả danh mục</option>
-          {catalog.categories.map(({ id, name }) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </select>
+      <div className="admin-workspace-panel admin-workspace-filters">
+        <label className="admin-workspace-search">
+          <span>Tìm sản phẩm</span>
+          <span className="position-relative d-block">
+            <Search
+              size={16}
+              className="admin-workspace-search-icon"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              className="form-control"
+              placeholder="Nhập tên hoặc SKU"
+              maxLength={200}
+              value={catalog.search}
+              onChange={(event) => catalog.setSearch(event.target.value)}
+            />
+          </span>
+        </label>
+        <label>
+          <span>Danh mục</span>
+          <select
+            className="form-select"
+            value={catalog.categoryId}
+            onChange={(event) => catalog.setCategoryId(event.target.value)}
+          >
+            <option value="">Tất cả danh mục</option>
+            {catalog.categories.map(({ id, name }) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {catalog.loading ? (
-        <p role="status">Đang tải sản phẩm…</p>
-      ) : (
-        !catalog.error && (
-          <div className="card">
-            <div className="table-responsive">
-              <table className="table table-hover align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th scope="col">SKU</th>
-                    <th scope="col">Tên</th>
-                    <th scope="col">Danh mục</th>
-                    {isAdmin && <th scope="col">Giá vốn</th>}
-                    <th scope="col">Giá bán</th>
-                    <th scope="col">Trạng thái</th>
-                    {isAdmin && <th scope="col">Thao tác</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {catalog.products.map((product) => (
-                    <tr key={product.id}>
-                      <td>{product.sku}</td>
-                      <td>{product.name}</td>
-                      <td>{product.category?.name ?? 'Chưa phân loại'}</td>
-                      {isAdmin && (
-                        <td>
-                          {product.costPrice == null
+      <div className="admin-workspace-panel overflow-hidden">
+        {catalog.loading || catalog.error ? (
+          <AdminFeedback
+            loading={catalog.loading}
+            error={catalog.error}
+            retry={catalog.refresh}
+          />
+        ) : (
+          <>
+            <AdminDataTable<ManagedProduct>
+              rows={catalog.products}
+              empty="Không có sản phẩm khớp bộ lọc."
+              columns={[
+                {
+                  heading: 'Sản phẩm',
+                  render: (product) => (
+                    <div className="admin-catalog-product">
+                      <div className="admin-catalog-image">
+                        <ProductImage src={product.imageUrl} alt="" fill />
+                      </div>
+                      <div>
+                        <div className="fw-semibold">{product.name}</div>
+                        <div className="admin-record-meta text-nowrap">
+                          {product.sku}
+                        </div>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  heading: 'Danh mục',
+                  render: (product) =>
+                    product.category?.name ?? 'Chưa phân loại',
+                },
+                ...(isAdmin
+                  ? [
+                      {
+                        heading: 'Giá vốn',
+                        className: 'text-end text-nowrap admin-catalog-price',
+                        render: (product: ManagedProduct) =>
+                          product.costPrice == null
                             ? '—'
-                            : formatVnd(Number(product.costPrice))}
-                        </td>
-                      )}
-                      <td>{formatVnd(Number(product.basePrice))}</td>
-                      <td>{product.isActive ? 'Đang bán' : 'Ngừng bán'}</td>
-                      {isAdmin && (
-                        <td>
-                          <div className="d-flex flex-wrap gap-1">
+                            : formatVnd(Number(product.costPrice)),
+                      },
+                    ]
+                  : []),
+                {
+                  heading: 'Giá niêm yết',
+                  className:
+                    'text-end text-nowrap fw-semibold admin-catalog-price',
+                  render: (product) => formatVnd(Number(product.basePrice)),
+                },
+                {
+                  heading: 'Trạng thái',
+                  render: (product) => (
+                    <RecordStatus
+                      label={product.isActive ? 'Đang bán' : 'Ngừng bán'}
+                      tone={product.isActive ? 'good' : 'neutral'}
+                    />
+                  ),
+                },
+                ...(isAdmin
+                  ? [
+                      {
+                        heading: 'Thao tác',
+                        render: (product: ManagedProduct) => (
+                          <div className="d-flex gap-1 text-nowrap">
                             <button
                               type="button"
                               className="btn btn-sm btn-outline-primary"
                               disabled={saving}
+                              aria-label={`Sửa ${product.name}`}
                               onClick={() => startEditing(product)}
                             >
                               Sửa
@@ -356,58 +458,27 @@ export default function ManageProducts() {
                               type="button"
                               className="btn btn-sm btn-outline-danger"
                               disabled={saving}
+                              aria-label={`Xóa ${product.name}`}
                               onClick={() => removeProduct(product)}
                             >
                               Xóa
                             </button>
                           </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                  {!catalog.products.length && (
-                    <tr>
-                      <td
-                        colSpan={isAdmin ? 7 : 5}
-                        className="text-center py-4"
-                      >
-                        Không có sản phẩm khớp bộ lọc.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <nav
-              aria-label="Phân trang sản phẩm"
-              className="p-3 d-flex flex-wrap gap-2 align-items-center justify-content-between"
-            >
-              <span className="small text-secondary">
-                {catalog.total} sản phẩm · Trang {catalog.page}/
-                {catalog.totalPages}
-              </span>
-              <div className="d-flex gap-2">
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  disabled={catalog.page <= 1}
-                  onClick={() => catalog.setPage(catalog.page - 1)}
-                >
-                  Trang trước
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  disabled={catalog.page >= catalog.totalPages}
-                  onClick={() => catalog.setPage(catalog.page + 1)}
-                >
-                  Trang sau
-                </button>
-              </div>
-            </nav>
-          </div>
-        )
-      )}
-    </div>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            <AdminPager
+              total={catalog.total}
+              page={catalog.page}
+              totalPages={catalog.totalPages}
+              onChange={catalog.setPage}
+            />
+          </>
+        )}
+      </div>
+    </AdminPageFrame>
   );
 }

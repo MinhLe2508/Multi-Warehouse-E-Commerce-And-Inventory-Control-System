@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import ProductImage from "@/components/products/ProductImage";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useTemporaryFeedback } from "@/hooks/useTemporaryFeedback";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -38,12 +38,10 @@ export default function ProductCard({ product }: { product: Product }) {
         href={`/products/${product.id}`}
         className="relative block aspect-square overflow-hidden bg-brand-50"
       >
-        <Image
+        <ProductImage
           src={product.image}
           alt={product.name}
           fill
-          unoptimized
-          sizes="(min-width: 1280px) 280px, (min-width: 768px) 33vw, 50vw"
           className={`object-cover transition duration-300 group-hover:scale-105 ${
             outOfStock ? "opacity-50 grayscale" : ""
           }`}

@@ -57,7 +57,7 @@ import {
  *   npm run eval:chatbot -- --delay=20000   # giãn cách khi Voyage AI bị giới hạn RPM
  *   npm run eval:chatbot -- --strict        # exit code 1 nếu không đạt ngưỡng (dùng cho CI)
  *
- * Dữ liệu tạm (1 đơn hàng fixture + các phiên chat của bài test) được xóa sau khi chạy.
+ * Đơn hàng, phiên chat và tài khoản kiểm thử tạm được dọn sau khi chạy.
  */
 
 interface CliOptions {
@@ -112,6 +112,7 @@ async function bootstrap() {
 
   const sessionTokens: string[] = [];
   let fixtureOrderId: string | null = null;
+  let fixtureCustomerId: string | null = null;
   let exitCode = 0;
 
   try {
@@ -123,14 +124,27 @@ async function bootstrap() {
       select: { id: true, username: true, role: true },
     });
     const owner =
-      customers.find((u) => u.username === 'customer1') ?? customers[0];
-    const other =
-      customers.find((u) => u.username === 'customer2') ??
-      customers.find((u) => u.id !== owner?.id);
-    if (!owner || !other) {
+      customers.find((u) => u.username === 'customer') ?? customers[0];
+    if (!owner) {
       throw new Error(
-        'Cần ít nhất 2 tài khoản CUSTOMER. Hãy chạy seed trước (npx prisma db seed).',
+        'Cần một tài khoản CUSTOMER đang hoạt động. Hãy chạy seed trước (npx prisma db seed).',
       );
+    }
+    let other = customers.find((u) => u.id !== owner.id);
+    if (!other) {
+      const username = `eval-customer-${randomBytes(8).toString('hex')}`;
+      other = await prisma.user.create({
+        data: {
+          username,
+          email: `${username}@demo.example.test`,
+          fullName: 'Khách hàng kiểm thử RAG',
+          passwordHash: 'disabled',
+          role: UserRole.CUSTOMER,
+          isActive: false,
+        },
+        select: { id: true, username: true, role: true },
+      });
+      fixtureCustomerId = other.id;
     }
 
     const product = await prisma.product.findFirst({
@@ -304,8 +318,12 @@ async function bootstrap() {
       if (fixtureOrderId) {
         await prisma.order.delete({ where: { id: fixtureOrderId } });
       }
+      if (fixtureCustomerId) {
+        await prisma.user.delete({ where: { id: fixtureCustomerId } });
+      }
     } catch (cleanupErr) {
       console.error('Không dọn được dữ liệu tạm của ChatbotEval:', cleanupErr);
+      exitCode = 1;
     }
     await app.close();
   }

@@ -34,6 +34,12 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
     if (err.status === 403) {
       return 'Bạn không đủ quyền thực hiện thao tác này (403).';
     }
+    if (
+      err.status === 404 &&
+      /^Cannot (GET|POST|PATCH|PUT|DELETE) \/admin\//.test(err.message)
+    ) {
+      return 'Backend đang chạy chưa cung cấp chức năng này. Hãy khởi động lại backend từ cùng bản mã nguồn với frontend và kiểm tra NEXT_PUBLIC_API_URL.';
+    }
     return err.message || fallback;
   }
   if (err instanceof Error) {

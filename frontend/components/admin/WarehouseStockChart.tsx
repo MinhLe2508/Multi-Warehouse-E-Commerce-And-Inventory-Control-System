@@ -38,10 +38,8 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
 
   const chartData = warehouseDistribution.map((item) => ({
     name: item.warehouseCode,
-    fullName: item.warehouseName,
     'Khả dụng': item.totalAvailable,
     'Giữ chỗ': item.totalReserved,
-    'Tổng tồn': item.totalStock,
   }));
 
   return (
@@ -51,7 +49,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
         {/* KPI 1 */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-medium">Tổng SP</span>
+            <span className="text-xs font-medium">Sản phẩm</span>
             <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg">
               <Package className="w-4 h-4" />
             </div>
@@ -69,7 +67,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
             </div>
           </div>
           <div className="text-xl font-extrabold text-blue-700">
-            {kpis.totalStock.toLocaleString()}
+            {kpis.totalStock.toLocaleString('vi-VN')}
           </div>
           <span className="text-[10px] text-slate-400">
             {warehouseDistribution.length} kho trong phạm vi
@@ -85,7 +83,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
             </div>
           </div>
           <div className="text-xl font-extrabold text-amber-600">
-            {kpis.totalReserved.toLocaleString()}
+            {kpis.totalReserved.toLocaleString('vi-VN')}
           </div>
           <span className="text-[10px] text-amber-600 font-medium">Đơn chờ thanh toán</span>
         </div>
@@ -133,23 +131,15 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Biểu đồ Recharts */}
         <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-purple-600" />
-                Phân bổ tồn kho theo từng kho hàng (FR-DASH-01)
-              </h4>
-              <p className="text-xs text-slate-500">
-                So sánh số lượng Khả dụng (Tím) và Đang giữ chỗ (Xanh) giữa các kho
-              </p>
-            </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-              3 Trung tâm phân phối
-            </span>
+          <div className="mb-3">
+            <h2 className="admin-panel-heading d-flex align-items-center gap-2">
+              <TrendingUp size={16} className="text-purple-600" aria-hidden="true" />
+              Phân bổ tồn kho theo kho
+            </h2>
           </div>
 
           <div className="w-full h-64">
-            {mounted ? (
+            {mounted && chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={chartData}
@@ -157,7 +147,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#ffffff',
@@ -193,22 +183,22 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
         {/* Danh sách kho và Top cảnh báo */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
-            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
-              <WarehouseIcon className="w-4 h-4 text-purple-600" />
-              Sức chứa & Trọng tải kho
-            </h4>
+            <h2 className="admin-panel-heading d-flex align-items-center gap-2 mb-3">
+              <WarehouseIcon size={16} className="text-purple-600" aria-hidden="true" />
+              Mức sử dụng kho
+            </h2>
             <div className="space-y-3.5">
               {warehouseDistribution.map((wh) => (
                 <div
                   key={wh.warehouseId}
                   className="p-3 rounded-xl bg-slate-50 border border-slate-200/70"
                 >
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs font-bold text-slate-800 mb-1">
                     <span>{wh.warehouseCode}</span>
                     <span className="text-purple-700">
                       {wh.capacityRate === null
-                        ? 'Không giới hạn sức chứa'
-                        : `${wh.capacityRate.toLocaleString('vi-VN')}% dung lượng kho`}
+                        ? 'Không giới hạn'
+                        : `${wh.capacityRate.toLocaleString('vi-VN')}%`}
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-500 mb-1.5 truncate">
@@ -218,9 +208,9 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
                     <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          wh.capacityRate > 85
+                          wh.capacityRate > 100
                             ? 'bg-rose-500'
-                            : wh.capacityRate > 60
+                            : wh.capacityRate >= 85
                             ? 'bg-amber-500'
                             : 'bg-purple-600'
                         }`}
@@ -228,9 +218,9 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
                       />
                     </div>
                   )}
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                    <span>Tồn: {wh.totalStock.toLocaleString()} cái</span>
-                    <span>Khả dụng: {wh.totalAvailable.toLocaleString()} cái</span>
+                  <div className="text-[11px] text-slate-600 mt-1">
+                    Đang lưu {wh.occupiedStock.toLocaleString('vi-VN')}
+                    {wh.capacity !== null && ` / ${wh.capacity.toLocaleString('vi-VN')}`} sản phẩm
                   </div>
                 </div>
               ))}

@@ -1,7 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Plus } from 'lucide-react';
 import { useAdminCtx } from '../../../components/admin/AdminContext';
+import {
+  AdminDataTable,
+  AdminFeedback,
+  AdminPageFrame,
+  RecordStatus,
+  RefreshButton,
+} from '../../../components/admin/operations/AdminUi';
 import {
   apiDelete,
   apiGet,
@@ -128,46 +136,45 @@ export default function WarehousesPage() {
   }
 
   return (
-    <div className="container-fluid p-0">
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h1 className="h4 fw-bold mb-0">Quản lý kho hàng</h1>
-        <div className="d-flex gap-2">
-          <button
-            className="btn btn-outline-secondary btn-sm"
-            type="button"
+    <AdminPageFrame
+      title="Quản lý kho hàng"
+      description="Quản lý địa chỉ, sức chứa và ngưỡng cảnh báo của từng kho."
+      actions={
+        <>
+          <RefreshButton
             onClick={() => setRevision((value) => value + 1)}
             disabled={!read || saving}
-          >
-            Làm mới
-          </button>
+          />
           <button
-            className="btn btn-primary btn-sm"
+            className="btn btn-gradient-purple btn-sm admin-workspace-button"
             type="button"
             onClick={() => edit('new')}
             disabled={saving}
           >
-            Thêm kho
+            <Plus size={16} aria-hidden="true" /> Thêm kho
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
       {notice && (
-        <p className="alert alert-success py-2" role="status">
+        <p className="alert alert-success py-2 mb-0" role="status">
           {notice}
         </p>
       )}
-      {(error || read?.error) && (
-        <p className="alert alert-danger py-2" role="alert">
-          {error || read?.error}
-        </p>
-      )}
+      <AdminFeedback
+        error={error || read?.error}
+        retry={
+          read?.error ? () => setRevision((value) => value + 1) : undefined
+        }
+      />
 
       {editing && (
         <form
           key={current?.id ?? 'new'}
-          className="card card-body mb-3"
+          className="admin-workspace-panel p-3"
           onSubmit={submit}
         >
-          <h2 className="h6 fw-bold">
+          <h2 className="admin-panel-heading mb-3">
             {current ? `Sửa kho ${current.code}` : 'Thêm kho'}
           </h2>
           <fieldset disabled={saving}>
@@ -246,7 +253,10 @@ export default function WarehousesPage() {
               </label>
             </div>
             <div className="d-flex gap-2 mt-3">
-              <button type="submit" className="btn btn-primary btn-sm">
+              <button
+                type="submit"
+                className="btn btn-gradient-purple admin-workspace-button"
+              >
                 {saving ? 'Đang lưu…' : 'Lưu kho'}
               </button>
               <button
@@ -261,71 +271,78 @@ export default function WarehousesPage() {
         </form>
       )}
 
-      {!read && <p role="status">Đang tải danh sách kho…</p>}
+      {!read && <AdminFeedback loading />}
       {read?.items && (
-        <div className="card table-responsive">
-          <table className="table table-hover align-middle mb-0">
-            <thead>
-              <tr>
-                <th scope="col">Kho</th>
-                <th scope="col">Khu vực</th>
-                <th scope="col">Sức chứa</th>
-                <th scope="col">Ngưỡng cảnh báo</th>
-                <th scope="col">Trạng thái</th>
-                <th scope="col">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {read.items.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <strong>{row.code}</strong>
-                    <div>{row.name}</div>
-                    {row.address && (
-                      <small className="text-secondary">{row.address}</small>
-                    )}
-                  </td>
-                  <td>{row.region}</td>
-                  <td>
-                    {row.capacity?.toLocaleString('vi-VN') ?? 'Không giới hạn'}
-                  </td>
-                  <td>
-                    {row.defaultLowStockThreshold.toLocaleString('vi-VN')}
-                  </td>
-                  <td>{row.isActive ? 'Đang hoạt động' : 'Đã ngừng'}</td>
-                  <td>
-                    <div className="d-flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        className="btn btn-outline-primary btn-sm"
-                        onClick={() => edit(row)}
-                        disabled={saving}
-                      >
-                        Sửa
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={() => changeActive(row)}
-                        disabled={saving}
-                      >
-                        {row.isActive ? 'Ngừng hoạt động' : 'Kích hoạt lại'}
-                      </button>
+        <div className="admin-workspace-panel overflow-hidden">
+          <AdminDataTable
+            rows={read.items}
+            empty="Chưa có kho hàng."
+            columns={[
+              {
+                heading: 'Kho',
+                render: (row) => (
+                  <>
+                    <strong>{row.name}</strong>
+                    <div className="admin-record-meta">
+                      {row.code}
+                      {row.address && ` · ${row.address}`}
                     </div>
-                  </td>
-                </tr>
-              ))}
-              {!read.items.length && (
-                <tr>
-                  <td colSpan={6} className="text-center py-4">
-                    Chưa có kho hàng.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  </>
+                ),
+              },
+              {
+                heading: 'Khu vực',
+                className: 'text-nowrap',
+                render: (row) => row.region,
+              },
+              {
+                heading: 'Sức chứa',
+                className: 'text-end text-nowrap',
+                render: (row) =>
+                  row.capacity?.toLocaleString('vi-VN') ?? 'Không giới hạn',
+              },
+              {
+                heading: 'Ngưỡng cảnh báo',
+                className: 'text-end text-nowrap',
+                render: (row) =>
+                  row.defaultLowStockThreshold.toLocaleString('vi-VN'),
+              },
+              {
+                heading: 'Trạng thái',
+                render: (row) => (
+                  <RecordStatus
+                    label={row.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                    tone={row.isActive ? 'good' : 'neutral'}
+                  />
+                ),
+              },
+              {
+                heading: 'Thao tác',
+                render: (row) => (
+                  <div className="d-flex gap-1 text-nowrap">
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary btn-sm"
+                      onClick={() => edit(row)}
+                      disabled={saving}
+                    >
+                      Sửa
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => changeActive(row)}
+                      disabled={saving}
+                    >
+                      {row.isActive ? 'Ngừng hoạt động' : 'Kích hoạt lại'}
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
       )}
-    </div>
+    </AdminPageFrame>
   );
 }

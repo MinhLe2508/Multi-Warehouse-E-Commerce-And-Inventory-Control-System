@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { RefreshCw, Download, Layers, Plus } from 'lucide-react';
+import { RefreshCw, Download, Plus } from 'lucide-react';
 import { useAdminInventory } from '../../../hooks/useAdminInventory';
 import { useCurrentAdminUser } from '../../../hooks/useCurrentAdminUser';
 import { WarehouseStockChart } from '../../../components/admin/WarehouseStockChart';
@@ -9,6 +9,10 @@ import { InventoryFilterBar } from '../../../components/admin/InventoryFilterBar
 import { InventoryTable } from '../../../components/admin/InventoryTable';
 import { StockAdjustModal } from '../../../components/admin/StockAdjustModal';
 import { CreateInventoryForm } from '../../../components/admin/CreateInventoryForm';
+import {
+  AdminPageFrame,
+  RefreshButton,
+} from '../../../components/admin/operations/AdminUi';
 
 export default function AdminInventoryPage() {
   const { isAdmin } = useCurrentAdminUser();
@@ -46,85 +50,81 @@ export default function AdminInventoryPage() {
   } = useAdminInventory();
 
   const handleExportCSV = () => {
-    // Xuất CSV đơn giản cho quản trị viên
-    const headers = ['Mã SKU', 'Tên sản phẩm', 'Danh mục', 'Tổng tồn', 'Tổng giữ chỗ', 'Tổng khả dụng', 'Trạng thái'];
+    const headers = [
+      'Mã SKU',
+      'Tên sản phẩm',
+      'Danh mục',
+      'Tổng tồn',
+      'Tổng giữ chỗ',
+      'Tổng khả dụng',
+      'Trạng thái',
+    ];
     const rows = products.map((p) => [
-      `"${p.sku}"`,
-      `"${p.name.replace(/"/g, '""')}"`,
-      `"${p.category}"`,
+      p.sku,
+      p.name,
+      p.category,
       p.totalStock,
       p.totalReserved,
       p.totalAvailable,
       p.status,
     ]);
 
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((value) =>
+            typeof value === 'number'
+              ? value
+              : `"${value.replace(/"/g, '""')}"`,
+          )
+          .join(','),
+      )
+      .join('\r\n');
+    const url = URL.createObjectURL(
+      new Blob(['\uFEFF', csvContent], { type: 'text/csv;charset=utf-8' }),
+    );
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `bao_cao_ton_kho_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `bao_cao_ton_kho_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
-    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 space-y-6">
-      {/* Top Banner & Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="p-1.5 rounded-lg bg-purple-100 text-purple-700">
-              <Layers className="w-5 h-5" />
-            </span>
-            <span className="text-xs font-bold uppercase tracking-wider text-purple-600 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
-              Quản Trị Tồn Kho Đa Kho (FR-INV-01)
-            </span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Ma Trận Kiểm Soát Tồn Kho Toàn Quốc
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Kiểm tra lượng tồn khả dụng, số lượng giữ chỗ và cảnh báo ngưỡng an toàn theo thời gian thực
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
+    <AdminPageFrame
+      title="Tồn kho"
+      description="Xem tồn vật lý, hàng đang giữ chỗ và số lượng khả dụng tại từng kho."
+      actions={
+        <>
+          <RefreshButton onClick={refreshData} disabled={loading} />
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            disabled={loading || products.length === 0}
+            className="btn btn-outline-primary btn-sm admin-workspace-button"
+          >
+            <Download size={16} aria-hidden="true" /> Tải CSV
+          </button>
           {isAdmin && (
             <button
               type="button"
-              className="btn btn-outline-primary btn-sm inline-flex items-center gap-1"
+              className="btn btn-gradient-purple btn-sm admin-workspace-button"
               onClick={() => {
                 setNotice('');
                 setCreatingInventory(true);
               }}
             >
-              <Plus size={14} /> Thêm tồn kho
+              <Plus size={16} aria-hidden="true" /> Thêm tồn kho
             </button>
           )}
-          <button
-            onClick={refreshData}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-all hover:scale-[1.02] active:scale-95"
-            title="Làm mới dữ liệu tồn kho"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-purple-600' : ''}`} />
-            Làm mới
-          </button>
-          <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-200 transition-all hover:scale-[1.02] active:scale-95"
-            title="Xuất báo cáo CSV"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Xuất file CSV
-          </button>
-        </div>
-      </div>
-
-      {notice && <p className="alert alert-success py-2" role="status">{notice}</p>}
+        </>
+      }
+    >
+      {notice && (
+        <p className="alert alert-success py-2 mb-0" role="status">
+          {notice}
+        </p>
+      )}
       {isAdmin && creatingInventory && (
         <CreateInventoryForm
           onCancel={() => setCreatingInventory(false)}
@@ -209,6 +209,6 @@ export default function AdminInventoryPage() {
           onSubmit={submitStockAdjustment}
         />
       )}
-    </div>
+    </AdminPageFrame>
   );
 }

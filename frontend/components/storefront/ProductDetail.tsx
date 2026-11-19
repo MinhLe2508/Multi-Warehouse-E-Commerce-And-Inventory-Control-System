@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import ProductImage from "@/components/products/ProductImage";
 import { useState } from "react";
 import { useTemporaryFeedback } from "@/hooks/useTemporaryFeedback";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -85,13 +85,11 @@ function DetailView({ product }: { product: Product }) {
       <div className="mt-8 grid gap-10 lg:grid-cols-2">
         {/* Ảnh */}
         <div className="relative aspect-square overflow-hidden rounded-3xl bg-brand-50 shadow-soft ring-1 ring-slate-100">
-          <Image
+          <ProductImage
             src={product.image}
             alt={product.name}
             fill
-            unoptimized
-            priority
-            sizes="(min-width: 1024px) 560px, 100vw"
+            loading="eager"
             className={`object-cover ${outOfStock ? "opacity-50 grayscale" : ""}`}
           />
           {outOfStock && (

@@ -67,6 +67,8 @@ export interface InventoryWarehouseStat {
   totalStock: number;
   totalReserved: number;
   totalAvailable: number;
+  capacity: number | null;
+  occupiedStock: number;
   capacityRate: number | null;
 }
 

@@ -216,6 +216,8 @@ function toInventorySummary(
       totalStock: warehouse.totalStock,
       totalReserved: warehouse.totalReserved,
       totalAvailable: warehouse.totalAvailable,
+      capacity: warehouse.capacity,
+      occupiedStock: warehouse.occupiedStock,
       capacityRate: warehouse.capacityRate,
     })),
     topLowStockProducts: products

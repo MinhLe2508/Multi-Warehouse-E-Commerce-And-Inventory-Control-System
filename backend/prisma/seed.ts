@@ -1,73 +1,35 @@
-// Mục đích: Tạo dữ liễu mẫu dùng số lượng
-
 import 'dotenv/config';
 
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient, UserRole, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
-
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL!,
-});
+import { InventoryAlertService } from '../src/inventory/inventory-alert.service';
+import {
+  DEMO_CATEGORIES,
+  DEMO_PRODUCTS,
+  DEMO_WAREHOUSES,
+  type DemoWarehouseCode,
+} from './demo-catalog';
 
 const prisma = new PrismaClient({
-  adapter,
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
 });
 
-// Dùng bcrypt với số lượng "salt round" = 10 — Cân bằng giữa độ an toàn và tốc độ hash
-const BCRYPT_SALT_ROUNDS = 10;
-
-// Mật khẩu mặc định cho Admin
-const SEED_ADMIN_PASSWORD = 'admin';
-
-// Mật khẩu mặc định cho Staff
-const SEED_STAFF_PASSWORD = 'staff';
-
-// Mật khẩu mặc định dùng chung cho toàn bộ Customer mẫu
-const SEED_DEFAULT_PASSWORD = 'FiveTL524';
-
-// Danh sách 3 kho hàng
-const WAREHOUSES_SEED_DATA = [
+const DEMO_ACCOUNTS = [
+  { username: 'admin', fullName: 'Admin Demo', role: UserRole.ADMIN },
   {
-    code: 'WH-HN01',
-    name: 'Kho Trung Tâm Hà Nội',
-    region: 'Miền Bắc',
-    address: 'Khu Công Nghiệp Bắc Thăng Long, Hà Nội',
-    capacity: 50000,
+    username: 'staff',
+    fullName: 'Nhân viên kho Demo',
+    role: UserRole.WAREHOUSE_STAFF,
   },
   {
-    code: 'WH-DN01',
-    name: 'Kho Trung Tâm Đà Nẵng',
-    region: 'Miền Trung',
-    address: 'Khu Công Nghiệp Hòa Khánh, Đà Nẵng',
-    capacity: 30000,
+    username: 'customer',
+    fullName: 'Khách hàng Demo',
+    role: UserRole.CUSTOMER,
   },
-  {
-    code: 'WH-HCM01',
-    name: 'Kho Trung Tâm Hồ Chí Minh',
-    region: 'Miền Nam',
-    address: 'Khu Công Nghiệp Tân Bình, Thành Phố Hồ Chí Minh',
-    capacity: 80000,
-  },
-];
+] as const;
 
-// Danh sách danh mục sản phẩm
-const CATEGORIES_SEED_DATA = [
-  { name: 'Điện thoại & Máy tính bảng', slug: 'dien-thoai-may-tinh-bang' },
-  { name: 'Laptop & Máy tính', slug: 'laptop-may-tinh' },
-  { name: 'Âm thanh', slug: 'am-thanh' },
-  { name: 'Thiết bị đeo thông minh', slug: 'thiet-bi-deo-thong-minh' },
-  { name: 'Phụ kiện công nghệ', slug: 'phu-kien-cong-nghe' },
-  { name: 'Gia dụng thông minh', slug: 'gia-dung-thong-minh' },
-  { name: 'Màn hình & Máy chiếu', slug: 'man-hinh-may-chieu' },
-  { name: 'Thiết bị lưu trữ', slug: 'thiet-bi-luu-tru' },
-];
-
-// -----------------------------------------------------------------------------
-// 30 Đoạn tài liệu chính sách cho AI Chatbot RAG. Đây chỉ là nội dung văn bản thô
-// Cột "Embedding" (vector 1024 chieu) sẽ được điền sau, bởi 1 script/service riêng gói Google Gemini Embedding API
-// (gemini-embedding-001), không điền ở đây vì seed.ts không nên phụ thuộc vào gói API bên ngoài
-// -----------------------------------------------------------------------------
+// Các đoạn chính sách dùng được với tìm kiếm từ khóa ngay sau khi seed.
 const KB_DOCUMENTS_SEED_DATA: Array<{
   title: string;
   docType: string;
@@ -255,259 +217,119 @@ const KB_DOCUMENTS_SEED_DATA: Array<{
   },
 ];
 
-// Hàm phụ trợ: Sinh số nguyên ngẫu nhiên trong khoảng [min, max]
-function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// Chọn ngẫu nhiên 1 phần tử từ 1 danh sach — Dùng cho việc gán danh mục ngẫu nhiên cho từng sản phẩm
-function pickRandom<T>(items: T[]): T {
-  return items[randomInt(0, items.length - 1)];
-}
-
-// Sinh "username" tự phân trước dấu "@" của Email
-function usernameFromEmail(email: string): string {
-  return email.trim().toLowerCase().split('@')[0];
-}
-
-// Sinh danh sách tên sản phẩm mẫu có cấu trúc "Nhóm từ khóa + Số hiệu"
-const PRODUCT_NAME_PREFIXES = [
-  'Điện thoại thông minh',
-  'Máy tính bảng',
-  'Laptop văn phòng',
-  'Laptop đồ họa',
-  'Tai nghe không dây',
-  'Loa Bluetooth',
-  'Đồng hồ thông minh',
-  'Vòng đeo tay theo dõi sức khỏe',
-  'Sạc dự phòng',
-  'Cáp sạc nhanh',
-  'Bàn phím cơ',
-  'Chuột không dây',
-  'Màn hình máy tính',
-  'Máy chiếu mini',
-  'Ổ cứng di động',
-  'Thẻ nhớ lưu trữ',
-  'Camera an ninh',
-  'Đèn LED thông minh',
-  'Ổ cắm điện thông minh',
-  'Robot hút bụi',
-];
-
-async function main(): Promise<void> {
-  console.log('===== Bắt đầu Seed dữ liệu mẫu =====');
-
-  if (process.env.ALLOW_DEMO_SEED?.toLowerCase() !== 'true') {
-    throw new Error(
-      'Demo Seed bị từ chối. Chỉ bật ALLOW_DEMO_SEED = True trong môi trường kiểm thử.',
-    );
-  }
-
-  // Bước 1: Hash mật khẩu mặc định một lần duy nhất
-  console.log('[1/8] Đang Hash mật khẩu mẫu...');
-  const adminPasswordHash = await bcrypt.hash(
-    SEED_ADMIN_PASSWORD,
-    BCRYPT_SALT_ROUNDS,
-  );
-
-  const staffPasswordHash = await bcrypt.hash(
-    SEED_STAFF_PASSWORD,
-    BCRYPT_SALT_ROUNDS,
-  );
-
-  const defaultPasswordHash = await bcrypt.hash(
-    SEED_DEFAULT_PASSWORD,
-    BCRYPT_SALT_ROUNDS,
-  );
-
-  // Bước 2: Tạo 1 ADMIN + 1 WAREHOUSE_STAFF + 100 CUSTOMER = 102 User.
-  console.log(
-    '[2/8] Đang khởi tạo 102 Users mẫu (1 Admin, 1 Staff, 100 Customer)...',
-  );
-
-  // Dùng chung mốc thời gian xác thực cho tài khoản demo.
-  const now = new Date();
-
-  // Kiểm tra username "admin" không bị tài khoản sai role chiếm giữ.
-  const existingAdmin = await prisma.user.findUnique({
-    where: { username: 'admin' },
-  });
-
-  if (existingAdmin && existingAdmin.role !== UserRole.ADMIN) {
-    throw new Error(
-      'Username "admin" đã được sử dụng bởi tài khoản không phải ADMIN.',
-    );
-  }
-
-  // ADMIN: Chỉ tạo nếu chưa có, không ghi đè mật khẩu đã thay đổi.
-  await prisma.user.upsert({
-    where: { username: 'admin' },
-    update: {},
-    create: {
-      email: 'admin@gmail.com',
-      username: 'admin',
-      passwordHash: adminPasswordHash,
-      fullName: 'Admin',
-      role: UserRole.ADMIN,
-      isActive: true,
-      mustChangePassword: false,
-    },
-  });
-
-  // Kiểm tra username "staff" không bị tài khoản sai role chiếm giữ.
-  const existingStaff = await prisma.user.findUnique({
-    where: { username: 'staff' },
-  });
-
-  if (existingStaff && existingStaff.role !== UserRole.WAREHOUSE_STAFF) {
-    throw new Error(
-      'Username "staff" đã được sử dụng bởi tài khoản không phải WAREHOUSE_STAFF.',
-    );
-  }
-
-  // STAFF DEMO: Có mật khẩu riêng để kiểm thử nhanh.
-  await prisma.user.upsert({
-    where: { username: 'staff' },
-    update: {},
-    create: {
-      email: 'staff@gmail.com',
-      username: 'staff',
-      passwordHash: staffPasswordHash,
-      fullName: 'Staff Demo',
-      role: UserRole.WAREHOUSE_STAFF,
-      isActive: true,
-      mustChangePassword: false,
-      emailVerifiedAt: now,
-    },
-  });
-
-  // 100 Khách hàng (CUSTOMER) — Sinh Email/Tên theo số thứ tự để đảm bảo UNIQUE trên cột "email", tránh trùng lặp ngẫu nhiên
-  const customersData = Array.from({ length: 100 }, (_, index) => {
-    const seq = index + 1;
-    const email = `customer${seq}@gmail.com`;
-
-    return {
-      email,
-      username: usernameFromEmail(email),
-      passwordHash: defaultPasswordHash,
-      fullName: `Khách hàng số ${seq}`,
-      phone: `09${randomInt(10000000, 99999999)}`,
-      role: UserRole.CUSTOMER,
-      isActive: true,
-      mustChangePassword: false,
-      emailVerifiedAt: now,
-    };
-  });
-
-  await prisma.user.createMany({
-    data: customersData,
+async function seedCatalog(tx: Prisma.TransactionClient) {
+  await tx.category.createMany({
+    data: [...DEMO_CATEGORIES],
     skipDuplicates: true,
   });
+  const categories = await tx.category.findMany({
+    where: { slug: { in: DEMO_CATEGORIES.map(({ slug }) => slug) } },
+    select: { slug: true, id: true },
+  });
+  const categoryIds = new Map(categories.map(({ slug, id }) => [slug, id]));
 
-  console.log(`      → Đã tạo xong tổng ${await prisma.user.count()} Users.`);
-
-  // Bước 3: Tạo danh mục sản phẩm.
-  console.log('[3/8] Đang tạo danh mục sản phẩm...');
-  await prisma.category.createMany({
-    data: CATEGORIES_SEED_DATA,
+  await tx.product.createMany({
+    data: DEMO_PRODUCTS.map(
+      ({ sku, slug, name, description, category, basePrice, costPrice }) => ({
+        sku,
+        slug,
+        name,
+        description,
+        basePrice,
+        costPrice,
+        categoryId: categoryIds.get(category),
+        imageUrl: `/products/${slug}.webp`,
+      }),
+    ),
     skipDuplicates: true,
   });
-  const categories = await prisma.category.findMany({
-    where: {
-      slug: {
-        in: CATEGORIES_SEED_DATA.map((category) => category.slug),
-      },
-    },
+  const products = await tx.product.findMany({
+    where: { sku: { in: DEMO_PRODUCTS.map(({ sku }) => sku) } },
+    select: { sku: true, id: true },
   });
+  const productIds = new Map(products.map(({ sku, id }) => [sku, id]));
 
-  // Bước 4: Tạo 3 kho hàng.
-  console.log('[4/8] Đang tạo 3 kho hàng...');
-  await prisma.warehouse.createMany({
-    data: WAREHOUSES_SEED_DATA,
+  await tx.warehouse.createMany({
+    data: [...DEMO_WAREHOUSES],
     skipDuplicates: true,
   });
-  const warehouses = await prisma.warehouse.findMany({
-    where: {
-      code: {
-        in: WAREHOUSES_SEED_DATA.map((warehouse) => warehouse.code),
-      },
-    },
+  // Nhất quán với luồng nhập kho, khóa kho trước khi kiểm tra sức chứa.
+  const warehouses = await tx.$queryRaw<
+    { id: string; code: DemoWarehouseCode; capacity: number | null }[]
+  >`
+    SELECT id, code, capacity
+      FROM warehouses
+     WHERE code = ANY(${DEMO_WAREHOUSES.map(({ code }) => code)}::text[])
+     ORDER BY id
+       FOR UPDATE
+  `;
+  const existingTotals = await tx.inventory.groupBy({
+    by: ['warehouseId'],
+    where: { warehouseId: { in: warehouses.map(({ id }) => id) } },
+    _sum: { stock: true },
   });
+  const warehouseStock = new Map(
+    existingTotals.map(({ warehouseId, _sum }) => [
+      warehouseId,
+      _sum.stock ?? 0,
+    ]),
+  );
+  const newInventoryIds: bigint[] = [];
+  const auditRows: Prisma.InventoryAuditLogCreateManyInput[] = [];
 
-  // Bước 5: Tạo 200 sản phẩm, gán ngẫu nhiên vào 1 danh mục và 1 mục giá hợp lý (50.000 VND - 30.000.000 VND)
-  console.log('[5/8] Đang tạo 200 sản phẩm...');
-  const productsData = Array.from({ length: 200 }, (_, index) => {
-    const seq = index + 1;
-    const namePrefix = pickRandom(PRODUCT_NAME_PREFIXES);
-    const category = pickRandom(categories);
-    const basePrice = randomInt(50, 30000) * 1000;
-    const costPrice =
-      Math.round((basePrice * randomInt(60, 85)) / 100 / 1000) * 1000;
-    const hasDiscount = randomInt(1, 100) <= 20;
-    const discountPercent = hasDiscount ? randomInt(5, 30) : 0;
+  for (const product of DEMO_PRODUCTS) {
+    const productId = productIds.get(product.sku);
+    if (!productId) {
+      throw new Error(`Không tạo được sản phẩm demo ${product.sku}.`);
+    }
 
-    return {
-      sku: `SKU-${String(seq).padStart(5, '0')}`,
-      name: `${namePrefix} Model ${seq}`,
-      slug: `${namePrefix.toLowerCase().replace(/\s+/g, '-')}-model-${seq}`,
-      description: `${namePrefix} chính hãng, bảo hành 12 tháng, hỗ trợ đổi trả trong 7 ngày.`,
-      basePrice,
-      costPrice,
-      discountPercent,
-      categoryId: category.id,
-    };
-  });
-  await prisma.product.createMany({ data: productsData, skipDuplicates: true });
-  const products = await prisma.product.findMany({
-    where: {
-      sku: {
-        in: productsData.map((product) => product.sku),
-      },
-    },
-  });
-
-  // Bước 6: Tạo 600 dòng tồn kho
-  console.log('[6/8] Đang tạo 600 dòng tồn kho...');
-  const inventoryData: Array<{
-    productId: string;
-    warehouseId: string;
-    stock: number;
-    reservedStock: number;
-    threshold: number | null;
-  }> = [];
-
-  for (const product of products) {
     for (const warehouse of warehouses) {
-      const isLowStockSample = randomInt(1, 100) <= 5;
-      const stock = isLowStockSample ? randomInt(0, 5) : randomInt(10, 500);
-      inventoryData.push({
-        productId: product.id,
-        warehouseId: warehouse.id,
-        stock,
-        reservedStock: 0,
-        threshold: null,
-      });
+      const stock = product.stock[warehouse.code];
+      const [inventory] = await tx.$queryRaw<{ id: bigint }[]>`
+        INSERT INTO inventory (product_id, warehouse_id, stock, last_restocked_at, updated_at)
+        VALUES (
+          ${productId}::uuid, ${warehouse.id}::uuid, ${stock},
+          CASE WHEN ${stock}::integer > 0 THEN NOW() END, NOW()
+        )
+        ON CONFLICT (product_id, warehouse_id) DO NOTHING
+        RETURNING id
+      `;
+      if (!inventory) continue;
+
+      const total = (warehouseStock.get(warehouse.id) ?? 0) + stock;
+      if (
+        stock > 0 &&
+        warehouse.capacity !== null &&
+        total > warehouse.capacity
+      ) {
+        throw new Error(
+          `Kho ${warehouse.code} không đủ sức chứa cho dữ liệu mẫu. Hãy chạy seed trên CSDL demo riêng.`,
+        );
+      }
+      warehouseStock.set(warehouse.id, total);
+      newInventoryIds.push(inventory.id);
+      if (stock > 0) {
+        auditRows.push({
+          inventoryId: inventory.id,
+          reason: 'RESTOCK',
+          stockBefore: 0,
+          stockAfter: stock,
+          reservedBefore: 0,
+          reservedAfter: 0,
+          quantityDelta: stock,
+          referenceType: 'demo_seed',
+          note: 'Nhập tồn đầu kỳ cho dữ liệu demo',
+        });
+      }
     }
   }
 
-  console.log('      → Đang Insert bảng Raw SQL...');
-  for (const row of inventoryData) {
-    await prisma.$executeRaw`
-      INSERT INTO "inventory" ("product_id", "warehouse_id", "stock", "reserved_stock", "threshold", "updated_at")
-      VALUES (${row.productId}::uuid, ${row.warehouseId}::uuid, ${row.stock}, ${row.reservedStock}, ${row.threshold}, NOW()) ON CONFLICT ("product_id", "warehouse_id") DO NOTHING
-    `;
-  }
+  if (auditRows.length > 0)
+    await tx.inventoryAuditLog.createMany({ data: auditRows });
+  await new InventoryAlertService().evaluate(tx, newInventoryIds);
+}
 
-  console.log(`→ Đã xử lý ${inventoryData.length} cặp Product Warehouse mẫu.`);
-
-  // Bước 7: Tạo 30 đoạn tài liệu chính sách cho AI Chatbot RAG.
-  // Cột "embedding" (vector 1024 chieu) chưa được điền ở đây
-  // Sẽ được 1 script/service riêng (EmbeddingService) gọi Google Gemini Embedding API để điền sau
-  // Giữ seed.ts đơn giản và không phụ thuộc gọi API bên ngoài khi chỉ cần seed dữ liệu cơ bản
-  console.log(
-    '[7/8] Đang tạo 30 đoạn tài liệu chính sách cho AI Chatbot RAG...',
-  );
-
+async function seedKnowledge(tx: Prisma.TransactionClient) {
   const legacyDemoContent = new Map([
     [
       'Phương thức thanh toán hỗ trợ',
@@ -531,7 +353,7 @@ async function main(): Promise<void> {
     ],
   ]);
   for (const doc of KB_DOCUMENTS_SEED_DATA) {
-    const existing = await prisma.kbDocument.findFirst({
+    const existing = await tx.kbDocument.findFirst({
       where: {
         title: doc.title,
         docType: doc.docType,
@@ -540,7 +362,7 @@ async function main(): Promise<void> {
     });
 
     if (!existing) {
-      await prisma.kbDocument.create({
+      await tx.kbDocument.create({
         data: {
           title: doc.title,
           docType: doc.docType,
@@ -549,34 +371,65 @@ async function main(): Promise<void> {
         },
       });
     } else if (existing.content === legacyDemoContent.get(doc.title)) {
-      // Refresh only the previous demo text and invalidate its old vector.
-      await prisma.$executeRaw`
+      // Chỉ thay nội dung demo cũ và làm mới vector ở lần đồng bộ tiếp theo.
+      await tx.$executeRaw`
         UPDATE kb_documents
         SET content = ${doc.content}, embedding = NULL, updated_at = NOW()
         WHERE id = ${existing.id}::uuid AND content = ${existing.content}
       `;
     }
   }
+}
 
-  // Bước 8: Tổng kết
-  console.log('[8/8] Tổng kết dữ liệu đã Seed:');
-  console.log(`      - Users: ${await prisma.user.count()}`);
-  console.log(`      - Categories: ${await prisma.category.count()}`);
-  console.log(`      - Warehouses: ${await prisma.warehouse.count()}`);
-  console.log(`      - Products: ${await prisma.product.count()}`);
-  console.log(`      - Inventory: ${await prisma.inventory.count()}`);
-  console.log(`      - KB Documents: ${await prisma.kbDocument.count()}`);
-  console.log('====== Thông tin tài khoản Demo ======');
-  console.log('ADMIN: username = admin');
-  console.log('STAFF: username = staff');
-  console.log('CUSTOMER: username = customer1 ... customer100');
-  console.log('Mật khẩu Demo được quy định trong cấu hình Seed nội bộ.');
+async function main() {
+  if (process.env.ALLOW_DEMO_SEED?.toLowerCase() !== 'true') {
+    throw new Error(
+      'Hãy bật ALLOW_DEMO_SEED=true khi chạy seed trên CSDL demo.',
+    );
+  }
+
+  const passwords = await Promise.all(
+    DEMO_ACCOUNTS.map(({ username }) => bcrypt.hash(username, 10)),
+  );
+  const verifiedAt = new Date();
+  await prisma.$transaction(
+    async (tx) => {
+      for (const [index, account] of DEMO_ACCOUNTS.entries()) {
+        const user = await tx.user.upsert({
+          where: { username: account.username },
+          update: {},
+          create: {
+            ...account,
+            email: `${account.username}@demo.example.test`,
+            passwordHash: passwords[index],
+            emailVerifiedAt: verifiedAt,
+            isActive: true,
+            mustChangePassword: false,
+          },
+          select: { role: true },
+        });
+        if (user.role !== account.role) {
+          throw new Error(
+            `Tên đăng nhập "${account.username}" đã được dùng cho vai trò khác.`,
+          );
+        }
+      }
+      await seedCatalog(tx);
+      await seedKnowledge(tx);
+    },
+    { timeout: 30_000 },
+  );
+
+  console.log('Đã nạp dữ liệu demo cho admin, staff và customer.');
+  console.log(
+    `${DEMO_PRODUCTS.length} sản phẩm, ${DEMO_WAREHOUSES.length} kho và ${KB_DOCUMENTS_SEED_DATA.length} tài liệu RAG.`,
+  );
 }
 
 main()
-  .catch((error) => {
-    console.error('Lỗi khi Seed mẫu liệu:', error);
-    process.exit(1);
+  .catch((error: unknown) => {
+    console.error('Không nạp được dữ liệu demo:', error);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();

@@ -5,9 +5,21 @@ import { useAdminCtx } from '../../../components/admin/AdminContext';
 import { OrderDrawer } from '../../../components/admin/OrderDrawer';
 import { OrderBadge } from '../../../components/admin/StatusBadge';
 import { useAdminOrders } from '../../../hooks/useAdminOrders';
-import { STATUS_LABEL, formatTime, formatVnd } from '../../../shared/lib/format';
+import {
+  STATUS_LABEL,
+  formatTime,
+  formatVnd,
+} from '../../../shared/lib/format';
 import type { OrderStatus } from '../../../shared/types/admin';
-import { RefreshCw, AlertCircle, Info } from 'lucide-react';
+import { Info, Search } from 'lucide-react';
+import {
+  AdminDataTable,
+  AdminFeedback,
+  AdminPageFrame,
+  AdminPager,
+  RefreshButton,
+  WarehouseScope,
+} from '../../../components/admin/operations/AdminUi';
 
 export default function AdminOrdersPage() {
   const { warehouseId } = useAdminCtx();
@@ -30,34 +42,30 @@ export default function AdminOrdersPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const selected = orders.find(o => o.id === selectedId) ?? null;
+  const selected = orders.find((o) => o.id === selectedId) ?? null;
 
   return (
-    <div className="mx-auto max-w-7xl">
-      {/* Tiêu đề & Nút làm mới */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <div className="d-flex align-items-center gap-3">
-          <h1 className="h4 fw-bold mb-0 text-dark">Đơn hàng</h1>
+    <AdminPageFrame
+      title="Đơn hàng"
+      description="Tra cứu đơn theo khách hàng, trạng thái và kho xuất."
+      actions={
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          {lastUpdated !== '—' && (
+            <span className="admin-record-meta">
+              Cập nhật lúc {lastUpdated}
+            </span>
+          )}
+          <RefreshButton onClick={refreshOrders} disabled={loading} />
         </div>
-
-        <div className="d-flex align-items-center gap-2 small text-muted">
-          <span>Cập nhật lúc: <strong>{lastUpdated}</strong></span>
-          <button
-            type="button"
-            onClick={refreshOrders}
-            className="btn btn-outline-secondary btn-sm p-1 d-flex align-items-center justify-content-center"
-            style={{ width: '28px', height: '28px', borderRadius: '6px' }}
-            title="Làm mới dữ liệu đơn hàng"
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-          </button>
-        </div>
-      </div>
-
+      }
+    >
       {conflictNotice && (
-        <div className="alert alert-info alert-dismissible fade show d-flex align-items-center justify-content-between mb-3 small" role="alert">
+        <div
+          className="alert alert-info d-flex align-items-center justify-content-between gap-2 mb-0 small"
+          role="alert"
+        >
           <div className="d-flex align-items-center gap-2">
-            <Info size={16} />
+            <Info size={16} aria-hidden="true" />
             <span>{conflictNotice}</span>
           </div>
           <button
@@ -68,139 +76,139 @@ export default function AdminOrdersPage() {
           />
         </div>
       )}
+      <AdminFeedback error={updateError ?? undefined} />
 
-      {updateError && (
-        <div role="alert" className="alert alert-danger mb-3 small">{updateError}</div>
-      )}
-
-      {/* Bộ lọc tìm kiếm, trạng thái và khoảng ngày */}
-      <div className="mb-3 d-flex flex-wrap gap-2">
-        <input
-          type="search"
-          value={filters.q ?? ''}
-          onChange={e => updateFilters({ q: e.target.value })}
-          placeholder="Tìm theo mã đơn, tên hoặc SĐT khách"
-          aria-label="Tìm đơn hàng"
-          className="form-control form-control-sm"
-          style={{ maxWidth: '280px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
-        />
-        <select
-          value={filters.status ?? 'ALL'}
-          onChange={e => updateFilters({ status: e.target.value as OrderStatus | 'ALL' })}
-          aria-label="Lọc theo trạng thái"
-          className="form-select form-select-sm"
-          style={{ maxWidth: '200px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
-        >
-          <option value="ALL">Mọi trạng thái</option>
-          {(Object.keys(STATUS_LABEL) as OrderStatus[]).map(s => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          value={filters.from ?? ''}
-          onChange={e => updateFilters({ from: e.target.value })}
-          aria-label="Từ ngày"
-          className="form-control form-control-sm"
-          style={{ maxWidth: '160px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
-        />
-        <input
-          type="date"
-          value={filters.to ?? ''}
-          onChange={e => updateFilters({ to: e.target.value })}
-          aria-label="Đến ngày"
-          className="form-control form-control-sm"
-          style={{ maxWidth: '160px', minHeight: '38px', borderColor: '#ede9fe', borderRadius: '8px' }}
-        />
+      <div className="admin-workspace-panel admin-workspace-filters">
+        <label className="admin-workspace-search">
+          <span>Tìm đơn hàng</span>
+          <span className="position-relative d-block">
+            <Search
+              size={16}
+              className="admin-workspace-search-icon"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={filters.q}
+              onChange={(event) => updateFilters({ q: event.target.value })}
+              placeholder="Mã đơn, tên hoặc số điện thoại"
+              className="form-control"
+              maxLength={200}
+            />
+          </span>
+        </label>
+        <label>
+          <span>Trạng thái</span>
+          <select
+            value={filters.status}
+            onChange={(event) =>
+              updateFilters({
+                status: event.target.value as OrderStatus | 'ALL',
+              })
+            }
+            className="form-select"
+          >
+            <option value="ALL">Tất cả trạng thái</option>
+            {(Object.keys(STATUS_LABEL) as OrderStatus[]).map((status) => (
+              <option key={status} value={status}>
+                {STATUS_LABEL[status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Từ ngày</span>
+          <input
+            type="date"
+            value={filters.from}
+            max={filters.to || undefined}
+            onChange={(event) => updateFilters({ from: event.target.value })}
+            className="form-control"
+          />
+        </label>
+        <label>
+          <span>Đến ngày</span>
+          <input
+            type="date"
+            value={filters.to}
+            min={filters.from || undefined}
+            onChange={(event) => updateFilters({ to: event.target.value })}
+            className="form-control"
+          />
+        </label>
+        <WarehouseScope />
       </div>
 
-      {error ? (
-        <div role="alert" className="alert alert-danger d-flex align-items-center justify-content-between gap-2 small">
-          <div className="d-flex align-items-center gap-2">
-            <AlertCircle size={16} />
-            <span>{error}</span>
-          </div>
-          <button type="button" onClick={refreshOrders} className="btn btn-danger btn-sm">
-            Tải lại
-          </button>
-        </div>
-      ) : loading ? (
-        <p className="text-sm text-secondary">Đang tải đơn hàng…</p>
-      ) : orders.length === 0 ? (
-        <div className="rounded-3 border border-dashed p-5 text-center text-secondary small bg-white">
-          Không có đơn hàng khớp bộ lọc. Thử đổi trạng thái hoặc kho.
-        </div>
-      ) : (
-        <div
-          className="overflow-x-auto rounded-3 border bg-white shadow-sm"
-          style={{ borderColor: '#ede9fe' }}
-        >
-          <table className="table table-hover align-middle mb-0 text-sm">
-            <thead style={{ backgroundColor: '#faf5ff' }}>
-              <tr className="text-secondary small fw-semibold">
-                <th className="px-3 py-2.5">Mã đơn</th>
-                <th className="px-3 py-2.5">Khách hàng</th>
-                <th className="px-3 py-2.5">Kho xuất</th>
-                <th className="px-3 py-2.5 text-end">Tổng tiền</th>
-                <th className="px-3 py-2.5">Trạng thái</th>
-                <th className="px-3 py-2.5">Tạo lúc</th>
-                <th className="px-3 py-2.5 text-center">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(o => (
-                <tr key={o.id}>
-                  <td className="px-3 py-2.5 font-monospace fw-bold text-dark">{o.orderCode}</td>
-                  <td className="px-3 py-2.5 text-dark">{o.customerName}</td>
-                  <td className="px-3 py-2.5 text-secondary">{o.warehouseCodes.join(', ') || '—'}</td>
-                  <td className="px-3 py-2.5 text-end fw-semibold text-dark">{formatVnd(o.grandTotal)}</td>
-                  <td className="px-3 py-2.5">
-                    <OrderBadge status={o.status} />
-                  </td>
-                  <td className="px-3 py-2.5 text-secondary">{formatTime(o.createdAt)}</td>
-                  <td className="px-3 py-2.5 text-center">
+      <div className="admin-workspace-panel overflow-hidden">
+        {error || loading ? (
+          <AdminFeedback
+            error={error ?? undefined}
+            loading={loading}
+            retry={refreshOrders}
+          />
+        ) : (
+          <>
+            <AdminDataTable
+              rows={orders}
+              empty="Không có đơn hàng khớp bộ lọc."
+              columns={[
+                {
+                  heading: 'Mã đơn',
+                  className: 'text-nowrap',
+                  render: (order) => (
+                    <strong className="font-monospace">
+                      {order.orderCode}
+                    </strong>
+                  ),
+                },
+                {
+                  heading: 'Khách hàng',
+                  render: (order) => order.customerName,
+                },
+                {
+                  heading: 'Kho xuất',
+                  render: (order) => order.warehouseCodes.join(', ') || '—',
+                },
+                {
+                  heading: 'Tổng tiền',
+                  className:
+                    'text-end text-nowrap fw-semibold admin-catalog-price',
+                  render: (order) => formatVnd(order.grandTotal),
+                },
+                {
+                  heading: 'Trạng thái',
+                  render: (order) => <OrderBadge status={order.status} />,
+                },
+                {
+                  heading: 'Tạo lúc',
+                  className: 'text-nowrap',
+                  render: (order) => formatTime(order.createdAt),
+                },
+                {
+                  heading: 'Thao tác',
+                  className: 'text-end',
+                  render: (order) => (
                     <button
                       type="button"
-                      onClick={() => setSelectedId(o.id)}
-                      aria-label={`Xem chi tiết ${o.orderCode}`}
-                      className="btn btn-outline-primary btn-sm"
-                      style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', borderRadius: '6px' }}
+                      onClick={() => setSelectedId(order.id)}
+                      aria-label={`Xem chi tiết ${order.orderCode}`}
+                      className="btn btn-outline-primary btn-sm text-nowrap"
                     >
                       Chi tiết
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!loading && !error && total > 0 && (
-        <nav aria-label="Phân trang đơn hàng" className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3 small text-secondary">
-          <span>{total} đơn hàng · Trang {filters.page}/{totalPages}</span>
-          <div className="d-flex gap-2">
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={filters.page <= 1}
-              onClick={() => updateFilters({ page: filters.page - 1 })}
-            >
-              Trang trước
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={filters.page >= totalPages}
-              onClick={() => updateFilters({ page: filters.page + 1 })}
-            >
-              Trang sau
-            </button>
-          </div>
-        </nav>
-      )}
+                  ),
+                },
+              ]}
+            />
+            <AdminPager
+              total={total}
+              totalPages={totalPages}
+              page={filters.page}
+              onChange={(page) => updateFilters({ page })}
+            />
+          </>
+        )}
+      </div>
 
       <OrderDrawer
         order={selected}
@@ -208,6 +216,6 @@ export default function AdminOrdersPage() {
         onClose={() => setSelectedId(null)}
         onAdvance={advanceStatus}
       />
-    </div>
+    </AdminPageFrame>
   );
 }
