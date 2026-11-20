@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 import { MockPaymentGatewayService } from './mock-payment-gateway.service';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
+import { recordCustomerOrderNotice } from '../orders/customer-order-notice';
+import { mockPaymentsEnabled } from './payment-mode';
 
 @Injectable()
 export class PaymentsService {
@@ -25,6 +28,9 @@ export class PaymentsService {
     method: PaymentMethod,
     approved: boolean,
   ) {
+    if (!mockPaymentsEnabled()) {
+      throw new ForbiddenException('Máy chủ chưa mở thanh toán thử nghiệm.');
+    }
     if (method !== 'MOCK_CARD' && method !== 'MOCK_EWALLET')
       throw new ConflictException('Chỉ cho phép thanh toán mock.');
     const result = await this.prisma
@@ -59,6 +65,12 @@ export class PaymentsService {
           }
           if (order.status !== 'PENDING_PAYMENT')
             throw new ConflictException('Đơn không còn chờ thanh toán.');
+          if (
+            order.reservationExpiresAt &&
+            order.reservationExpiresAt.getTime() <= Date.now()
+          ) {
+            throw new ConflictException('RESERVATION_EXPIRED');
+          }
           const result = this.gateway.charge(approved);
           // UNIQUE(transaction_ref) additionally rejects concurrent reuse across different orders.
           await tx.payment.create({
@@ -92,6 +104,7 @@ export class PaymentsService {
                 reason: 'Thanh toán mock thành công',
               },
             });
+            await recordCustomerOrderNotice(tx, order, 'CONFIRMED');
           }
           return {
             transactionRef,

@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { OrderStatus } from '@prisma/client';
 
 export class ChangeOrderStatusDto {
@@ -9,4 +15,8 @@ export class ChangeOrderStatusDto {
   @IsString()
   @MaxLength(255)
   reason?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  codCollected?: boolean;
 }

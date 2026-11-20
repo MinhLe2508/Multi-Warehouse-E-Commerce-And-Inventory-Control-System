@@ -8,6 +8,8 @@ describe('OrdersService status history - week 4', () => {
     $queryRaw: jest.fn(),
     order: { findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
     orderStatusHistory: { create: jest.fn() },
+    payment: { findFirst: jest.fn(), update: jest.fn() },
+    notification: { create: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) =>
@@ -28,6 +30,7 @@ describe('OrdersService status history - week 4', () => {
     tx.$queryRaw.mockResolvedValue([{ id: orderId }]);
     tx.order.updateMany.mockResolvedValue({ count: 1 });
     tx.orderStatusHistory.create.mockResolvedValue({ id: 1n });
+    tx.payment.findFirst.mockResolvedValue(null);
   });
 
   it.each([
@@ -57,6 +60,33 @@ describe('OrdersService status history - week 4', () => {
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('records COD collection only after an explicit delivery confirmation', async () => {
+    tx.order.findUniqueOrThrow.mockResolvedValue({
+      id: orderId,
+      status: 'SHIPPING',
+      userId: actorId,
+      orderCode: 'ORD-TEST',
+    });
+    tx.payment.findFirst.mockResolvedValue({ id: 'payment-cod' });
+    await expect(
+      service.changeStatus(orderId, 'DELIVERED', actorId),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.payment.update).not.toHaveBeenCalled();
+    expect(tx.order.updateMany).not.toHaveBeenCalled();
+    await service.changeStatus(
+      orderId,
+      'DELIVERED',
+      actorId,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(tx.payment.update).toHaveBeenCalledWith({
+      where: { id: 'payment-cod' },
+      data: { status: 'SUCCESS', processedAt: expect.any(Date) },
+    });
+  });
 
   it('rejects illegal transitions without changing order/history', async () => {
     tx.order.findUniqueOrThrow.mockResolvedValue({

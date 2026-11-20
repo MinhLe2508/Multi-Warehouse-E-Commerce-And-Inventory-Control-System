@@ -8,7 +8,7 @@ import { resolveProductImageSource } from "@/components/products/ProductImage";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useHydrated } from "@/hooks/useHydrated";
-import { selectSubtotal, useCartStore } from "@/store/useCartStore";
+import { useCartStore } from "@/store/useCartStore";
 import { useCheckoutStore } from "@/store/useCheckoutStore";
 import { OrderConflictError, SHIPPING_FEE, placeOrder } from "@/shared/lib/mockOrders";
 import { formatVND } from "@/shared/lib/utils";
@@ -64,7 +64,7 @@ function Field({
 }
 
 // Form chỉ mount sau hydration: state ban đầu lấy đúng dữ liệu đã lưu.
-export default function CheckoutView() {
+export default function CheckoutView({ selected }: { selected?: string[] } = {}) {
   const hydrated = useHydrated();
   const { t } = useTranslation();
   if (!hydrated) {
@@ -75,16 +75,17 @@ export default function CheckoutView() {
       </div>
     );
   }
-  return <CheckoutForm />;
+  return <CheckoutForm selected={selected} />;
 }
 
-function CheckoutForm() {
+function CheckoutForm({ selected }: { selected?: string[] }) {
   useOrderExpiry();
   const { t, format } = useTranslation();
   const router = useRouter();
 
-  const items = useCartStore((s) => s.items);
-  const subtotal = useCartStore(selectSubtotal);
+  const cart = useCartStore((s) => s.items);
+  const items = selected ? cart.filter((item) => selected.includes(item.productId)) : cart;
+  const subtotal = items.reduce((total, item) => total + item.price * item.quantity, 0);
   const clearCart = useCartStore((s) => s.clearCart);
 
   const lastOrder = useCheckoutStore((s) => s.lastOrder);
@@ -210,7 +211,8 @@ function CheckoutForm() {
       // Thành công: lưu đơn, xóa giỏ, sang trang xác nhận
       setPlaced(true);
       setLastOrder(order);
-      clearCart();
+      if (selected) items.forEach(({ productId }) => useCartStore.getState().removeItem(productId));
+      else clearCart();
       router.push("/checkout/confirmation");
     } catch (err) {
       if (err instanceof OrderConflictError) {

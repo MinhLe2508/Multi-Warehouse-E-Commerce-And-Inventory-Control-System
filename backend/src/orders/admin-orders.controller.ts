@@ -28,6 +28,13 @@ export class AdminOrdersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ChangeOrderStatusDto,
   ) {
-    return this.orders.changeStatus(id, dto.status, user.userId, dto.reason);
+    return this.orders.changeStatus(
+      id,
+      dto.status,
+      user.userId,
+      dto.reason,
+      undefined,
+      dto.codCollected,
+    );
   }
 }

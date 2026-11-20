@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./storefront.css";
 import Header from "@/components/storefront/Header";
 import Footer from "@/components/storefront/Footer";
 import ChatWidget from "@/components/storefront/ChatWidget";
+
+const font = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
 export const metadata: Metadata = {
   title: {
@@ -13,9 +17,9 @@ export const metadata: Metadata = {
 
 export default function StorefrontLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className={`mm ${font.className}`}>
       <Header />
-      <main className="flex-1">{children}</main>
+      <main>{children}</main>
       <Footer />
       <ChatWidget />
     </div>

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -20,8 +21,30 @@ export class ProductQueryDto {
   @MaxLength(200)
   search?: string;
 
-  @IsIn(['default', 'price-asc', 'price-desc'])
-  sort: 'default' | 'price-asc' | 'price-desc' = 'default';
+  @IsIn(['default', 'price-asc', 'price-desc', 'name-asc'])
+  sort: 'default' | 'price-asc' | 'price-desc' | 'name-asc' = 'default';
+
+  @IsOptional()
+  @IsIn(['true'])
+  inStock?: 'true';
+
+  @IsOptional()
+  @IsIn(['true'])
+  onSale?: 'true';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(999999999999.99)
+  minPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(999999999999.99)
+  maxPrice?: number;
 
   @Type(() => Number)
   @IsInt()

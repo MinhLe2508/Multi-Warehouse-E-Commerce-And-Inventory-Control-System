@@ -83,7 +83,8 @@ export function StaffOrderDetail({ id }: { id: string }) {
   const [notice, setNotice] = useState('');
   const order = resource.data;
   const next = order?.nextStatuses?.[0];
-  const action = next === 'SHIPPING' ? 'Xác nhận xuất kho' : 'Xác nhận đã giao';
+  const collectCod = next === 'DELIVERED' && order?.payments.some(({ method, status }) => method === 'COD' && status === 'PENDING');
+  const action = next === 'SHIPPING' ? 'Xác nhận xuất kho' : collectCod ? 'Xác nhận đã giao và thu COD' : 'Xác nhận đã giao';
   const back = <Link href="/staff/orders" className="staff-button"><ArrowLeft size={16} /> Đơn hàng</Link>;
 
   return <>
@@ -148,7 +149,7 @@ export function StaffOrderDetail({ id }: { id: string }) {
         </section>
       </div>
       {confirming && next && <Dialog title={action} confirmText={action} onClose={() => setConfirming(false)}
-        onConfirm={() => apiPatch(`${path}/status`, { targetStatus: next, note: note.trim() || undefined })}
+        onConfirm={() => apiPatch(`${path}/status`, { targetStatus: next, note: note.trim() || undefined, ...(collectCod && { codCollected: true }) })}
         success={() => { setNotice(`Đã cập nhật đơn ${order.orderCode}.`); resource.refresh(); }}>
         <p>Đơn <strong>{order.orderCode}</strong> sẽ chuyển sang <strong>{STATUS_LABEL[next]}</strong>.</p>
         <Field label="Ghi chú"><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={255} /></Field>

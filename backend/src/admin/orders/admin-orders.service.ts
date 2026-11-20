@@ -282,27 +282,27 @@ export class AdminOrdersQueryService {
     }
 
     const reason = dto.note ?? dto.reason;
+    const authorize = staffId
+      ? async (tx: Prisma.TransactionClient) => {
+          const rows = await tx.orderItem.findMany({
+            where: { orderId },
+            distinct: ['warehouseId'],
+            select: { warehouseId: true },
+          });
+          await assertAssignedWarehouses(
+            tx,
+            staffId,
+            rows.map(({ warehouseId }) => warehouseId),
+          );
+        }
+      : undefined;
     const updated = await this.ordersService.changeStatus(
       orderId,
       nextStatus,
       actorId,
       reason,
-      ...(staffId
-        ? [
-            async (tx: Prisma.TransactionClient) => {
-              const rows = await tx.orderItem.findMany({
-                where: { orderId },
-                distinct: ['warehouseId'],
-                select: { warehouseId: true },
-              });
-              await assertAssignedWarehouses(
-                tx,
-                staffId,
-                rows.map(({ warehouseId }) => warehouseId),
-              );
-            },
-          ]
-        : []),
+      authorize,
+      dto.codCollected,
     );
     return staffId
       ? this.findOne(updated.id, staffId)

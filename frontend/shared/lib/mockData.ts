@@ -231,13 +231,22 @@ export function queryProducts(query: ProductQuery = {}): ProductPage {
 
   const keyword = normalizeText(search);
   if (keyword) {
-    items = items.filter((p) => normalizeText(p.name).includes(keyword));
+    items = items.filter((p) => normalizeText(p.name).includes(keyword) || normalizeText(p.sku ?? "").includes(keyword));
   }
+  items = items.filter((item) => {
+    const sale = Number(item.salePrice ?? item.price);
+    return (!query.inStock || item.stockByWarehouse.some((entry) => entry.quantity > 0)) &&
+      (!query.onSale || Number(item.discountPercent) > 0) &&
+      (query.minPrice === undefined || sale >= query.minPrice) &&
+      (query.maxPrice === undefined || sale <= query.maxPrice);
+  });
 
   if (sort === "price-asc") {
-    items = [...items].sort((a, b) => a.price - b.price);
+    items = [...items].sort((a, b) => Number(a.salePrice ?? a.price) - Number(b.salePrice ?? b.price));
   } else if (sort === "price-desc") {
-    items = [...items].sort((a, b) => b.price - a.price);
+    items = [...items].sort((a, b) => Number(b.salePrice ?? b.price) - Number(a.salePrice ?? a.price));
+  } else if (sort === "name-asc") {
+    items = [...items].sort((a, b) => a.name.localeCompare(b.name, "vi"));
   }
 
   const total = items.length;

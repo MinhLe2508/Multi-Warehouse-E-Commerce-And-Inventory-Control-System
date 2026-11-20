@@ -4,13 +4,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CustomerOrdersQueryDto } from './dto/customer-orders-query.dto';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
+import { mockPaymentsEnabled } from '../payments/payment-mode';
+import { recordCustomerOrderNotice } from './customer-order-notice';
 
 interface CheckoutSnapshotRow {
   id: string;
@@ -30,6 +33,37 @@ export const ORDER_STATUS_TRANSITIONS: Partial<
   SHIPPING: ['DELIVERED'],
 };
 
+const customerOrderInclude = {
+  items: {
+    select: {
+      id: true,
+      productId: true,
+      productName: true,
+      sku: true,
+      quantity: true,
+      unitPrice: true,
+      discountAmount: true,
+      lineTotal: true,
+      product: { select: { imageUrl: true } },
+    },
+  },
+  payments: {
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 1,
+    select: {
+      method: true,
+      status: true,
+      amount: true,
+      transactionRef: true,
+      processedAt: true,
+    },
+  },
+} satisfies Prisma.OrderInclude;
+
+type CustomerOrderRow = Prisma.OrderGetPayload<{
+  include: typeof customerOrderInclude;
+}>;
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -40,8 +74,56 @@ export class OrdersService {
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
+    const cod = dto.paymentMethod === 'COD';
+    if (dto.paymentMethod && !cod && !mockPaymentsEnabled()) {
+      throw new ConflictException('Phương thức thanh toán này chưa được mở.');
+    }
+    const codeToken = dto.checkoutId
+      ? createHash('sha256')
+          .update(`${userId}:${dto.checkoutId.toLowerCase()}`)
+          .digest('hex')
+      : randomUUID().replace(/-/g, '');
+    const orderCode = `ORD-${codeToken.slice(0, 20).toUpperCase()}`;
+    const initialStatus = cod ? 'CONFIRMED' : 'PENDING_PAYMENT';
     const { order, inventoryEvents } = await this.prisma.$transaction(
       async (tx) => {
+        if (dto.checkoutId) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${orderCode}, 0))`;
+          const previous = await tx.order.findUnique({
+            where: { orderCode },
+            include: {
+              items: true,
+              payments: { where: { method: 'COD' }, select: { id: true } },
+            },
+          });
+          if (previous) {
+            const quantities = new Map<string, number>();
+            for (const item of previous.items) {
+              quantities.set(
+                item.productId,
+                (quantities.get(item.productId) ?? 0) + item.quantity,
+              );
+            }
+            if (
+              previous.userId !== userId ||
+              cod !== previous.payments.length > 0 ||
+              previous.shippingRecipient !== dto.shippingRecipient ||
+              previous.shippingPhone !== dto.shippingPhone ||
+              previous.shippingAddress !== dto.shippingAddress ||
+              previous.shippingRegion !== (dto.shippingRegion ?? null) ||
+              quantities.size !== dto.items.length ||
+              dto.items.some(
+                (item) => quantities.get(item.productId) !== item.quantity,
+              )
+            ) {
+              throw new ConflictException(
+                'Mã đặt hàng đã được dùng cho một yêu cầu khác.',
+              );
+            }
+            const { payments: _payments, ...replayed } = previous;
+            return { order: this.serialize(replayed), inventoryEvents: [] };
+          }
+        }
         const productIds = dto.items.map(({ productId }) => productId);
         const snapshot = await tx.$queryRaw<CheckoutSnapshotRow[]>`
           SELECT p.id, p.sku, p.name, p.base_price AS "basePrice",
@@ -145,7 +227,7 @@ export class OrdersService {
         );
         const order = await tx.order.create({
           data: {
-            orderCode: `ORD-${randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()}`,
+            orderCode,
             userId,
             status: 'PENDING_PAYMENT',
             subtotal: price.subtotal,
@@ -193,15 +275,37 @@ export class OrdersService {
           allocations,
           userId,
         );
+        if (cod) {
+          await this.stockReservation.commitForOrder(tx, order.id, userId);
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              transactionRef: `COD-${order.id}`,
+              amount: order.grandTotal,
+              currency: order.currency,
+              method: 'COD',
+              status: 'PENDING',
+            },
+          });
+          await tx.order.update({
+            where: { id: order.id },
+            data: {
+              status: 'CONFIRMED',
+              confirmedAt: new Date(),
+              reservationExpiresAt: null,
+            },
+          });
+        }
         await tx.orderStatusHistory.create({
           data: {
             orderId: order.id,
             fromStatus: null,
-            toStatus: 'PENDING_PAYMENT',
+            toStatus: initialStatus,
             actorId: userId,
-            reason: 'Tạo đơn và giữ chỗ tồn kho',
+            reason: cod ? 'Đã nhận đơn COD' : 'Tạo đơn và giữ chỗ tồn kho',
           },
         });
+        await recordCustomerOrderNotice(tx, order, initialStatus);
         const result = await tx.order.findUniqueOrThrow({
           where: { id: order.id },
           include: { items: true },
@@ -231,6 +335,7 @@ export class OrdersService {
     actorId: string,
     reason?: string,
     authorize?: (tx: Prisma.TransactionClient) => Promise<void>,
+    codCollected?: boolean,
   ) {
     const result = await this.prisma.$transaction(
       async (tx) => {
@@ -250,6 +355,21 @@ export class OrdersService {
         // Releasing a pending order's reservations must be atomic with cancellation.
         if (target === 'CANCELLED') {
           await this.stockReservation.releaseForOrder(tx, orderId, actorId);
+        }
+        if (target === 'DELIVERED') {
+          const cod = await tx.payment.findFirst({
+            where: { orderId, method: 'COD', status: 'PENDING' },
+            select: { id: true },
+          });
+          if (cod) {
+            if (!codCollected) {
+              throw new ConflictException('Hãy xác nhận đã thu tiền COD.');
+            }
+            await tx.payment.update({
+              where: { id: cod.id },
+              data: { status: 'SUCCESS', processedAt: new Date() },
+            });
+          }
         }
         const changed = await tx.order.updateMany({
           where: { id: orderId, status: order.status },
@@ -273,6 +393,7 @@ export class OrdersService {
             reason: reason ?? `Chuyển trạng thái ${order.status} -> ${target}`,
           },
         });
+        await recordCustomerOrderNotice(tx, order, target);
         return { id: orderId, fromStatus: order.status, status: target };
       },
       {
@@ -315,22 +436,109 @@ export class OrdersService {
     };
   }
 
+  async listOwn(userId: string, query: CustomerOrdersQueryDto) {
+    const where: Prisma.OrderWhereInput = { userId, status: query.status };
+    const limit = 8;
+    const [total, rows] = await this.prisma.$transaction(
+      [
+        this.prisma.order.count({ where }),
+        this.prisma.order.findMany({
+          where,
+          include: customerOrderInclude,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: (query.page - 1) * limit,
+          take: limit,
+        }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+    return {
+      items: rows.map((order) => this.serializeCustomerOrder(order)),
+      total,
+      page: query.page,
+      limit,
+    };
+  }
+
+  async cancelOwn(userId: string, orderId: string) {
+    await this.changeStatus(
+      orderId,
+      'CANCELLED',
+      userId,
+      'Khách hàng hủy đơn',
+      async (tx) => {
+        const owned = await tx.order.findFirst({
+          where: { id: orderId, userId },
+          select: { reservationExpiresAt: true, status: true },
+        });
+        if (!owned) throw new NotFoundException('Không tìm thấy đơn hàng.');
+        if (
+          owned.status === 'PENDING_PAYMENT' &&
+          (owned.reservationExpiresAt?.getTime() ?? 0) <= Date.now()
+        ) {
+          throw new ConflictException('RESERVATION_EXPIRED');
+        }
+      },
+    );
+    return this.getOwn(userId, orderId);
+  }
+
   async getOwn(userId: string, orderId: string) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
       include: {
-        items: true,
-        statusHistory: { orderBy: { createdAt: 'asc' } },
+        ...customerOrderInclude,
+        statusHistory: {
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            createdAt: true,
+            reason: true,
+          },
+        },
       },
     });
     if (!order) throw new NotFoundException('Không tìm thấy đơn hàng.');
-    const { statusHistory, ...rest } = order;
     return {
-      ...this.serialize(rest),
-      statusHistory: statusHistory.map(({ id, ...row }) => ({
+      ...this.serializeCustomerOrder(order),
+      statusHistory: order.statusHistory.map((row) => ({
         ...row,
-        id: id.toString(),
+        id: row.id.toString(),
       })),
+    };
+  }
+
+  private serializeCustomerOrder(order: CustomerOrderRow) {
+    return {
+      id: order.id,
+      orderCode: order.orderCode,
+      status: order.status,
+      createdAt: order.createdAt,
+      reservationExpiresAt: order.reservationExpiresAt,
+      cancelledReason: order.cancelledReason === 'EXPIRED' ? 'EXPIRED' : null,
+      canCancel:
+        order.status === 'PENDING_PAYMENT' &&
+        (order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
+      shippingRecipient: order.shippingRecipient,
+      shippingPhone: order.shippingPhone,
+      shippingAddress: order.shippingAddress,
+      shippingRegion: order.shippingRegion,
+      subtotal: order.subtotal.toFixed(2),
+      discountTotal: order.discountTotal.toFixed(2),
+      shippingFee: order.shippingFee.toFixed(2),
+      grandTotal: order.grandTotal.toFixed(2),
+      items: order.items.map(({ product, ...item }) => ({
+        ...item,
+        imageUrl: product.imageUrl,
+        unitPrice: item.unitPrice.toFixed(2),
+        discountAmount: item.discountAmount.toFixed(2),
+        lineTotal: item.lineTotal.toFixed(2),
+      })),
+      payment: order.payments[0]
+        ? { ...order.payments[0], amount: order.payments[0].amount.toFixed(2) }
+        : null,
     };
   }
 }

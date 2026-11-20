@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
@@ -10,18 +11,27 @@ import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../core/decorators/current-user.decorator';
 import { Roles } from '../core/decorators/roles.decorator';
+import { Public } from '../core/decorators/public.decorator';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { PasswordChangedGuard } from '../core/guards/password-changed.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import { MockPaymentDto } from './dto/mock-payment.dto';
 import { PaymentsService } from './payments.service';
+import { mockPaymentsEnabled } from './payment-mode';
 
 @Controller('payments')
-@UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
-@Roles(UserRole.CUSTOMER)
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
+
+  @Public()
+  @Get('methods')
+  methods() {
+    return { cod: true, demo: mockPaymentsEnabled() };
+  }
+
   @Post('mock/:orderId')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
   process(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,

@@ -17,6 +17,9 @@ export class NotificationsService {
   ): Prisma.NotificationWhereInput {
     return {
       userId,
+      ...(role === UserRole.CUSTOMER
+        ? { type: { in: ['ORDER_UPDATE', 'SYSTEM'] } }
+        : {}),
       ...(role === UserRole.WAREHOUSE_STAFF
         ? {
             OR: [
@@ -60,7 +63,7 @@ export class NotificationsService {
     role?: UserRole,
   ) {
     const where = this.visible(userId, role);
-    if (query.type) where.type = query.type;
+    if (query.type) where.AND = { type: query.type };
     if (query.unreadOnly) {
       where.isRead = false;
     }

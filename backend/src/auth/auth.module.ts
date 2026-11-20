@@ -9,6 +9,7 @@ import { PassportModule } from '@nestjs/passport';
 import { MailModule } from '../mail/mail.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { CustomerProfileController } from './customer-profile.controller';
 import { AccountActionTokenService } from './account-action-token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -33,7 +34,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     MailModule,
   ],
 
-  controllers: [AuthController],
+  controllers: [AuthController, CustomerProfileController],
   providers: [AuthService, AccountActionTokenService, JwtStrategy],
   exports: [AuthService],
 })

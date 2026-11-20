@@ -210,7 +210,8 @@ export function useAdminOrders(warehouseId: string) {
     async (
       orderId: string,
       targetStatus: 'SHIPPING' | 'DELIVERED',
-      note?: string
+      note?: string,
+      codCollected = false,
     ): Promise<boolean> => {
       if (isUpdating.current) return false;
       isUpdating.current = true;
@@ -221,6 +222,7 @@ export function useAdminOrders(warehouseId: string) {
         await apiPatch<ApiAdminOrder>(`/admin/orders/${orderId}/status`, {
           targetStatus,
           ...(note ? { note } : {}),
+          ...(codCollected ? { codCollected: true } : {}),
         });
         refreshOrders();
         return true;
@@ -249,7 +251,7 @@ export function useAdminOrders(warehouseId: string) {
       if (!currentOrder) return;
       const next = NEXT_STATUS[currentOrder.status];
       if (next !== 'SHIPPING' && next !== 'DELIVERED') return;
-      await updateStatus(orderId, next);
+      await updateStatus(orderId, next, undefined, next === 'DELIVERED' && currentOrder.paymentMethod === 'COD');
     },
     [current, updateStatus]
   );

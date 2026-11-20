@@ -1,84 +1,160 @@
 "use client";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import { MapPin, PackageCheck, Wallet } from "lucide-react";
 import { useCartSync } from "@/hooks/useCartSync";
-import { useTranslation } from "@/hooks/useTranslation";
+import { useProduct } from "@/hooks/useCatalog";
+import { useHydrated } from "@/hooks/useHydrated";
+import { SHOP_NOTIFICATIONS_CHANGED, useShopResource } from "@/hooks/useShopResource";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useCartStore } from "@/store/useCartStore";
-import { cartHasProblem } from "@/shared/lib/cartModel";
+import { cartAmount, cartHasProblem, cartTotals, toCartItem } from "@/shared/lib/cartModel";
 import { AuthError } from "@/shared/lib/authApi";
-import { createOrder, type Destination, type Method } from "@/shared/lib/liveOrders";
+import { createOrder, UUIDForCheckout, type CheckoutMethod, type CustomerProfile, type Destination } from "@/shared/lib/liveOrders";
+import OrderSummary from "./OrderSummary";
+import { PaymentOptions } from "./PaymentOptions";
+import { BuyerGate, ShopEmpty, ShopError, ShopHeading, ShopLoading, useShopCopy } from "./ShopUi";
 
-const panel = "mx-auto my-10 max-w-xl space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-soft";
-const button = "rounded-xl bg-brand-600 px-5 py-2.5 text-white disabled:opacity-50";
-
-export default function LiveCheckout() {
-  const vi = useTranslation().language === "vi";
-  const user = useAuthStore(s => s.session?.user);
-  const ready = useAuthStore(s => s.ready);
-  if (!ready) return <p role="status" className={panel}>…</p>;
-  if (user?.role !== "CUSTOMER") return <section className={panel}><p>{vi ? "Vui lòng đăng nhập bằng tài khoản khách hàng để đặt đơn." : "Sign in with a customer account to order."}</p><Link className="text-brand-700 underline" href="/login">{vi ? "Đăng nhập" : "Sign in"}</Link></section>;
-  return <Form key={user.id} vi={vi} name={user.fullName} />;
+export default function LiveCheckout({ selected, direct }: {
+  selected?: string[]; direct?: { id: string; quantity: number };
+}) {
+  const params = new URLSearchParams();
+  if (selected) params.set("items", selected.join(","));
+  if (direct) { params.set("product", direct.id); params.set("quantity", String(direct.quantity)); }
+  return <BuyerGate next={"/checkout" + (params.size ? "?" + params.toString() : "")}>
+    <CheckoutForm selected={selected} direct={direct} />
+  </BuyerGate>;
 }
 
-function Form({vi, name}: {vi: boolean; name: string}) {
-  const [step, setStep] = useState(1);
-  const [ship, setShip] = useState<Destination>({shippingRecipient:name,shippingPhone:"",shippingAddress:"",shippingRegion:""});
-  const [method,setMethod] = useState<Method>("MOCK_CARD");
-  const [error,setError] = useState("");
-  const [uncertain,setUncertain] = useState(false);
-  const [busy,setBusy] = useState(false);
-  const lock = useRef(false);
+function CheckoutForm({ selected, direct }: { selected?: string[]; direct?: { id: string; quantity: number } }) {
+  const tx = useShopCopy();
   const router = useRouter();
+  const hydrated = useHydrated();
+  const user = useAuthStore((state) => state.session?.user);
+  const profile = useShopResource<CustomerProfile>("/customer/profile", { identity: user?.id });
+  const modes = useShopResource<{ demo: boolean }>("/payments/methods", { publicRead: true });
+  const cart = useCartStore((state) => state.items);
+  const sync = useCartStore((state) => state.syncStatus);
   const refresh = useCartSync();
-  const items = useCartStore(s => s.items);
-  const sync = useCartStore(s => s.syncStatus);
-  const canOrder = items.length > 0 && items.length <= 50 && items.every(i=>i.quantity <= 100) && sync === "ready" && !cartHasProblem(items);
-  const labels = vi ? ["Giao hàng","Thanh toán","Kiểm tra đơn"] : ["Delivery","Payment","Review"];
-  const fields = [
-    ["shippingRecipient",vi?"Người nhận":"Recipient",150],
-    ["shippingPhone",vi?"Số điện thoại":"Phone",16],
-    ["shippingAddress",vi?"Địa chỉ":"Address",500],
-    ["shippingRegion",vi?"Khu vực (tùy chọn)":"Region (optional)",100],
-  ] as const;
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (lock.current || uncertain) return;
-    if (step < 3) { setStep(step+1); return; }
-    if (!canOrder) return;
-    lock.current=true; setBusy(true); setError("");
+  const product = useProduct(direct?.id ?? "");
+  const items = direct
+    ? (product.data ? [toCartItem(product.data, direct.quantity)] : [])
+    : cart.filter((item) => !selected || selected.includes(item.productId));
+  const available = direct ? Boolean(product.data) : sync === "ready";
+  const ok = available && items.length > 0 && items.length <= 50 && !cartHasProblem(items)
+    && items.every((item) => item.quantity <= 100);
+  const [draft, setDraft] = useState<Partial<Destination>>({});
+  const [choice, setChoice] = useState<CheckoutMethod>("COD");
+  const method = modes.data?.demo ? choice : "COD";
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const locked = useRef(false);
+  const submission = useRef<{ fingerprint: string; id: string } | null>(null);
+  const shipping: Destination = {
+    shippingRecipient: draft.shippingRecipient ?? profile.data?.fullName ?? user?.fullName ?? "",
+    shippingPhone: draft.shippingPhone ?? profile.data?.phone ?? "",
+    shippingAddress: draft.shippingAddress ?? profile.data?.address ?? "",
+    shippingRegion: draft.shippingRegion ?? "",
+  };
+  const totals = cartTotals(items);
+
+  function update(field: keyof Destination, value: string) {
+    setDraft((values) => ({ ...values, [field]: value }));
+  }
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ok || locked.current) return;
+    if (!shipping.shippingRecipient.trim() || !shipping.shippingAddress.trim() || !/^\+?\d{9,15}$/.test(shipping.shippingPhone.trim())) {
+      setError(tx("Kiểm tra họ tên, địa chỉ và số điện thoại (9–15 chữ số).", "Check the recipient, address and phone number (9–15 digits)."));
+      return;
+    }
+    const lines = items.map(({ productId, quantity }) => ({ productId, quantity }));
+    const fingerprint = JSON.stringify([shipping, method, lines]);
+    if (submission.current?.fingerprint !== fingerprint) submission.current = { fingerprint, id: UUIDForCheckout() };
+    const key = submission.current.id;
+    locked.current = true;
+    setBusy(true); setError("");
     try {
-      const order=await createOrder(items,ship);
+      const order = await createOrder(lines, shipping, { id: key, method });
       if (!order?.id) throw new Error("Missing order ID");
-      const cart=useCartStore.getState();
-      for (const line of items) {
-        const current=cart.items.find(i=>i.productId===line.productId);
-        if (!current) continue;
-        if (current.quantity<=line.quantity) cart.removeItem(line.productId);
-        else cart.setQuantity(line.productId,current.quantity-line.quantity);
+      if (!direct) {
+        const store = useCartStore.getState();
+        for (const line of lines) {
+          const current = store.items.find((item) => item.productId === line.productId);
+          if (!current) continue;
+          if (current.quantity <= line.quantity) store.removeItem(line.productId);
+          else store.setQuantity(line.productId, current.quantity - line.quantity);
+        }
       }
-      router.replace("/checkout/confirmation?id="+encodeURIComponent(order.id)+"&method="+method);
+      window.dispatchEvent(new Event(SHOP_NOTIFICATIONS_CHANGED));
+      router.replace("/checkout/confirmation?" + new URLSearchParams({ id: order.id, ...(method !== "COD" && { method }) }));
     } catch (cause) {
-      if (cause instanceof AuthError && cause.status===409) {
-        setError(vi?"Hàng vừa hết. Giỏ vẫn được giữ; hãy quay lại giỏ để điều chỉnh số lượng.":"Stock changed. Your cart is saved; review the quantities.");
-        refresh();
-      } else if (!(cause instanceof AuthError) || !cause.status || cause.status>=500) {
-        setUncertain(true);
-        setError(vi?"Chưa xác định được đơn đã tạo hay chưa. Hãy kiểm tra với cửa hàng trước khi đặt lại.":"Order status is unknown. Check with the store before placing another order.");
-      } else setError(cause.message);
-      lock.current=false; setBusy(false);
+      if (cause instanceof AuthError && cause.code === "INSUFFICIENT_STOCK") {
+        setError(tx("Tồn kho vừa thay đổi. Kiểm tra lại số lượng trước khi đặt.", "Stock has changed. Review quantities before placing the order."));
+        if (direct) product.retry(); else refresh();
+      } else if (!(cause instanceof AuthError) || cause.status === 0 || cause.status >= 500) {
+        setError(tx("Chưa nhận được xác nhận. Bạn có thể gửi lại yêu cầu này hoặc kiểm tra Đơn hàng của tôi.",
+          "Confirmation did not arrive. Retry this request or check My orders."));
+      } else {
+        setError(cause.message);
+      }
+      locked.current = false; setBusy(false);
     }
   }
-  return <form onSubmit={submit} className={panel}>
-    <h1 className="text-2xl font-semibold">{vi?"Đặt hàng":"Checkout"}</h1>
-    <p className="font-medium text-brand-700">{step}/3 · {labels[step-1]}</p>
-    {step===1 && fields.map(([key,label,max])=><label className="block text-sm" key={key}>{label}<input className="mt-1 w-full rounded-xl border p-3" required={key!=="shippingRegion"} maxLength={max} type={key==="shippingPhone"?"tel":"text"} pattern={key==="shippingPhone"?"[+]?[0-9]{9,15}":key!=="shippingRegion"?".*\\S.*":undefined} value={ship[key]} onChange={e=>setShip({...ship,[key]:e.target.value})}/></label>)}
-    {step===2 && <fieldset><legend>{vi?"Cách thanh toán mô phỏng":"Demo payment method"}</legend>{(["MOCK_CARD","MOCK_EWALLET"] as const).map(m=><label className="mt-3 block" key={m}><input type="radio" checked={method===m} onChange={()=>setMethod(m)}/> {m==="MOCK_CARD"?(vi?"Thẻ":"Card"):(vi?"Ví điện tử":"E-wallet")}</label>)}</fieldset>}
-    {step===3 && <><p>{ship.shippingRecipient} · {ship.shippingPhone}<br/>{[ship.shippingAddress, ship.shippingRegion].filter(Boolean).join(", ")}</p><p>{method==="MOCK_CARD"?(vi?"Thanh toán bằng thẻ mô phỏng":"Demo card"):(vi?"Ví điện tử mô phỏng":"Demo wallet")}</p><ul>{items.map(i=><li key={i.productId}>{i.name} × {i.quantity}</li>)}</ul><p>{vi?"Cửa hàng sẽ xác nhận tổng tiền trước khi bạn thanh toán.":"The order total will be confirmed before payment."}</p>
-    {!canOrder && !busy && <p role="status">{vi?"Giỏ phải có 1–50 sản phẩm còn hàng, tối đa 100 đơn vị mỗi loại. Vui lòng kiểm tra giỏ hàng.":"Review cart availability and limits (50 products, 100 units each)."}</p>}</>}
-    {error && <p role="alert" className="text-red-700">{error}</p>}
-    <div className="flex flex-wrap items-center gap-4"><Link href="/cart" className="underline">{vi?"Giỏ hàng":"Cart"}</Link>{step>1 && <button type="button" disabled={busy} onClick={()=>setStep(step-1)}>{vi?"Quay lại":"Back"}</button>}
-    <button className={button} disabled={busy||uncertain||(step===3&&!canOrder)}>{busy?"…":step<3?(vi?"Tiếp tục":"Continue"):(vi?"Đặt đơn":"Place order")}</button></div>
-  </form>;
+
+  return <div className="mm-container mm-page mm-checkout">
+    <ShopHeading title={tx("Đặt hàng", "Checkout")} back={{ href: direct ? "/products/" + direct.id : "/cart", label: direct ? tx("Về sản phẩm", "Back to product") : tx("Về giỏ hàng", "Back to bag") }} />
+    {!hydrated || (direct && product.loading) || (!direct && sync === "loading" && !items.length) ? <ShopLoading />
+      : direct && product.error ? <ShopError retry={product.retry} />
+        : !items.length && !busy ? <ShopEmpty title={tx("Chưa có sản phẩm để đặt", "No items to order")}
+          action={<Link href={direct ? "/products" : "/cart"} className="mm-button primary">{tx("Chọn sản phẩm", "Choose products")}</Link>} /> :
+          <div className="mm-commerce-grid">
+            <form id="customer-checkout" onSubmit={(event) => void submit(event)} className="mm-checkout-form">
+              <section className="mm-panel mm-checkout-panel">
+                <div className="mm-block-heading"><span><MapPin size={21} /></span><div><h2>{tx("Thông tin giao hàng", "Delivery details")}</h2>
+                  <p>{tx("Nhập địa chỉ bạn muốn nhận đơn này.", "Enter the address for this order.")}</p></div></div>
+                <fieldset className="mm-form mm-two-fields" disabled={busy}>
+                  <label>{tx("Họ và tên người nhận", "Recipient name")}
+                    <input className="mm-input" required maxLength={150} autoComplete="shipping name" value={shipping.shippingRecipient} onChange={(event) => update("shippingRecipient", event.target.value)} /></label>
+                  <label>{tx("Số điện thoại", "Phone number")}
+                    <input className="mm-input" type="tel" inputMode="tel" required maxLength={16} autoComplete="shipping tel" placeholder="09…" value={shipping.shippingPhone} onChange={(event) => update("shippingPhone", event.target.value)} /></label>
+                  <label className="mm-span-two">{tx("Địa chỉ nhận hàng", "Delivery address")}
+                    <textarea className="mm-input" required rows={2} maxLength={500} autoComplete="shipping street-address"
+                      placeholder={tx("Số nhà, đường, phường/xã, tỉnh/thành phố", "Street, ward and city or province")}
+                      value={shipping.shippingAddress} onChange={(event) => update("shippingAddress", event.target.value)} /></label>
+                  <label className="mm-span-two">{tx("Khu vực giao hàng (tùy chọn)", "Delivery region (optional)")}
+                    <select className="mm-input" value={shipping.shippingRegion} onChange={(event) => update("shippingRegion", event.target.value)}>
+                      <option value="">{tx("Chọn khu vực", "Select region")}</option>
+                      <option value="Miền Bắc">{tx("Miền Bắc", "Northern Vietnam")}</option>
+                      <option value="Miền Trung">{tx("Miền Trung", "Central Vietnam")}</option>
+                      <option value="Miền Nam">{tx("Miền Nam", "Southern Vietnam")}</option>
+                    </select></label>
+                </fieldset>
+              </section>
+              <section className="mm-panel mm-checkout-panel">
+                <div className="mm-block-heading"><span><Wallet size={21} /></span><div><h2>{tx("Phương thức thanh toán", "Payment method")}</h2></div></div>
+                <fieldset disabled={busy}>
+                  <PaymentOptions method={method} demo={Boolean(modes.data?.demo)} onChange={setChoice} />
+                </fieldset>
+              </section>
+            </form>
+            <OrderSummary subtotal={totals.subtotal} discount={totals.discount} total={totals.total} estimated
+              lines={items.map((item) => ({ id: item.productId, name: item.name, quantity: item.quantity, image: item.image, total: cartAmount([item]) }))}>
+              {error && <ShopError message={error} />}
+              {!direct && sync === "error" && <ShopError message={tx("Chưa kiểm tra được giá và tồn kho.", "Could not check prices and stock.")} retry={refresh} />}
+              {!ok && !busy && sync !== "error" && <p className="mm-summary-note" role="status">{!available
+                ? tx("Đang kiểm tra giá và tồn kho.", "Checking prices and stock.")
+                : tx("Kiểm tra lại số lượng sản phẩm.", "Please review item quantities.")}</p>}
+              <button className="mm-button primary full" type="submit" form="customer-checkout" disabled={busy || !ok}>
+                <PackageCheck size={18} /> {busy ? tx("Đang tạo đơn…", "Placing order…")
+                  : method === "COD" ? tx("Đặt đơn COD", "Place COD order") : tx("Tạo đơn và tiếp tục", "Place order and continue")}
+              </button>
+              <p className="mm-summary-note">{method === "COD"
+                ? tx("Bạn trả tổng tiền xác nhận khi nhận hàng.", "Pay the confirmed total when your order arrives.")
+                : tx("Giao dịch thử nghiệm dùng giá trị đơn do hệ thống tính.", "The demo uses the order total calculated by the system.")}</p>
+            </OrderSummary>
+          </div>}
+  </div>;
 }

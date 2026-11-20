@@ -5,7 +5,7 @@ export const MOCK_CATALOG = process.env.NEXT_PUBLIC_CATALOG_MODE === 'mock';
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 interface ApiProduct {
-  id: string; name: string; basePrice: string; discountPercent: string;
+  id: string; sku: string; name: string; basePrice: string; salePrice?: string; discountPercent: string;
   imageUrl: string | null; categoryId: string | null; categoryName: string | null;
   description: string; stockByWarehouse: Product['stockByWarehouse'];
 }
@@ -22,10 +22,10 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 function adaptProduct(value: ApiProduct): Product {
   return {
-    id: value.id, name: value.name,
+    id: value.id, sku: value.sku, name: value.name,
     // Compatibility with week-1 cart. Exact decimal remains in basePrice for display.
     // Checkout totals must come from P3's Pricing API, never from this number.
-    price: Number(value.basePrice), basePrice: value.basePrice,
+    price: Number(value.basePrice), basePrice: value.basePrice, salePrice: value.salePrice, discountPercent: value.discountPercent,
     image: value.imageUrl || '/product-placeholder.svg', category: value.categoryId ?? '',
     categoryName: value.categoryName ?? '', description: value.description,
     stockByWarehouse: value.stockByWarehouse,
@@ -35,7 +35,7 @@ function adaptProduct(value: ApiProduct): Product {
 export function productQueryString(query: ProductQuery): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== '' && value !== 'all') params.set(key, String(value));
+    if (value !== undefined && value !== false && value !== '' && value !== 'all') params.set(key, String(value));
   }
   return params.toString();
 }
@@ -57,6 +57,6 @@ export async function fetchProduct(id: string, signal?: AbortSignal): Promise<Pr
 
 export async function fetchCategories(signal?: AbortSignal): Promise<Category[]> {
   if (MOCK_CATALOG) return getCategories();
-  const result = await request<{ id: string; name: string }[]>('/categories', signal);
-  return result.map((c) => ({ id: c.id, name: { vi: c.name, en: c.name }, icon: '📦' }));
+  const result = await request<{ id: string; name: string; slug: string; parentId: string | null }[]>('/categories', signal);
+  return result.map((c) => ({ ...c, name: { vi: c.name, en: c.name }, icon: '📦' }));
 }

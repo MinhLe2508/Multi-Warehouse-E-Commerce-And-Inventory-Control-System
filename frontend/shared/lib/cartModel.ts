@@ -5,6 +5,8 @@ export interface CartItem {
   name: string;
   price: number;
   unitPrice?: string;
+  baseUnitPrice?: string;
+  sku?: string;
   image: string;
   quantity: number;
   maxStock: number;
@@ -25,9 +27,13 @@ export function decimalPrice(value: unknown): string | null {
 }
 
 export function toCartItem(product: Product, quantity: number): CartItem {
+  const base = decimalPrice(product.basePrice ?? String(product.price));
+  const unit = decimalPrice(product.salePrice) ?? base;
   return {
-    productId: product.id, name: product.name, price: product.price,
-    unitPrice: decimalPrice(product.basePrice ?? String(product.price)) ?? undefined,
+    productId: product.id, name: product.name, price: Number(unit ?? product.price),
+    unitPrice: unit ?? undefined,
+    ...(base && base !== unit && { baseUnitPrice: base }),
+    ...(product.sku && { sku: product.sku }),
     image: product.image, quantity,
     maxStock: product.stockByWarehouse.reduce((sum, stock) => sum + stock.quantity, 0),
     catalogStatus: "available",
@@ -50,6 +56,8 @@ export function restoreCart(value: unknown): CartItem[] {
     items.set(row.productId, {
       productId: row.productId, name: row.name, image: row.image,
       price: Number(unitPrice), unitPrice, quantity, maxStock: row.maxStock,
+      ...(decimalPrice(row.baseUnitPrice) && { baseUnitPrice: decimalPrice(row.baseUnitPrice)! }),
+      ...(typeof row.sku === 'string' && { sku: row.sku }),
       catalogStatus: "unchecked",
     });
   }
@@ -80,13 +88,25 @@ export function cartHasProblem(items: CartItem[]): boolean {
 }
 
 /** Preview only. Exact integer cents avoid floating-point errors in cart display. */
-export function cartAmount(items: CartItem[]): string {
-  const cents = items.reduce((sum, item) => {
-    const price = decimalPrice(item.unitPrice ?? String(item.price));
-    if (!price || !integer(item.quantity)) return sum;
-    return sum + BigInt(price.replace(".", "")) * BigInt(item.quantity);
-  }, BigInt(0));
+function formatCents(cents: bigint) {
   return `${cents / BigInt(100)}.${String(cents % BigInt(100)).padStart(2, "0")}`;
+}
+
+export function cartTotals(items: CartItem[]) {
+  let subtotal = BigInt(0);
+  let total = BigInt(0);
+  for (const item of items) {
+    const price = decimalPrice(item.unitPrice ?? String(item.price));
+    if (!price || !integer(item.quantity)) continue;
+    const base = decimalPrice(item.baseUnitPrice) ?? price;
+    subtotal += BigInt(base.replace('.', '')) * BigInt(item.quantity);
+    total += BigInt(price.replace('.', '')) * BigInt(item.quantity);
+  }
+  return { subtotal: formatCents(subtotal), discount: formatCents(subtotal > total ? subtotal - total : BigInt(0)), total: formatCents(total) };
+}
+
+export function cartAmount(items: CartItem[]): string {
+  return cartTotals(items).total;
 }
 
 export function changeQuantity(item: CartItem, quantity: number): CartItem {

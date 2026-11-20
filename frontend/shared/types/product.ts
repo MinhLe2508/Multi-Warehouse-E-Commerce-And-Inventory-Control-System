@@ -14,11 +14,14 @@ export interface WarehouseStock {
 
 export interface Product {
   id: string;
+  sku?: string;
   name: string;
   /** Giá VND, SỐ NGUYÊN (không dùng số thực) */
   price: number;
   /** Giá niêm yết chính xác từ API; không dùng để quyết định tổng tiền checkout. */
   basePrice?: string;
+  salePrice?: string;
+  discountPercent?: string;
   categoryName?: string;
   /** URL ảnh (hiện là placeholder, sau này là URL từ API) */
   image: string;
@@ -30,18 +33,24 @@ export interface Product {
 
 export interface Category {
   id: string;
+  slug?: string;
+  parentId?: string | null;
   name: { vi: string; en: string };
   /** Emoji dùng làm icon tạm */
   icon: string;
 }
 
-export type ProductSort = "default" | "price-asc" | "price-desc";
+export type ProductSort = "default" | "price-asc" | "price-desc" | "name-asc";
 
 /** Tham số truy vấn — khớp với GET /products?category=&search=&sort=&page=&pageSize= */
 export interface ProductQuery {
   category?: string;
   search?: string;
   sort?: ProductSort;
+  inStock?: boolean;
+  onSale?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
   /** Bắt đầu từ 1 */
   page?: number;
   pageSize?: number;

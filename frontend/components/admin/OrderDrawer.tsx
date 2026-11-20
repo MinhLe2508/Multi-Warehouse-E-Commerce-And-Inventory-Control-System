@@ -16,6 +16,7 @@ interface Props {
 export function OrderDrawer({ order, updating, onClose, onAdvance }: Props) {
   if (!order) return null;
   const next = NEXT_STATUS[order.status];
+  const collectCod = next === 'DELIVERED' && order.paymentMethod === 'COD';
 
   return (
     <Offcanvas
@@ -112,7 +113,7 @@ export function OrderDrawer({ order, updating, onClose, onAdvance }: Props) {
               className="btn btn-primary w-100 py-2.5 fw-semibold d-flex align-items-center justify-content-center gap-2"
               style={{ minHeight: '44px', borderRadius: '8px' }}
             >
-              <span>{updating ? 'Đang cập nhật…' : `Chuyển trạng thái: “${STATUS_LABEL[next]}”`}</span>
+              <span>{updating ? 'Đang cập nhật…' : collectCod ? 'Xác nhận đã giao và thu tiền COD' : `Chuyển trạng thái: “${STATUS_LABEL[next]}”`}</span>
             </button>
           ) : (
             <div className="alert alert-light border small text-muted text-center mb-0" role="status">

@@ -36,6 +36,7 @@ const product = {
 describe('Products HTTP contract', () => {
   let app: INestApplication;
   const tx = {
+    $queryRaw: jest.fn(),
     product: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
     category: { findMany: jest.fn() },
   };
@@ -78,6 +79,10 @@ describe('Products HTTP contract', () => {
     prisma.product.findMany.mockResolvedValue([product]);
     prisma.product.findFirst.mockResolvedValue(product);
     prisma.category.findMany.mockResolvedValue([food]);
+    tx.$queryRaw
+      .mockReset()
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ id }]);
   });
   afterAll(() => app.close());
 
@@ -124,18 +129,21 @@ describe('Products HTTP contract', () => {
         `/products?category=${categoryId.toUpperCase()}&search=Gạo&sort=price-desc&page=2&pageSize=5`,
       )
       .expect(200);
+    const [parts, criteria, order, limit, offset] = tx.$queryRaw.mock
+      .calls[1] as [
+      TemplateStringsArray,
+      Prisma.Sql,
+      Prisma.Sql,
+      number,
+      number,
+    ];
+    expect(criteria.values).toEqual([categoryId, '%Gạo%', '%Gạo%']);
+    expect(order.sql).toContain('discount_percent');
+    expect(order.sql).toContain('DESC');
+    expect(parts.join('')).toContain('OFFSET');
+    expect([limit, offset]).toEqual([5, 5]);
     expect(prisma.product.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skip: 5,
-        take: 5,
-        where: expect.objectContaining({
-          categoryId,
-          OR: expect.arrayContaining([
-            { name: { contains: 'Gạo', mode: 'insensitive' } },
-          ]) as unknown,
-        }) as unknown,
-        orderBy: [{ basePrice: 'desc' }, { id: 'asc' }],
-      }),
+      expect.objectContaining({ where: { id: { in: [id] } } }),
     );
   });
   it('supports category slugs without casting arbitrary strings to UUID', async () => {

@@ -147,6 +147,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const path = request.path;
+    const probeKey = process.env.MWH_STARTUP_PROBE_KEY;
+    const isStartupProbe =
+      statusCode === 401 &&
+      request.method === 'GET' &&
+      process.env.MWH_ADMIN_LOCAL === '1' &&
+      process.connected === true &&
+      request.socket.remoteAddress === '127.0.0.1' &&
+      Boolean(probeKey) &&
+      request.headers['x-mwh-startup-probe'] === probeKey;
 
     if (statusCode >= 500) {
       const errorDetails =
@@ -160,7 +169,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
     } else if (code === 'INSUFFICIENT_STOCK') {
       this.logger.debug(`${request.method} ${path} -> ${statusCode} (${code})`);
-    } else {
+    } else if (!isStartupProbe) {
       this.logger.warn(`${request.method} ${path} -> ${statusCode} (${code})`);
     }
 

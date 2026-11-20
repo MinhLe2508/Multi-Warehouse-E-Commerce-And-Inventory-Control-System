@@ -1,6 +1,7 @@
 'use strict';
 
 const { fork, spawn, spawnSync } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 const { existsSync } = require('node:fs');
 const { Agent, get } = require('node:http');
 const { createServer } = require('node:net');
@@ -25,12 +26,16 @@ const children = new Set();
 const localHttpAgent = new Agent();
 let stopping = false;
 
-function httpStatus(url) {
+function httpStatus(url, probeKey) {
   return new Promise((resolveStatus) => {
     // Dùng kết nối loopback trực tiếp, kể cả khi máy chủ có cấu hình proxy.
     const request = get(
       url,
-      { agent: localHttpAgent, signal: AbortSignal.timeout(3_500) },
+      {
+        agent: localHttpAgent,
+        signal: AbortSignal.timeout(3_500),
+        headers: probeKey ? { 'x-mwh-startup-probe': probeKey } : undefined,
+      },
       (response) => {
         response.resume();
         resolveStatus(response.statusCode ?? null);
@@ -40,14 +45,14 @@ function httpStatus(url) {
   });
 }
 
-async function checkAdminApi(origin) {
+async function checkAdminApi(origin, probeKey) {
   const endpoints = [
     ['/health', 200],
     ...ADMIN_READ_ROUTES.map((path) => [path, 401]),
   ];
   const results = await Promise.all(
     endpoints.map(async ([path, expected]) => {
-      const actual = await httpStatus(origin + path);
+      const actual = await httpStatus(origin + path, expected === 401 ? probeKey : undefined);
       return { path, expected, actual };
     }),
   );
@@ -55,7 +60,9 @@ async function checkAdminApi(origin) {
   console.log('[Admin] Kiểm tra API ' + origin);
   for (const { path, actual, expected } of results) {
     const status = actual ?? 'Mất kết nối';
-    const suffix = actual === expected ? '' : ' (cần ' + expected + ')';
+    const suffix = actual === expected
+      ? (actual === 401 ? ' (đúng, tuyến yêu cầu đăng nhập)' : '')
+      : ' (cần ' + expected + ')';
     console.log('  ' + path + ' → ' + status + suffix);
   }
   if (results.some(({ actual }) => actual === 404)) {
@@ -111,7 +118,7 @@ function trackNode(child) {
   });
 }
 
-function startBackend(webOrigin) {
+function startBackend(webOrigin, probeKey) {
   const child = fork('dist/main.js', {
     cwd: BACKEND,
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
@@ -120,6 +127,7 @@ function startBackend(webOrigin) {
       PORT: '0',
       FRONTEND_ORIGIN: webOrigin,
       MWH_ADMIN_LOCAL: '1',
+      MWH_STARTUP_PROBE_KEY: probeKey,
     },
   });
   const exited = trackNode(child);
@@ -222,7 +230,8 @@ async function main() {
   let backendExit;
   try {
     if (stopping) return;
-    const backend = startBackend(webOrigin);
+    const probeKey = randomUUID();
+    const backend = startBackend(webOrigin, probeKey);
     const apiPort = await backend.listening;
     apiOrigin = 'http://' + LOCAL_HOST + ':' + apiPort;
     backendExit = backend.exited.then(({ reason }) => {
@@ -231,7 +240,7 @@ async function main() {
     console.log(
       '[Admin] Backend PID ' + backend.pid + ' đang lắng nghe tại ' + apiOrigin,
     );
-    await Promise.race([checkAdminApi(apiOrigin), backendExit]);
+    await Promise.race([checkAdminApi(apiOrigin, probeKey), backendExit]);
   } finally {
     await new Promise((close) => reservation.close(close));
   }

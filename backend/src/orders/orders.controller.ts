@@ -5,7 +5,9 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -16,6 +18,7 @@ import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { PasswordChangedGuard } from '../core/guards/password-changed.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CustomerOrdersQueryDto } from './dto/customer-orders-query.dto';
 import { OrdersService } from './orders.service';
 
 // API của KHÁCH HÀNG cho đơn hàng của chính mình (xem docs/api/openapi.yaml).
@@ -32,6 +35,14 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
+  @Get()
+  listOwn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: CustomerOrdersQueryDto,
+  ) {
+    return this.orders.listOwn(user.userId, query);
+  }
+
   @Get(':id')
   getOwn(
     @CurrentUser() user: AuthenticatedUser,
@@ -43,5 +54,13 @@ export class OrdersController {
   @HttpCode(201)
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateOrderDto) {
     return this.orders.create(user.userId, dto);
+  }
+
+  @Patch(':id/cancel')
+  cancelOwn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.orders.cancelOwn(user.userId, id);
   }
 }

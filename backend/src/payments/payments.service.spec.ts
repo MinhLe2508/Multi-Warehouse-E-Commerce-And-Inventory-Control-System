@@ -9,6 +9,7 @@ describe('PaymentsService ACID payment - week 4', () => {
     order: { findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
     payment: { findUnique: jest.fn(), create: jest.fn() },
     orderStatusHistory: { create: jest.fn() },
+    notification: { create: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) =>

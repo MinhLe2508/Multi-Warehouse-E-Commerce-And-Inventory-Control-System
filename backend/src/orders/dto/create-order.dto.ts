@@ -4,13 +4,16 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { PaymentMethod } from '@prisma/client';
 import { CreateOrderItemDto } from './create-order-item.dto';
 
 // Cắt khoảng trắng đầu/cuối trước khi kiểm tra (chuỗi toàn khoảng trắng sẽ bị IsNotEmpty chặn).
@@ -60,4 +63,16 @@ export class CreateOrderDto {
   @IsNotEmpty({ message: 'shippingRegion không được là chuỗi rỗng.' })
   @MaxLength(100)
   shippingRegion?: string;
+
+  @IsOptional()
+  @IsIn([
+    PaymentMethod.COD,
+    PaymentMethod.MOCK_CARD,
+    PaymentMethod.MOCK_EWALLET,
+  ])
+  paymentMethod?: PaymentMethod;
+
+  @IsOptional()
+  @IsUUID('4')
+  checkoutId?: string;
 }

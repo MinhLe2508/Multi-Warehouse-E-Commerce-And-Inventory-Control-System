@@ -1,263 +1,121 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
+import { SlidersHorizontal, X } from "lucide-react";
+import { useCategories, useProducts } from "@/hooks/useCatalog";
 import { useTranslation } from "@/hooks/useTranslation";
-import ProductCard from "@/components/storefront/ProductCard";
-import { useProducts, useCategories } from "@/hooks/useCatalog";
-import CatalogStatus from "./CatalogStatus";
-import type { ProductSort } from "@/shared/types/product";
+import { productQueryString } from "@/shared/lib/catalogApi";
+import type { ProductQuery, ProductSort } from "@/shared/types/product";
+import { ShopEmpty, ShopError, ShopHeading, ShopLoading, ShopPager, useShopCopy } from "./ShopUi";
+import ProductCard from "./ProductCard";
 
-const SORTS: ProductSort[] = ["default", "price-asc", "price-desc"];
-
-/** Ô tìm kiếm: chỉ gửi khi nhấn Enter / nút tìm (key theo từ khóa để đồng bộ với URL) */
-function SearchBox({
-  initial,
-  placeholder,
-  onSearch,
-}: {
-  initial: string;
-  placeholder: string;
-  onSearch: (value: string) => void;
-}) {
-  const [value, setValue] = useState(initial);
-  return (
-    <form
-      role="search"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSearch(value.trim());
-      }}
-      className="relative w-full sm:max-w-sm"
-    >
-      <svg
-        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-3.5-3.5" />
-      </svg>
-      <input
-        type="search"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-      />
-    </form>
-  );
+const sortOrder: ProductSort[] = ["default", "price-asc", "price-desc", "name-asc"];
+function price(value: string | null) {
+  if (!value || !/^\d{1,12}(\.\d{1,2})?$/.test(value)) return undefined;
+  return Number(value);
 }
 
 export default function ProductList() {
-  const { t, language, format } = useTranslation();
-  const router = useRouter();
-  const pathname = usePathname();
+  const tx = useShopCopy();
+  const { language } = useTranslation();
   const params = useSearchParams();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const search = (params.get("search") ?? "").trim().slice(0, 160);
+  const category = (params.get("category") ?? "").slice(0, 160);
+  const sort = sortOrder.find((item) => item === params.get("sort")) ?? "default";
+  const rawPage = Number(params.get("page") ?? 1);
+  const page = Number.isInteger(rawPage) && rawPage > 0 && rawPage <= 1_000_000 ? rawPage : 1;
+  const query: ProductQuery = {
+    search, category, sort, page, pageSize: 12,
+    minPrice: price(params.get("minPrice")),
+    maxPrice: price(params.get("maxPrice")),
+    inStock: params.get("inStock") === "true", onSale: params.get("onSale") === "true",
+  };
+  const products = useProducts(query);
+  const categories = useCategories();
+  const categoryName = categories.data?.find((item) => item.id === category || item.slug === category)?.name[language];
+  const labels = [tx("Mới nhất", "Newest"), tx("Giá thấp đến cao", "Price low to high"), tx("Giá cao đến thấp", "Price high to low"), tx("Tên A–Z", "Name A–Z")];
 
-  // Đọc bộ lọc từ URL: /products?category=&search=&sort=&page=
-  const category = params.get("category") ?? "all";
-  const search = params.get("search") ?? "";
-  const sortParam = params.get("sort");
-  const sort: ProductSort = SORTS.includes(sortParam as ProductSort)
-    ? (sortParam as ProductSort)
-    : "default";
-  const pageNumber = Number(params.get("page"));
-  const page = Number.isInteger(pageNumber) && pageNumber > 0 ? pageNumber : 1;
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
 
-  const productsRequest = useProducts({ category, search, sort, page });
-  const categoriesRequest = useCategories();
-  const categories = categoriesRequest.data ?? [];
-  const result = productsRequest.data;
-  const hasFilters = category !== "all" || search !== "" || sort !== "default";
-
-  function update(changes: Record<string, string>) {
-    const next = new URLSearchParams(params.toString());
-    for (const [key, value] of Object.entries(changes)) {
-      const isDefault =
-        value === "" ||
-        (key === "category" && value === "all") ||
-        (key === "sort" && value === "default") ||
-        (key === "page" && value === "1");
-      if (isDefault) next.delete(key);
-      else next.set(key, value);
-    }
-    // Đổi bộ lọc thì quay về trang 1
-    if (!("page" in changes)) next.delete("page");
-    const qs = next.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+  function navigate(next: ProductQuery) {
+    const value = productQueryString({ ...query, pageSize: undefined, ...next });
+    router.push("/products" + (value ? "?" + value : ""));
+  }
+  function filter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    navigate({
+      page: 1,
+      category: String(form.get("category") ?? ""),
+      minPrice: price(String(form.get("minPrice") ?? "")), maxPrice: price(String(form.get("maxPrice") ?? "")),
+      inStock: form.has("inStock"), onSale: form.has("onSale"),
+    });
+    setOpen(false);
   }
 
-  if (!result || productsRequest.error || categoriesRequest.error) return <CatalogStatus error={productsRequest.error || categoriesRequest.error} retry={() => { productsRequest.retry(); categoriesRequest.retry(); }} />;
-
-  const categoryOptions = [
-    { id: "all", label: t.products.allCategories },
-    ...categories.map((c) => ({ id: c.id, label: `${c.icon} ${c.name[language]}` })),
-  ];
-
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-        {t.products.title}
-      </h1>
-
-      {/* Thanh công cụ: tìm kiếm + sắp xếp */}
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SearchBox
-          key={search}
-          initial={search}
-          placeholder={t.products.searchPlaceholder}
-          onSearch={(value) => update({ search: value })}
-        />
-        <div className="flex items-center gap-3">
-          <label htmlFor="sort" className="text-sm text-slate-500">
-            {t.products.sortBy}
-          </label>
-          <select
-            id="sort"
-            value={sort}
-            onChange={(e) => update({ sort: e.target.value })}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-          >
-            <option value="default">{t.products.sortDefault}</option>
-            <option value="price-asc">{t.products.sortPriceAsc}</option>
-            <option value="price-desc">{t.products.sortPriceDesc}</option>
-          </select>
+  return <div className="mm-container mm-page">
+    <ShopHeading title={categoryName || tx("Khám phá sản phẩm", "Explore products")}
+      subtitle={search ? tx("Kết quả cho “" + search + "”", "Results for “" + search + "”") : undefined} />
+    <div className="mm-catalog">
+      {open && <button className="mm-filter-scrim" onClick={() => setOpen(false)} aria-label={tx("Đóng bộ lọc", "Close filters")} />}
+      <aside className={"mm-panel mm-filters" + (open ? " open" : "")} id="catalog-filters">
+        <div className="mm-filter-heading"><h2><SlidersHorizontal size={19} /> {tx("Bộ lọc", "Filters")}</h2>
+          <button type="button" className="mm-icon-button mm-filter-close" onClick={() => setOpen(false)} aria-label={tx("Đóng", "Close")}><X size={18} /></button>
         </div>
-      </div>
-
-      {/* Danh mục dạng chip (màn hình nhỏ) */}
-      <div className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 pb-1 lg:hidden">
-        {categoryOptions.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => update({ category: c.id })}
-            aria-pressed={category === c.id}
-            className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${
-              category === c.id
-                ? "border-brand-600 bg-brand-600 text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:border-brand-300"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-8 flex gap-8">
-        {/* Danh mục dạng sidebar (máy tính) */}
-        <aside className="hidden w-56 shrink-0 lg:block">
-          <h2 className="mb-3 text-sm font-semibold text-slate-900">{t.products.category}</h2>
-          <ul className="space-y-1">
-            {categoryOptions.map((c) => (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => update({ category: c.id })}
-                  aria-pressed={category === c.id}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                    category === c.id
-                      ? "bg-brand-50 font-medium text-brand-700"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {c.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        {/* Lưới sản phẩm */}
-        <section className="min-w-0 flex-1">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              {format(t.products.results, { count: result.total })}
-            </p>
-            {hasFilters && (
-              <button
-                type="button"
-                onClick={() => router.push(pathname)}
-                className="text-sm font-medium text-brand-600 hover:text-brand-700"
-              >
-                {t.products.clearFilters}
-              </button>
-            )}
-          </div>
-
-          {result.items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 py-20 text-center">
-              <p className="text-lg font-medium text-slate-800">{t.products.noResults}</p>
-              <p className="mt-2 text-sm text-slate-500">{t.products.noResultsHint}</p>
-              <button
-                type="button"
-                onClick={() => router.push(pathname)}
-                className="mt-6 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-medium text-white shadow-soft hover:bg-brand-700"
-              >
-                {t.products.clearFilters}
-              </button>
+        <form onSubmit={filter} key={params.toString()} className="mm-form">
+          <fieldset>
+            <legend>{tx("Danh mục", "Category")}</legend>
+            {Boolean(categories.error) && <ShopError retry={categories.retry} />}
+            <label className="mm-filter-choice"><input type="radio" name="category" value="" defaultChecked={!category || category === "all"} />{tx("Tất cả sản phẩm", "All products")}</label>
+            {categories.data?.map((item) => <label className={"mm-filter-choice" + (item.parentId ? " child" : "")} key={item.id}>
+              <input type="radio" name="category" value={item.slug ?? item.id} defaultChecked={category === item.id || category === item.slug} />{item.name[language]}
+            </label>)}
+          </fieldset>
+          <fieldset>
+            <legend>{tx("Khoảng giá", "Price range")}</legend>
+            <div className="mm-price-range">
+              <label>{tx("Từ", "From")}<input className="mm-input" name="minPrice" type="number" min="0" max="999999999999" step="1" defaultValue={query.minPrice} /></label>
+              <label>{tx("Đến", "To")}<input className="mm-input" name="maxPrice" type="number" min="0" max="999999999999" step="1" defaultValue={query.maxPrice} /></label>
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4 sm:gap-5">
-              {result.items.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
-          )}
-
-          {/* Phân trang */}
-          {result.totalPages > 1 && (
-            <nav
-              className="mt-10 flex flex-wrap items-center justify-center gap-2"
-              aria-label={t.common.pagination}
-            >
-              <button
-                type="button"
-                disabled={result.page <= 1}
-                onClick={() => update({ page: String(result.page - 1) })}
-                className="h-10 rounded-xl border border-slate-200 px-4 text-sm text-slate-600 transition hover:border-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {t.products.previous}
-              </button>
-              {Array.from({ length: Math.min(7, result.totalPages) }, (_, i) => Math.max(1, Math.min(result.page - 3, result.totalPages - 6)) + i).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => update({ page: String(n) })}
-                  aria-current={n === result.page ? "page" : undefined}
-                  className={`h-10 w-10 rounded-xl text-sm transition ${
-                    n === result.page
-                      ? "bg-brand-600 font-medium text-white shadow-soft"
-                      : "border border-slate-200 text-slate-600 hover:border-brand-300"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={result.page >= result.totalPages}
-                onClick={() => update({ page: String(result.page + 1) })}
-                className="h-10 rounded-xl border border-slate-200 px-4 text-sm text-slate-600 transition hover:border-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {t.products.nextPage}
-              </button>
-            </nav>
-          )}
-          {result.totalPages > 1 && (
-            <p className="mt-3 text-center text-xs text-slate-400">
-              {format(t.products.pageOf, { page: result.page, total: result.totalPages })}
-            </p>
-          )}
-        </section>
-      </div>
+          </fieldset>
+          <fieldset>
+            <legend>{tx("Tình trạng", "Availability")}</legend>
+            <label className="mm-filter-choice"><input type="checkbox" name="inStock" defaultChecked={query.inStock} />{tx("Còn hàng", "In stock")}</label>
+            <label className="mm-filter-choice"><input type="checkbox" name="onSale" defaultChecked={query.onSale} />{tx("Đang giảm giá", "On sale")}</label>
+          </fieldset>
+          <div className="mm-filter-actions"><button className="mm-button primary" type="submit">{tx("Áp dụng", "Apply")}</button>
+            <Link href="/products" className="mm-link" onClick={() => setOpen(false)}>{tx("Xóa lọc", "Clear")}</Link></div>
+        </form>
+      </aside>
+      <section className="mm-results" aria-label={tx("Danh sách sản phẩm", "Product results")}>
+        <div className="mm-result-bar">
+          <button type="button" className="mm-button mm-filter-toggle" onClick={() => setOpen(true)}
+            aria-expanded={open} aria-controls="catalog-filters"><SlidersHorizontal size={17} />{tx("Bộ lọc", "Filters")}</button>
+          <span role="status">{products.data ? products.data.total + tx(" sản phẩm", " products") : tx("Sản phẩm", "Products")}</span>
+          <label>{tx("Sắp xếp", "Sort by")}
+            <select className="mm-input" value={sort} onChange={(event) => navigate({ sort: event.target.value as ProductSort, page: 1 })}>
+              {sortOrder.map((value, index) => <option key={value} value={value}>{labels[index]}</option>)}
+            </select>
+          </label>
+        </div>
+        {products.loading && <ShopLoading cards={6} />}
+        {Boolean(products.error) && <ShopError message={query.minPrice !== undefined && query.maxPrice !== undefined && query.minPrice > query.maxPrice
+          ? tx("Giá tối thiểu phải nhỏ hơn hoặc bằng giá tối đa.", "The minimum price must be no more than the maximum.") : undefined} retry={products.retry} />}
+        {products.data && (products.data.items.length
+          ? <div className="mm-product-grid">{products.data.items.map((item) => <ProductCard key={item.id} product={item} />)}</div>
+          : <ShopEmpty title={tx("Chưa tìm thấy sản phẩm", "No products found")}
+            action={<Link href="/products" className="mm-button">{tx("Xem tất cả sản phẩm", "View all products")}</Link>} />)}
+        {products.data && <ShopPager page={page} pages={products.data.totalPages} onPage={(value) => navigate({ page: value })} />}
+      </section>
     </div>
-  );
+  </div>;
 }

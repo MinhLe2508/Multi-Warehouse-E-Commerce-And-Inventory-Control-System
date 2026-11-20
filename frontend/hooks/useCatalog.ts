@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchCategories, fetchProduct, fetchProducts, productQueryString } from '@/shared/lib/catalogApi';
 import type { ProductQuery } from '@/shared/types/product';
 
-function useRequest<T>(key: string, loader: (signal: AbortSignal) => Promise<T>) {
+function useRequest<T>(key: string, loader: (signal: AbortSignal) => Promise<T>, enabled = true) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ key: string; attempt: number; data?: T; error?: unknown }>();
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(new Error('Catalog timeout')), 10000);
     let active = true;
@@ -16,27 +17,31 @@ function useRequest<T>(key: string, loader: (signal: AbortSignal) => Promise<T>)
       (error: unknown) => { if (active) setState({ key, attempt, error }); },
     ).finally(() => clearTimeout(timeout));
     return () => { active = false; clearTimeout(timeout); controller.abort(); };
-  }, [key, loader, attempt]);
-  const current = state?.key === key && state.attempt === attempt ? state : undefined;
-  return { data: current?.data, error: current?.error, loading: !current,
+  }, [key, loader, attempt, enabled]);
+  const current = enabled && state?.key === key && state.attempt === attempt ? state : undefined;
+  return { data: current?.data, error: current?.error, loading: enabled && !current,
     retry: () => setAttempt((value) => value + 1) };
 }
 
-export function useProducts(query: ProductQuery) {
+export function useProducts(query: ProductQuery, enabled = true) {
   const key = productQueryString(query);
   const loader = useCallback((signal: AbortSignal) => {
     const params = new URLSearchParams(key);
     return fetchProducts({ category: params.get('category') ?? undefined,
       search: params.get('search') ?? undefined,
       sort: (params.get('sort') ?? 'default') as ProductQuery['sort'],
+      minPrice: params.has('minPrice') ? Number(params.get('minPrice')) : undefined,
+      maxPrice: params.has('maxPrice') ? Number(params.get('maxPrice')) : undefined,
+      inStock: params.get('inStock') === 'true',
+      onSale: params.get('onSale') === 'true',
       page: Number(params.get('page') ?? 1), pageSize: Number(params.get('pageSize') ?? 12) }, signal);
   }, [key]);
-  return useRequest(key, loader);
+  return useRequest(key, loader, enabled);
 }
 
 export function useProduct(id: string) {
   const loader = useCallback((signal: AbortSignal) => fetchProduct(id, signal), [id]);
-  return useRequest(id, loader);
+  return useRequest(id, loader, Boolean(id));
 }
 
 export function useCategories() {

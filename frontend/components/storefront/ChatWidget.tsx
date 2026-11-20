@@ -44,6 +44,12 @@ export default function ChatWidget() {
   const identity = chat.scope ?? "loading";
 
   useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener("multimart:open-support", show);
+    return () => window.removeEventListener("multimart:open-support", show);
+  }, []);
+
+  useEffect(() => {
     if (open) input.current?.focus();
   }, [open]);
   useEffect(() => {

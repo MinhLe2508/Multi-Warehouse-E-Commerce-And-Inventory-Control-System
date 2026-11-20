@@ -149,6 +149,8 @@ describe('AdminOrdersQueryService (FR-ORD-05)', () => {
       OrderStatus.SHIPPING,
       'staff-1',
       'Đã giao ĐVVC',
+      undefined,
+      undefined,
     );
     expect(res.status).toBe(OrderStatus.SHIPPING);
     expect(res.grandTotal).toBe('100000.00');
