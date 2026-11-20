@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsUUID,
+  Matches,
   Max,
   Min,
   isUUID,
@@ -24,6 +25,10 @@ const emptyToUndefined = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
 
 export class QueryAdminAlertsDto {
+  @IsOptional()
+  @Matches(/^[1-9]\d{0,17}$/)
+  id?: string;
+
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() || undefined : value,
@@ -75,6 +80,7 @@ export function normalizeAdminAlertsQuery(
   raw: Partial<Record<keyof QueryAdminAlertsDto, unknown>> = {},
 ): {
   status: AlertStatusFilter;
+  id?: string;
   alertLevel?: AlertLevelFilter;
   warehouseId?: string;
   limit: number;
@@ -183,6 +189,9 @@ export function normalizeAdminAlertsQuery(
 
   return {
     status,
+    ...(raw.id && typeof raw.id === 'string' && /^[1-9]\d{0,17}$/.test(raw.id)
+      ? { id: raw.id }
+      : {}),
     warehouseId,
     ...(alertLevel ? { alertLevel } : {}),
     limit,

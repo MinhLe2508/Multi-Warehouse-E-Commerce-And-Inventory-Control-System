@@ -1,7 +1,19 @@
-import { IsOptional, IsInt, Min, Max, IsBoolean } from 'class-validator';
+import {
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsBoolean,
+  IsEnum,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
+import { NotificationType } from '@prisma/client';
 
 export class NotificationQueryDto {
+  @IsOptional()
+  @IsEnum(NotificationType)
+  type?: NotificationType;
+
   @IsOptional()
   @Transform(({ value }) => parseInt(value as string, 10))
   @IsInt()

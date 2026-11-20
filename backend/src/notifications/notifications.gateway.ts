@@ -14,7 +14,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export const LOW_STOCK_ALERT_EVENT = 'low_stock_alert';
 export const INVENTORY_CHANGED_EVENT = 'inventory.changed';
 export const ADMIN_ROOM = `role:${UserRole.ADMIN}`;
-export const STAFF_ROOM = `role:${UserRole.WAREHOUSE_STAFF}`;
 
 const FORBIDDEN_BROADCAST_FIELDS = new Set([
   'costPrice',
@@ -130,11 +129,12 @@ export class NotificationsGateway
   }
 
   /**
-   * Đẩy sự kiện `low_stock_alert` cho Admin đang online (không mang costPrice).
+   * Đẩy cảnh báo tới Admin và nhân viên của kho liên quan.
    */
   emitLowStockAlert(payload: Record<string, unknown>) {
     const clean = stripSensitiveFields(payload);
     this.server?.to(ADMIN_ROOM).emit(LOW_STOCK_ALERT_EVENT, clean);
+    this.emitToAssignedStaff(LOW_STOCK_ALERT_EVENT, clean);
   }
 
   /**
@@ -143,7 +143,36 @@ export class NotificationsGateway
   emitInventoryChanged(payload: Record<string, unknown>) {
     const clean = stripSensitiveFields(payload);
     this.server?.to(ADMIN_ROOM).emit(INVENTORY_CHANGED_EVENT, clean);
-    this.server?.to(STAFF_ROOM).emit(INVENTORY_CHANGED_EVENT, clean);
+    this.emitToAssignedStaff(INVENTORY_CHANGED_EVENT, clean);
+  }
+
+  private emitToAssignedStaff(event: string, payload: Record<string, unknown>) {
+    const warehouseId = payload.warehouseId;
+    if (!this.server || typeof warehouseId !== 'string' || !isUUID(warehouseId))
+      return;
+    void this.prisma.warehouseStaffAssignment
+      .findMany({
+        where: {
+          warehouseId,
+          warehouse: { isActive: true },
+          user: {
+            role: UserRole.WAREHOUSE_STAFF,
+            isActive: true,
+            emailVerifiedAt: { not: null },
+            mustChangePassword: false,
+          },
+        },
+        select: { userId: true },
+      })
+      .then((recipients) => {
+        if (recipients.length)
+          this.server
+            ?.to(recipients.map(({ userId }) => userId))
+            .emit(event, payload);
+      })
+      .catch(() =>
+        this.logger.warn('Không gửi được thông báo kho tới nhân viên.'),
+      );
   }
 
   private async authenticateAndAssignRooms(
@@ -206,15 +235,10 @@ export class NotificationsGateway
     });
     await client.join(user.id);
 
-    // Chỉ ADMIN và WAREHOUSE_STAFF được tham gia room quản trị kho; CUSTOMER chỉ ở room cá nhân userId.
-    if (
-      user.role === UserRole.ADMIN ||
-      user.role === UserRole.WAREHOUSE_STAFF
-    ) {
-      await client.join(`role:${user.role}`);
+    if (user.role === UserRole.ADMIN) {
+      await client.join(ADMIN_ROOM);
     } else {
       await client.leave?.(ADMIN_ROOM);
-      await client.leave?.(STAFF_ROOM);
     }
 
     this.scheduleExpiryDisconnect(

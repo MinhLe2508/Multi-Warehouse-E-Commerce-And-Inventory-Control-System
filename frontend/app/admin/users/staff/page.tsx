@@ -4,6 +4,8 @@ import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { Alert, Badge, Button, Card, Form, Modal, Spinner, Table, } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight, Eye, LockKeyhole, Mail, Pencil, RefreshCw, Search, UnlockKeyhole, UserPlus, Users, } from 'lucide-react';
 import { useAdminStaff } from '@/hooks/useAdminStaff';
+import { StaffWarehousesDialog } from '@/components/admin/StaffWarehousesDialog';
+import { Warehouse } from 'lucide-react';
 import { AuthError } from '@/shared/lib/authApi';
 import type { CreateStaffInput, Staff, StaffStatus, StaffStatusFilter, UpdateStaffInput, } from '@/shared/types/staff';
 
@@ -94,6 +96,7 @@ export default function AdminStaffPage() {
     loadStaff, createStaff, updateStaff, setStaffStatus, resendStaffInvitation, } = useAdminStaff();
 
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [assigning, setAssigning] = useState<{ id: string; name: string } | null>(null);
   const [form, setForm] = useState<StaffForm>({ ...EMPTY_STAFF_FORM });
   const [reason, setReason] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -410,6 +413,11 @@ export default function AdminStaffPage() {
                     <td className="small text-secondary text-nowrap">{formatDate(staff.createdAt)}</td>
                     <td className="text-end pe-3 pe-md-4">
                       <div className="d-inline-flex flex-wrap justify-content-end gap-1">
+                        <Button type="button" size="sm" variant="outline-primary"
+                          title="Phân kho" aria-label={`Phân kho cho ${staff.fullName}`} disabled={isBusy}
+                          onClick={() => setAssigning({ id: staff.id, name: staff.fullName })}>
+                          <Warehouse size={15} aria-hidden="true" />
+                        </Button>
                         <Button
                           type="button"
                           size="sm"
@@ -491,6 +499,8 @@ export default function AdminStaffPage() {
           </div>
         </Card.Footer>
       </Card>
+
+      {assigning && <StaffWarehousesDialog key={assigning.id} {...assigning} onClose={() => setAssigning(null)} />}
 
       {/* MODAL DÙNG CHUNG: Create / Detail / Edit / Status / Resend. */}
       <Modal

@@ -56,6 +56,11 @@ import { type UpdateStockDto } from './dto/update-stock.dto';
 // ----------------------------------------------------------------------------
 
 // Giá trị lớn nhất của cột INTEGER trong PostgreSQL.
+import {
+  assertAssignedWarehouses,
+  staffWarehouseSql,
+} from '../staff/warehouse-scope';
+
 const INT4_MAX = 2147483647;
 
 // Phân trang mặc định khi người gọi không truyền.
@@ -80,6 +85,7 @@ export interface InventoryProductView {
   name: string;
   imageUrl: string | null;
   basePrice: string;
+  category?: { id: string; name: string } | null;
   isActive: boolean;
   // Chỉ có khi người xem là ADMIN.
   costPrice?: string | null;
@@ -134,6 +140,8 @@ export interface StockAlertView {
   // Số liệu HIỆN TẠI của dòng tồn kho tương ứng.
   currentStock: number;
   currentAvailable: number;
+  currentReserved?: number;
+  effectiveThreshold?: number;
   product: { id: string; sku: string; name: string };
   warehouse: { id: string; code: string; name: string };
 }
@@ -162,6 +170,8 @@ interface InventoryRow {
   lastRestockedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  productCategoryId?: string | null;
+  productCategoryName?: string | null;
   productSku: string;
   productName: string;
   productImageUrl: string | null;
@@ -187,6 +197,8 @@ interface AlertRow {
   resolvedBy: string | null;
   currentStock: number;
   currentAvailable: number;
+  currentReserved?: number;
+  effectiveThreshold?: number;
   productId: string;
   productSku: string;
   productName: string;
@@ -218,6 +230,12 @@ interface InventoryFilter {
   productId?: string | null;
   warehouseId?: string | null;
   lowStockOnly?: boolean;
+  staffId?: string;
+  categoryId?: string;
+  search?: string;
+  sku?: string;
+  status?: QueryInventoryDto['status'];
+  sort?: QueryInventoryDto['sort'];
   isAdmin: boolean;
 }
 
@@ -238,11 +256,18 @@ export class InventoryService {
   async findAll(
     query: QueryInventoryDto,
     role: UserRole,
+    staffId?: string,
   ): Promise<PagedResult<InventoryView>> {
     const limit = query.limit ?? DEFAULT_LIMIT;
     const offset = query.offset ?? 0;
     const filter: InventoryFilter = {
       productId: query.productId ?? null,
+      staffId,
+      categoryId: query.categoryId,
+      search: query.search?.trim(),
+      sku: query.sku?.trim(),
+      status: query.status,
+      sort: query.sort,
       warehouseId: query.warehouseId ?? null,
       lowStockOnly: query.lowStockOnly ?? false,
       isAdmin: role === UserRole.ADMIN,
@@ -262,12 +287,17 @@ export class InventoryService {
   }
 
   // CHi tiết một dòng tồn kho. ID không hợp lệ -> 400; không tồn tại (Hoặc nhân viên khi xem dòng của kho đã ngừng hoạt động)
-  async findOne(rawId: string, role: UserRole): Promise<InventoryView> {
+  async findOne(
+    rawId: string,
+    role: UserRole,
+    staffId?: string,
+  ): Promise<InventoryView> {
     const id = this.parseInventoryId(rawId);
     const view = await this.readInventoryView(
       this.prisma,
       id,
       role === UserRole.ADMIN,
+      staffId,
     );
 
     if (!view) {
@@ -281,10 +311,12 @@ export class InventoryService {
   async findAlerts(
     query: QueryStockAlertsDto,
     role: UserRole,
+    staffId?: string,
   ): Promise<PagedResult<StockAlertView>> {
     const limit = query.limit ?? DEFAULT_LIMIT;
     const offset = query.offset ?? 0;
     const status = query.status ?? 'OPEN';
+    const alertId = query.id ?? null;
     const warehouseId = query.warehouseId ?? null;
     const alertLevel = query.alertLevel ?? null;
     const isAdmin = role === UserRole.ADMIN;
@@ -293,6 +325,8 @@ export class InventoryService {
         AND (${warehouseId}::uuid IS NULL OR i."warehouse_id" = ${warehouseId}::uuid)
         AND (${alertLevel}::"AlertLevel" IS NULL OR a."alert_level" = ${alertLevel}::"AlertLevel")
         AND (${isAdmin}::boolean OR w."is_active")
+        ${alertId ? Prisma.sql`AND a."id" = ${alertId}::bigint` : Prisma.empty}
+        ${staffWarehouseSql(staffId)}
     `;
     const [rows, countRows] = await this.prisma.$transaction(
       async (tx) => {
@@ -309,6 +343,8 @@ export class InventoryService {
              a."resolved_by"::text AS "resolvedBy",
              i."stock" AS "currentStock",
              i."available_stock" AS "currentAvailable",
+             i."reserved_stock" AS "currentReserved",
+             COALESCE(i."threshold", w."default_low_stock_threshold") AS "effectiveThreshold",
              p."id"::text AS "productId",
              p."sku" AS "productSku",
              p."name" AS "productName",
@@ -464,12 +500,45 @@ export class InventoryService {
     rawId: string,
     dto: RestockInventoryDto,
     actorId: string,
+    staff = false,
   ): Promise<InventoryView> {
     const id = this.parseInventoryId(rawId);
+
+    if (staff && !dto.requestId) {
+      throw new BadRequestException('Thiếu mã xác nhận nhập kho.');
+    }
+    const requestId = staff ? dto.requestId?.toLowerCase() : undefined;
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const { warehouse, row } = await this.lockWarehouseAndRow(tx, id);
+
+        if (staff) await assertAssignedWarehouses(tx, actorId, [warehouse.id]);
+        if (requestId) {
+          const previous = await tx.inventoryAuditLog.findFirst({
+            where: {
+              actorId,
+              referenceType: 'STAFF_RESTOCK',
+              referenceId: requestId,
+            },
+            select: { inventoryId: true, quantityDelta: true, note: true },
+          });
+          if (previous) {
+            if (
+              previous.inventoryId !== BigInt(id) ||
+              previous.quantityDelta !== dto.quantity ||
+              previous.note !== (dto.note ?? null)
+            ) {
+              throw new ConflictException(
+                'Mã xác nhận đã được dùng cho một lần nhập khác.',
+              );
+            }
+            return {
+              view: await this.readInventoryViewOrThrow(tx, id, false),
+              changed: false,
+            };
+          }
+        }
 
         if (!warehouse.isActive) {
           throw new ConflictException(
@@ -500,17 +569,22 @@ export class InventoryService {
           stockAfter: newStock,
           reservedBefore: row.reservedStock,
           reservedAfter: row.reservedStock,
-          referenceType: REF_RESTOCK,
+          referenceType: requestId ? 'STAFF_RESTOCK' : REF_RESTOCK,
+          referenceId: requestId,
           actorId,
           note: dto.note ?? null,
         });
 
         await this.alertService.evaluate(tx, [BigInt(id)], actorId);
 
-        return this.readInventoryViewOrThrow(tx, id);
+        return {
+          view: await this.readInventoryViewOrThrow(tx, id, !staff),
+          changed: true,
+        };
       });
-      await this.changes.publishInventory([BigInt(result.id)]);
-      return result;
+      if (result.changed)
+        await this.changes.publishInventory([BigInt(result.view.id)]);
+      return result.view;
     } catch (error) {
       throw this.translateDbError(error);
     }
@@ -738,6 +812,7 @@ export class InventoryService {
       reservedBefore: number;
       reservedAfter: number;
       referenceType: string;
+      referenceId?: string;
       actorId: string;
       note: string | null;
     },
@@ -759,7 +834,7 @@ export class InventoryService {
         ${entry.stockBefore}::integer, ${entry.stockAfter}::integer,
         ${entry.reservedBefore}::integer, ${entry.reservedAfter}::integer,
         ${quantityDelta}::integer,
-        ${entry.referenceType}::varchar, ${entry.inventoryId}::varchar,
+        ${entry.referenceType}::varchar, ${entry.referenceId ?? entry.inventoryId}::varchar,
         ${entry.actorId}::uuid, ${entry.note}::varchar
       )
     `;
@@ -805,6 +880,29 @@ export class InventoryService {
    * Truy vấn danh sách dòng tồn kho kèm sản phẩm và kho.
    * Mọi bộ lọc dùng dạng "(tham số IS NULL OR cột = tham số)" nên chỉ một câu SQL tĩnh, vẫn tham số hóa hoàn toàn (không nối chuỗi). Giá vốn chỉ được đọc khi người xem là Admin.
    */
+  private listFilters(filter: InventoryFilter): Prisma.Sql {
+    const threshold = Prisma.sql`COALESCE(i."threshold", w."default_low_stock_threshold")`;
+    const status = {
+      IN_STOCK: Prisma.sql`AND i."available_stock" > ${threshold}`,
+      LOW_STOCK: Prisma.sql`AND i."available_stock" > 0 AND i."available_stock" <= ${threshold}`,
+      OUT_OF_STOCK: Prisma.sql`AND i."available_stock" = 0`,
+    };
+    return Prisma.sql`
+      ${staffWarehouseSql(filter.staffId)}
+      ${filter.status ? status[filter.status] : Prisma.empty}
+      ${filter.categoryId ? Prisma.sql`AND p."category_id" = ${filter.categoryId}::uuid` : Prisma.empty}
+      ${filter.sku ? Prisma.sql`AND p."sku" = ${filter.sku}` : Prisma.empty}
+      ${
+        filter.search
+          ? Prisma.sql`AND (
+        strpos(lower(p."sku"), lower(${filter.search})) > 0 OR
+        strpos(lower(p."name"), lower(${filter.search})) > 0
+      )`
+          : Prisma.empty
+      }
+    `;
+  }
+
   private async queryInventoryRows(
     client: Prisma.TransactionClient,
     filter: InventoryFilter,
@@ -817,6 +915,12 @@ export class InventoryService {
     const lowStockOnly = filter.lowStockOnly ?? false;
     const isAdmin = filter.isAdmin;
 
+    const sort =
+      filter.sort === 'AVAILABLE_ASC'
+        ? Prisma.sql`i."available_stock" ASC,`
+        : filter.sort === 'AVAILABLE_DESC'
+          ? Prisma.sql`i."available_stock" DESC,`
+          : Prisma.empty;
     return client.$queryRaw<InventoryRow[]>`
       SELECT i."id"::text AS "id",
              i."product_id"::text AS "productId",
@@ -830,6 +934,8 @@ export class InventoryService {
              i."last_restocked_at" AS "lastRestockedAt",
              i."created_at" AS "createdAt",
              i."updated_at" AS "updatedAt",
+             p."category_id"::text AS "productCategoryId",
+             c."name" AS "productCategoryName",
              p."sku" AS "productSku",
              p."name" AS "productName",
              p."image_url" AS "productImageUrl",
@@ -842,6 +948,7 @@ export class InventoryService {
              w."is_active" AS "warehouseIsActive"
         FROM "inventory" i
         JOIN "products" p ON p."id" = i."product_id"
+        LEFT JOIN "categories" c ON c."id" = p."category_id"
         JOIN "warehouses" w ON w."id" = i."warehouse_id"
        WHERE (${id}::bigint IS NULL OR i."id" = ${id}::bigint)
          AND (${productId}::uuid IS NULL OR i."product_id" = ${productId}::uuid)
@@ -849,7 +956,8 @@ export class InventoryService {
          AND (${lowStockOnly}::boolean = false
               OR i."available_stock" <= COALESCE(i."threshold", w."default_low_stock_threshold"))
          AND (${isAdmin}::boolean OR w."is_active")
-       ORDER BY w."code", p."name", i."id"
+       ${this.listFilters(filter)}
+       ORDER BY ${sort} w."code", p."name", i."id"
        LIMIT ${limit}::integer OFFSET ${offset}::integer
     `;
   }
@@ -867,12 +975,14 @@ export class InventoryService {
     const rows = await client.$queryRaw<Array<{ total: number }>>`
       SELECT COUNT(*)::integer AS "total"
         FROM "inventory" i
+        JOIN "products" p ON p."id" = i."product_id"
         JOIN "warehouses" w ON w."id" = i."warehouse_id"
        WHERE (${productId}::uuid IS NULL OR i."product_id" = ${productId}::uuid)
          AND (${warehouseId}::uuid IS NULL OR i."warehouse_id" = ${warehouseId}::uuid)
          AND (${lowStockOnly}::boolean = false
               OR i."available_stock" <= COALESCE(i."threshold", w."default_low_stock_threshold"))
          AND (${isAdmin}::boolean OR w."is_active")
+       ${this.listFilters(filter)}
     `;
 
     return rows[0]?.total ?? 0;
@@ -883,8 +993,14 @@ export class InventoryService {
     client: Prisma.TransactionClient,
     id: string,
     isAdmin: boolean,
+    staffId?: string,
   ): Promise<InventoryView | null> {
-    const rows = await this.queryInventoryRows(client, { id, isAdmin }, 1, 0);
+    const rows = await this.queryInventoryRows(
+      client,
+      { id, isAdmin, staffId },
+      1,
+      0,
+    );
 
     return rows[0] ? this.toInventoryView(rows[0], isAdmin) : null;
   }
@@ -893,8 +1009,9 @@ export class InventoryService {
   private async readInventoryViewOrThrow(
     client: Prisma.TransactionClient,
     id: string,
+    isAdmin = true,
   ): Promise<InventoryView> {
-    const view = await this.readInventoryView(client, id, true);
+    const view = await this.readInventoryView(client, id, isAdmin);
 
     if (!view) {
       throw new NotFoundException('Không tìm thấy dòng tồn kho.');
@@ -911,6 +1028,14 @@ export class InventoryService {
       name: row.productName,
       imageUrl: row.productImageUrl,
       basePrice: row.productBasePrice,
+      ...(row.productCategoryId !== undefined
+        ? {
+            category:
+              row.productCategoryId && row.productCategoryName
+                ? { id: row.productCategoryId, name: row.productCategoryName }
+                : null,
+          }
+        : {}),
       isActive: row.productIsActive,
     };
     if (isAdmin) {
@@ -957,6 +1082,8 @@ export class InventoryService {
       resolvedBy: row.resolvedBy,
       currentStock: row.currentStock,
       currentAvailable: row.currentAvailable,
+      currentReserved: row.currentReserved,
+      effectiveThreshold: row.effectiveThreshold,
       product: {
         id: row.productId,
         sku: row.productSku,

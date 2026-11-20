@@ -1,14 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationQueryDto } from './dto/notification-query.dto';
+import { staffWarehouseWhere } from '../staff/warehouse-scope';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private visible(
+    userId: string,
+    role?: UserRole,
+  ): Prisma.NotificationWhereInput {
+    return {
+      userId,
+      ...(role === UserRole.WAREHOUSE_STAFF
+        ? {
+            OR: [
+              { type: 'SYSTEM', warehouseId: null },
+              { warehouse: staffWarehouseWhere(userId) },
+            ],
+          }
+        : {}),
+    };
+  }
 
   /**
    * Tạo thông báo mới và lưu vào DB.
@@ -36,8 +54,13 @@ export class NotificationsService {
   /**
    * Lấy danh sách thông báo của user, hỗ trợ phân trang và lọc unread.
    */
-  async findByUser(userId: string, query: NotificationQueryDto) {
-    const where: Prisma.NotificationWhereInput = { userId };
+  async findByUser(
+    userId: string,
+    query: NotificationQueryDto,
+    role?: UserRole,
+  ) {
+    const where = this.visible(userId, role);
+    if (query.type) where.type = query.type;
     if (query.unreadOnly) {
       where.isRead = false;
     }
@@ -45,7 +68,7 @@ export class NotificationsService {
     const [items, total] = await Promise.all([
       this.prisma.notification.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: query.limit,
         skip: query.offset,
       }),
@@ -58,9 +81,9 @@ export class NotificationsService {
   /**
    * Đánh dấu 1 thông báo đã đọc.
    */
-  async markAsRead(notificationId: bigint, userId: string) {
+  async markAsRead(notificationId: bigint, userId: string, role?: UserRole) {
     return this.prisma.notification.updateMany({
-      where: { id: notificationId, userId },
+      where: { id: notificationId, ...this.visible(userId, role) },
       data: { isRead: true, readAt: new Date() },
     });
   }
@@ -68,9 +91,9 @@ export class NotificationsService {
   /**
    * Đánh dấu tất cả thông báo của user là đã đọc.
    */
-  async markAllAsRead(userId: string) {
+  async markAllAsRead(userId: string, role?: UserRole) {
     return this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
+      where: { ...this.visible(userId, role), isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
   }
@@ -78,9 +101,9 @@ export class NotificationsService {
   /**
    * Đếm số thông báo chưa đọc của user.
    */
-  async countUnread(userId: string): Promise<number> {
+  async countUnread(userId: string, role?: UserRole): Promise<number> {
     return this.prisma.notification.count({
-      where: { userId, isRead: false },
+      where: { ...this.visible(userId, role), isRead: false },
     });
   }
 }

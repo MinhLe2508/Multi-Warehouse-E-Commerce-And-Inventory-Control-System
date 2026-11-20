@@ -126,7 +126,10 @@ describe('Inventory HTTP boundary — real JWT/guards/DTOs, isolated service dou
     it.each(endpoints)(`${sub}: %s %s`, async (method, url, body, success) => {
       const response = await call(method, url, body, sub);
       expect(response.status).toBe(
-        sub === ADMIN || (sub === STAFF && method === 'get') ? success : 403,
+        sub === ADMIN ||
+          (sub === STAFF && (method === 'get' || url.endsWith('/restock')))
+          ? success
+          : 403,
       );
     });
   it('takes audit actor from the verified account', async () => {
@@ -141,6 +144,7 @@ describe('Inventory HTTP boundary — real JWT/guards/DTOs, isolated service dou
     expect(inventory.findAlerts).toHaveBeenCalledWith(
       expect.anything(),
       UserRole.WAREHOUSE_STAFF,
+      STAFF,
     );
     expect(inventory.findOne).not.toHaveBeenCalled();
   });

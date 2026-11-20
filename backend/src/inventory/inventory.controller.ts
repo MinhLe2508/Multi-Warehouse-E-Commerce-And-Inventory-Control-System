@@ -4,7 +4,7 @@
 //   GET   /inventory/alerts         Danh sách cảnh báo tồn thấp          (ADMIN, WAREHOUSE_STAFF)
 //   GET   /inventory/:id            Chi tiết 1 dòng tồn kho              (ADMIN, WAREHOUSE_STAFF)
 //   POST  /inventory                Khai báo dòng tồn kho mới            (chỉ ADMIN)
-//   POST  /inventory/:id/restock    Nhập thêm hàng                       (chỉ ADMIN)
+//   POST  /inventory/:id/restock    Nhập thêm hàng vào kho được cấp quyền
 //   PUT   /inventory/:id            Kiểm kê / điều chỉnh tồn, ngưỡng     (chỉ ADMIN)
 //
 // Phân quyền:
@@ -69,8 +69,13 @@ export class InventoryController {
   findAll(
     @Query() query: QueryInventoryDto,
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId: string,
   ): Promise<PagedResult<InventoryView>> {
-    return this.inventoryService.findAll(query, role);
+    return this.inventoryService.findAll(
+      query,
+      role,
+      ...(role === UserRole.WAREHOUSE_STAFF ? [userId] : []),
+    );
   }
 
   // Danh sách cảnh báo tồn thấp. Tham số truy vấn (đều không bắt buộc):
@@ -81,8 +86,13 @@ export class InventoryController {
   findAlerts(
     @Query() query: QueryStockAlertsDto,
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId: string,
   ): Promise<PagedResult<StockAlertView>> {
-    return this.inventoryService.findAlerts(query, role);
+    return this.inventoryService.findAlerts(
+      query,
+      role,
+      ...(role === UserRole.WAREHOUSE_STAFF ? [userId] : []),
+    );
   }
 
   // Chi tiết một dòng tồn kho. Id là số nguyên dương (BIGINT) dạng chuỗi; id sai
@@ -92,8 +102,13 @@ export class InventoryController {
   findOne(
     @Param('id', InventoryIdPipe) id: string,
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId: string,
   ): Promise<InventoryView> {
-    return this.inventoryService.findOne(id, role);
+    return this.inventoryService.findOne(
+      id,
+      role,
+      ...(role === UserRole.WAREHOUSE_STAFF ? [userId] : []),
+    );
   }
 
   // ==========================================================================
@@ -113,13 +128,16 @@ export class InventoryController {
   // Nhập THÊM hàng vào dòng tồn kho (cộng dồn). Đây là thao tác trên tài nguyên đã có chứ không tạo tài nguyên mới nên trả HTTP 200 thay vì 201.
   @Post(':id/restock')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_STAFF)
   restock(
     @Param('id', InventoryIdPipe) id: string,
     @Body() dto: RestockInventoryDto,
+    @CurrentUser('role') role: UserRole,
     @CurrentUser('userId') userId: string,
   ): Promise<InventoryView> {
-    return this.inventoryService.restock(id, dto, userId);
+    return role === UserRole.WAREHOUSE_STAFF
+      ? this.inventoryService.restock(id, dto, userId, true)
+      : this.inventoryService.restock(id, dto, userId);
   }
 
   // Kiểm kê / điều chỉnh: đặt lại tồn vật lý và/hoặc đổi ngưỡng cảnh báo riêng.

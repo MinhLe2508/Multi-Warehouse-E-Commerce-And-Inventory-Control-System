@@ -133,7 +133,11 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
           role: { in: [UserRole.ADMIN, UserRole.WAREHOUSE_STAFF] },
           OR: [{ role: UserRole.ADMIN }, { emailVerifiedAt: { not: null } }],
         },
-        select: { id: true },
+        select: {
+          id: true,
+          role: true,
+          warehouseAssignments: { select: { warehouseId: true } },
+        },
       });
       if (recipients.length === 0) return 0;
 
@@ -193,7 +197,11 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
   // Tạo Notification chưa có (hoặc khi nâng mức cảnh báo WARNING -> CRITICAL), trả về các cảnh báo vừa được thông báo.
   private async saveNotifications(
     alerts: StockAlertView[],
-    recipients: { id: string }[],
+    recipients: {
+      id: string;
+      role: UserRole;
+      warehouseAssignments: Array<{ warehouseId: string }>;
+    }[],
   ): Promise<{ fresh: StockAlertView[]; created: number }> {
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
@@ -234,6 +242,7 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
         body: string;
         referenceType: string;
         referenceId: string;
+        warehouseId: string;
       }[] = [];
       const fresh: StockAlertView[] = [];
       for (const alert of alerts) {
@@ -242,6 +251,14 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
           alert.alertLevel === 'CRITICAL' ? 'CRITICAL' : 'WARNING';
         let isFresh = false;
         for (const user of recipients) {
+          if (
+            user.role === UserRole.WAREHOUSE_STAFF &&
+            !user.warehouseAssignments.some(
+              ({ warehouseId }) => warehouseId === alert.warehouse.id,
+            )
+          ) {
+            continue;
+          }
           const dedupKey = `${user.id}:${alert.id}:${levelKey}`;
           if (done.has(dedupKey)) continue;
           done.add(dedupKey);
@@ -253,6 +270,7 @@ export class LowStockNotifierService implements OnModuleInit, OnModuleDestroy {
             body,
             referenceType: STOCK_ALERT_REFERENCE_TYPE,
             referenceId: alert.id,
+            warehouseId: alert.warehouse.id,
           });
         }
         if (isFresh) fresh.push(alert);

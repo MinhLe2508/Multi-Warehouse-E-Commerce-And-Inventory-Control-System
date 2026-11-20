@@ -148,6 +148,7 @@ model User {
   resolvedAlerts      StockAlert[] // Các cảnh báo tồn kho được đóng nhờ thao tác của User này (thường là ADMIN nhập hàng)
   chatSessions        ChatSession[] // Các phiên chat với AI Chatbot của User này
   notifications       Notification[] // Thông báo in-app của User
+  warehouseAssignments WarehouseStaffAssignment[]
 
   // Index trên "role" giúp truy vấn nhanh "lấy hết ADMIN" hoặc "lấy hết WAREHOUSE_STAFF"
   // Ví dụ: Màn hình quản lý phân quyền của Admin
@@ -250,9 +251,24 @@ model Warehouse {
 
   inventory  Inventory[]
   orderItems OrderItem[] // Lưu lại kho hàng đã xuất hàng cho từng đơn hàng (Truy vết)
+  staffAssignments WarehouseStaffAssignment[]
+  notifications Notification[]
 
   @@index([region])
   @@map("warehouses")
+}
+
+model WarehouseStaffAssignment {
+  userId      String @map("user_id") @db.Uuid
+  warehouseId String @map("warehouse_id") @db.Uuid
+  assignedAt  DateTime @default(now()) @map("assigned_at") @db.Timestamptz
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@id([userId, warehouseId])
+  @@index([warehouseId])
+  @@map("warehouse_staff_assignments")
 }
 
 // BẢNG TRUNG TÂM KIỂM SOÁT TOÀN BỘ HỆ THỐNG
@@ -444,6 +460,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+  @@index([warehouseId, orderId])
   @@map("order_items")
 }
 
@@ -493,6 +510,7 @@ model OrderStatusHistory {
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([orderId, createdAt])
+  @@index([toStatus, createdAt])
   @@map("order_status_history")
 }
 
@@ -685,6 +703,7 @@ enum NotificationType {
 model Notification {
   id        BigInt @id @default(autoincrement())
   userId    String           @map("user_id") @db.Uuid
+  warehouseId String? @map("warehouse_id") @db.Uuid
   type      NotificationType
   title     String           @db.VarChar(255)
   body      String           @db.Text
@@ -695,7 +714,9 @@ model Notification {
   readAt    DateTime? @map("read_at") @db.Timestamptz
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   @@index([userId, isRead, createdAt])
   @@index([referenceType, referenceId])
+  @@index([warehouseId])
   @@map("notifications")
 }

@@ -1,11 +1,13 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
+  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -65,6 +67,21 @@ export class InventoryAuditListQuery extends WarehouseListQuery {
   @IsOptional()
   @IsEnum(InventoryChangeReason)
   reason?: InventoryChangeReason;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  actor?: string;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from?: string;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
 }
 
 export class CustomerListQuery extends AdminListQuery {

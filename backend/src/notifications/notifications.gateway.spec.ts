@@ -3,7 +3,10 @@ import { NotificationsGateway } from './notifications.gateway';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 function build(user: object | null, verify: jest.Mock) {
-  const prisma = { user: { findUnique: jest.fn().mockResolvedValue(user) } };
+  const prisma = {
+    user: { findUnique: jest.fn().mockResolvedValue(user) },
+    warehouseStaffAssignment: { findMany: jest.fn().mockResolvedValue([]) },
+  };
   const gateway = new NotificationsGateway(
     { verifyAsync: verify } as never,
     prisma as never,
@@ -113,22 +116,29 @@ describe('NotificationsGateway', () => {
     expect(emit).toHaveBeenCalledWith('low_stock_alert', { a: 1 });
   });
 
-  it('emitInventoryChanged chỉ gửi vào room ADMIN/WAREHOUSE_STAFF và loại bỏ costPrice', () => {
-    const { gateway, emit } = build(null, jest.fn());
+  it('gửi biến động cho Admin và nhân viên được giao kho, bỏ giá vốn', async () => {
+    const { gateway, emit, prisma } = build(null, jest.fn());
+    const warehouseId = '22222222-2222-4222-8222-222222222222';
+    prisma.warehouseStaffAssignment.findMany.mockResolvedValue([
+      { userId: USER_ID },
+    ]);
     gateway.emitInventoryChanged({
       inventoryId: '10',
+      warehouseId,
       stock: 20,
       reservedStock: 2,
       availableStock: 18,
       costPrice: '99999.00',
     });
+    await Promise.resolve();
     const rooms = (
       (gateway.server.to as jest.Mock).mock.calls as string[][]
     ).map((c) => c[0]);
-    expect(rooms).toEqual(['role:ADMIN', 'role:WAREHOUSE_STAFF']);
+    expect(rooms).toEqual(['role:ADMIN', [USER_ID]]);
     expect(rooms).not.toContain('role:CUSTOMER');
     expect(emit).toHaveBeenCalledWith('inventory.changed', {
       inventoryId: '10',
+      warehouseId,
       stock: 20,
       reservedStock: 2,
       availableStock: 18,

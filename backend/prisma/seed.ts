@@ -394,7 +394,10 @@ async function main() {
   const verifiedAt = new Date();
   await prisma.$transaction(
     async (tx) => {
+      let newDemoStaff: string | undefined;
       for (const [index, account] of DEMO_ACCOUNTS.entries()) {
+        const createAssignment = account.role === UserRole.WAREHOUSE_STAFF &&
+          !(await tx.user.findUnique({ where: { username: account.username }, select: { id: true } }));
         const user = await tx.user.upsert({
           where: { username: account.username },
           update: {},
@@ -406,15 +409,26 @@ async function main() {
             isActive: true,
             mustChangePassword: false,
           },
-          select: { role: true },
+          select: { id: true, role: true, email: true },
         });
         if (user.role !== account.role) {
           throw new Error(
             `Tên đăng nhập "${account.username}" đã được dùng cho vai trò khác.`,
           );
         }
+        if (createAssignment && user.email === 'staff@demo.example.test') newDemoStaff = user.id;
       }
       await seedCatalog(tx);
+      if (newDemoStaff) {
+        const warehouses = await tx.warehouse.findMany({
+          where: { isActive: true, code: { in: ['WH-HN01', 'WH-HCM01'] } },
+          select: { id: true },
+        });
+        await tx.warehouseStaffAssignment.createMany({
+          data: warehouses.map(({ id: warehouseId }) => ({ userId: newDemoStaff!, warehouseId })),
+          skipDuplicates: true,
+        });
+      }
       await seedKnowledge(tx);
     },
     { timeout: 30_000 },

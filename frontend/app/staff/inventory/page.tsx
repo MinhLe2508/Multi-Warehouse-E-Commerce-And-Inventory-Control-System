@@ -1,24 +1,7 @@
-import { InventoryView } from '../../../components/admin/InventoryView';
+import { StaffInventory } from '@/components/staff/Inventory';
 
-type SearchParams = Promise<{
-  warehouseId?: string | string[];
-  sku?: string | string[];
-}>;
-
-export default async function StaffInventoryPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ warehouseId?: string; sku?: string }> }) {
   const { warehouseId, sku } = await searchParams;
-  const linkedWarehouse = typeof warehouseId === 'string' ? warehouseId : undefined;
-  const search = typeof sku === 'string' ? sku.trim().slice(0, 64) : '';
-  return (
-    <InventoryView
-      key={JSON.stringify([linkedWarehouse, search])}
-      variant="staff"
-      initialWarehouseId={linkedWarehouse}
-      initialSearch={search}
-    />
-  );
+  return <StaffInventory warehouse={typeof warehouseId === 'string' ? warehouseId : undefined}
+    sku={typeof sku === 'string' ? sku.trim().slice(0, 64) || undefined : undefined} />;
 }

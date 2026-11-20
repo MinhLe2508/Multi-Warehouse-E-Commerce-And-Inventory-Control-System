@@ -11,7 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { CurrentUser } from '../../core/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  type AuthenticatedUser,
+} from '../../core/decorators/current-user.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { PasswordChangedGuard } from '../../core/guards/password-changed.guard';
@@ -27,13 +30,25 @@ export class AdminOrdersGatewayController {
   constructor(private readonly adminOrdersService: AdminOrdersQueryService) {}
 
   @Get()
-  findAll(@Query() query: QueryAdminOrdersDto) {
-    return this.adminOrdersService.findAll(query);
+  findAll(
+    @Query() query: QueryAdminOrdersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.adminOrdersService.findAll(
+      query,
+      ...(user.role === UserRole.WAREHOUSE_STAFF ? [user.userId] : []),
+    );
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.adminOrdersService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.adminOrdersService.findOne(
+      id,
+      ...(user.role === UserRole.WAREHOUSE_STAFF ? [user.userId] : []),
+    );
   }
 
   @Patch(':id/status')
@@ -41,8 +56,13 @@ export class AdminOrdersGatewayController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAdminOrderStatusDto,
-    @CurrentUser('userId') actorId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.adminOrdersService.updateStatus(id, dto, actorId);
+    return this.adminOrdersService.updateStatus(
+      id,
+      dto,
+      user.userId,
+      ...(user.role === UserRole.WAREHOUSE_STAFF ? [user.userId] : []),
+    );
   }
 }

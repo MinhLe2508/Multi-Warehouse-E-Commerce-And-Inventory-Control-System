@@ -60,6 +60,7 @@ export class WarehousesController {
   @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_STAFF)
   async findAll(
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId: string,
     @Query() { includeInactive, region }: QueryWarehousesDto,
   ): Promise<Warehouse[]> {
     if (includeInactive && role !== UserRole.ADMIN) {
@@ -68,7 +69,10 @@ export class WarehousesController {
       );
     }
 
-    return this.warehousesService.findAll({ includeInactive, region });
+    return this.warehousesService.findAll(
+      { includeInactive, region },
+      ...(role === UserRole.WAREHOUSE_STAFF ? [userId] : []),
+    );
   }
 
   // Chi tiết 1 kho. Nhân viên kho chỉ xem được kho đang hoạt động
@@ -77,9 +81,14 @@ export class WarehousesController {
   @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_STAFF)
   async findOne(
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Warehouse> {
-    return this.warehousesService.findOne(id, role === UserRole.ADMIN);
+    return this.warehousesService.findOne(
+      id,
+      role === UserRole.ADMIN,
+      ...(role === UserRole.WAREHOUSE_STAFF ? [userId] : []),
+    );
   }
 
   // ==========================================================================

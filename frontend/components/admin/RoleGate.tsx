@@ -64,7 +64,7 @@ export function RoleGate({
   // Chặn render giao diện khi chưa đạt quyền để chờ redirect
   if (!authenticated || mustChangePassword) return null;
   if (variant === 'admin' && isStaff && !isAdmin) return null;
-  if (variant === 'staff' && !isStaff && !isAdmin) return null;
+  if (variant === 'staff' && !isStaff) return null;
 
   return <>{children}</>;
 }

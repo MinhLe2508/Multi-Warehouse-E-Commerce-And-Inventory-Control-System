@@ -1,3 +1,4 @@
+import { UserRole } from '@prisma/client';
 import {
   BadRequestException,
   Controller,
@@ -29,8 +30,9 @@ export class NotificationsController {
   async findAll(
     @CurrentUser('userId') userId: string,
     @Query() query: NotificationQueryDto,
+    @CurrentUser('role') role?: UserRole,
   ) {
-    return this.notificationsService.findByUser(userId, query);
+    return this.notificationsService.findByUser(userId, query, role);
   }
 
   /**
@@ -38,8 +40,11 @@ export class NotificationsController {
    * Đếm thông báo chưa đọc.
    */
   @Get('unread-count')
-  async countUnread(@CurrentUser('userId') userId: string) {
-    const count = await this.notificationsService.countUnread(userId);
+  async countUnread(
+    @CurrentUser('userId') userId: string,
+    @CurrentUser('role') role?: UserRole,
+  ) {
+    const count = await this.notificationsService.countUnread(userId, role);
     return { count };
   }
 
@@ -48,8 +53,11 @@ export class NotificationsController {
    * Đánh dấu tất cả thông báo đã đọc.
    */
   @Patch('read-all')
-  async markAllAsRead(@CurrentUser('userId') userId: string) {
-    await this.notificationsService.markAllAsRead(userId);
+  async markAllAsRead(
+    @CurrentUser('userId') userId: string,
+    @CurrentUser('role') role?: UserRole,
+  ) {
+    await this.notificationsService.markAllAsRead(userId, role);
     return { success: true };
   }
 
@@ -61,6 +69,7 @@ export class NotificationsController {
   async markAsRead(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
+    @CurrentUser('role') role?: UserRole,
   ) {
     if (!/^[1-9]\d{0,17}$/.test(id)) {
       throw new BadRequestException('ID thông báo không hợp lệ.');
@@ -68,6 +77,7 @@ export class NotificationsController {
     const result = await this.notificationsService.markAsRead(
       BigInt(id),
       userId,
+      role,
     );
     if (result.count === 0) {
       throw new NotFoundException('Không tìm thấy thông báo.');

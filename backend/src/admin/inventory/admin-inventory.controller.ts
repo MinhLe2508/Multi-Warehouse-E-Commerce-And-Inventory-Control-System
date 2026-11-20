@@ -30,8 +30,13 @@ export class AdminInventoryController {
   findAll(
     @Query() query: QueryInventoryDto,
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId?: string,
   ) {
-    return this.inventoryService.findAll(query, role);
+    return this.inventoryService.findAll(
+      query,
+      role,
+      ...(role === UserRole.WAREHOUSE_STAFF && userId ? [userId] : []),
+    );
   }
 
   @Get('summary')
@@ -39,8 +44,13 @@ export class AdminInventoryController {
   getSummary(
     @Query() query: QueryInventorySummaryDto = {},
     @CurrentUser('role') role: UserRole = UserRole.WAREHOUSE_STAFF,
+    @CurrentUser('userId') userId?: string,
   ) {
-    return this.inventoryService.getSummary(query, role);
+    return this.inventoryService.getSummary(
+      query,
+      role,
+      ...(role === UserRole.WAREHOUSE_STAFF && userId ? [userId] : []),
+    );
   }
 
   @Patch(':id')

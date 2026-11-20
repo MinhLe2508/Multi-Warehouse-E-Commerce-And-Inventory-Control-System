@@ -19,8 +19,11 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
+  MaxLength,
+  Matches,
   Min,
 } from 'class-validator';
 
@@ -57,6 +60,28 @@ const toBoolean = ({ value }: { value: unknown }): unknown => {
 };
 
 export class QueryInventoryDto {
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  sku?: string;
+
+  @IsOptional()
+  @IsIn(['IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK'])
+  status?: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+
+  @IsOptional()
+  @IsIn(['AVAILABLE_ASC', 'AVAILABLE_DESC'])
+  sort?: 'AVAILABLE_ASC' | 'AVAILABLE_DESC';
+
   // Chỉ lấy tồn kho của MỘT sản phẩm (xem sản phẩm đang có ở những kho nào).
   @IsOptional()
   @Transform(emptyToUndefined)
@@ -93,6 +118,9 @@ export class QueryInventoryDto {
 }
 
 export class QueryStockAlertsDto {
+  @IsOptional()
+  @Matches(/^[1-9]\d{0,17}$/)
+  id?: string;
   // Trạng thái cảnh báo cần lấy. Mặc định "OPEN" (các cảnh báo còn đang mở).
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>

@@ -1,3 +1,4 @@
+import { staffWarehouseWhere } from '../staff/warehouse-scope';
 // =============================================================================
 // Nghiệp vụ quản lý kho hàng: xem danh sách, xem chi tiết, tạo mới, cập nhật và ngừng hoạt động kho.
 //
@@ -54,8 +55,11 @@ export class WarehousesService {
    * Sắp xếp: kho hoạt động trước, rồi theo khu vực và tên — thuận tiện cho
    * dropdown chọn kho. Số lượng kho rất nhỏ (vài kho) nên KHÔNG phân trang.
    */
-  async findAll(options: FindWarehousesOptions): Promise<Warehouse[]> {
-    const where: Prisma.WarehouseWhereInput = {};
+  async findAll(
+    options: FindWarehousesOptions,
+    staffId?: string,
+  ): Promise<Warehouse[]> {
+    const where: Prisma.WarehouseWhereInput = staffWarehouseWhere(staffId);
 
     if (!options.includeInactive) {
       where.isActive = true;
@@ -77,8 +81,16 @@ export class WarehousesService {
    * includeInactive = false: kho đã ngừng hoạt động bị coi như KHÔNG TỒN TẠI
    * (HTTP 404) — người không phải Admin không cần biết kho đó từng có.
    */
-  async findOne(id: string, includeInactive: boolean): Promise<Warehouse> {
-    const warehouse = await this.prisma.warehouse.findUnique({ where: { id } });
+  async findOne(
+    id: string,
+    includeInactive: boolean,
+    staffId?: string,
+  ): Promise<Warehouse> {
+    const warehouse = staffId
+      ? await this.prisma.warehouse.findFirst({
+          where: { id, ...staffWarehouseWhere(staffId) },
+        })
+      : await this.prisma.warehouse.findUnique({ where: { id } });
 
     if (!warehouse || (!includeInactive && !warehouse.isActive)) {
       throw new NotFoundException('Không tìm thấy kho hàng.');

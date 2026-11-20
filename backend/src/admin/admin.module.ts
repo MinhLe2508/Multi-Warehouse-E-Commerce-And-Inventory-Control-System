@@ -32,6 +32,7 @@ import { AdminOperationsService } from './operations/admin-operations.service';
     AdminOperationsService,
   ],
   exports: [
+    AdminOperationsService,
     AdminInventoryService,
     AdminOrdersQueryService,
     AdminAnalyticsService,

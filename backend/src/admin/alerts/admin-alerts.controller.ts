@@ -1,3 +1,4 @@
+import { assertAssignedWarehouses } from '../../staff/warehouse-scope';
 import {
   BadRequestException,
   Controller,
@@ -10,7 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { AlertStatus, UserRole } from '@prisma/client';
+import { AlertStatus, type Prisma, UserRole } from '@prisma/client';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
@@ -41,9 +42,14 @@ export class AdminAlertsController {
   async findAll(
     @Query() query: QueryAdminAlertsDto = new QueryAdminAlertsDto(),
     @CurrentUser('role') role: UserRole,
+    @CurrentUser('userId') userId?: string,
   ) {
     const validQuery = normalizeAdminAlertsQuery(query);
-    const result = await this.inventoryService.findAlerts(validQuery, role);
+    const result = await this.inventoryService.findAlerts(
+      validQuery,
+      role,
+      ...(role === UserRole.WAREHOUSE_STAFF && userId ? [userId] : []),
+    );
     return {
       ...result,
       items: result.items.map((item) => this.normalizeAlertItem(item)),
@@ -55,13 +61,24 @@ export class AdminAlertsController {
   async resolveAlert(
     @Param('id') rawId: string,
     @CurrentUser('userId') userId: string,
+    @CurrentUser('role') role?: UserRole,
   ) {
     if (!/^[1-9]\d{0,17}$/.test(rawId)) {
       throw new BadRequestException('ID cảnh báo không hợp lệ');
     }
     const id = BigInt(rawId);
 
-    const executeResolve = async (tx: Pick<PrismaService, 'stockAlert'>) => {
+    const executeResolve = async (tx: Prisma.TransactionClient) => {
+      if (role === UserRole.WAREHOUSE_STAFF) {
+        const alert = await tx.stockAlert.findUnique({
+          where: { id },
+          select: { inventory: { select: { warehouseId: true } } },
+        });
+        if (!alert) throw new NotFoundException('Không tìm thấy cảnh báo');
+        await assertAssignedWarehouses(tx, userId, [
+          alert.inventory.warehouseId,
+        ]);
+      }
       const now = new Date();
       const updateResult = await tx.stockAlert.updateMany({
         where: { id, status: AlertStatus.OPEN },

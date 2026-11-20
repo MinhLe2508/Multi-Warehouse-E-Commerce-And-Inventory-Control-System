@@ -1,3 +1,4 @@
+import { staffWarehouseWhere } from '../../staff/warehouse-scope';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import {
@@ -43,9 +44,11 @@ type AdminInventoryView = InventoryView & {
 function inventoryWarehouseWhere(
   query: QueryInventorySummaryDto,
   role: UserRole,
+  staffId?: string,
 ): Prisma.WarehouseWhereInput {
   return {
     id: query.warehouseId,
+    ...staffWarehouseWhere(staffId),
     ...(role === UserRole.ADMIN ? {} : { isActive: true }),
   };
 }
@@ -153,6 +156,7 @@ export class AdminInventoryService {
   async findAll(
     query: QueryInventoryDto,
     role: UserRole,
+    staffId?: string,
   ): Promise<{
     items: AdminInventoryView[];
     total: number;
@@ -176,6 +180,7 @@ export class AdminInventoryService {
           offset,
         },
         role,
+        ...(staffId ? [staffId] : []),
       );
       if (!query.includeCategory || result.items.length === 0) return result;
 
@@ -201,7 +206,7 @@ export class AdminInventoryService {
     const isAdmin = role === UserRole.ADMIN;
     const inventory = await this.prisma.inventory.findMany({
       where: {
-        warehouse: inventoryWarehouseWhere(query, role),
+        warehouse: inventoryWarehouseWhere(query, role, staffId),
         productId: query.productId,
       },
       select: {
@@ -273,8 +278,12 @@ export class AdminInventoryService {
     return { items, total: rows.length, limit, offset };
   }
 
-  async getSummary(query: QueryInventorySummaryDto, role: UserRole) {
-    const warehouseWhere = inventoryWarehouseWhere(query, role);
+  async getSummary(
+    query: QueryInventorySummaryDto,
+    role: UserRole,
+    staffId?: string,
+  ) {
+    const warehouseWhere = inventoryWarehouseWhere(query, role, staffId);
     const [warehouses, visibleStock] = await Promise.all([
       this.prisma.warehouse.findMany({
         where: warehouseWhere,

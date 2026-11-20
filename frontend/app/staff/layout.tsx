@@ -1,13 +1,12 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import '../admin/admin.css';
 import './staff.css';
-import { Be_Vietnam_Pro } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
-import { AdminShell } from '../../components/admin/AdminShell';
+import { StaffShell } from '@/components/staff/StaffShell';
 
-const font = Be_Vietnam_Pro({
+const font = Inter({
   subsets: ['latin', 'vietnamese'],
-  weight: ['400', '500', '600', '700'],
   display: 'swap',
 });
 
@@ -18,8 +17,8 @@ export const metadata = {
 
 export default function StaffLayout({ children }: { children: ReactNode }) {
   return (
-    <AdminShell variant="staff" fontClass={font.className}>
+    <StaffShell fontClass={font.className}>
       {children}
-    </AdminShell>
+    </StaffShell>
   );
 }

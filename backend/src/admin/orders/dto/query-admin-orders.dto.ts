@@ -3,11 +3,13 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { OrderStatus } from '@prisma/client';
@@ -24,6 +26,10 @@ export class QueryAdminOrdersDto {
   status?: OrderStatus;
 
   @IsOptional()
+  @IsIn(['HOLDING', 'EXPIRING', 'EXPIRED'])
+  reservation?: 'HOLDING' | 'EXPIRING' | 'EXPIRED';
+
+  @IsOptional()
   @Matches(DATE_REGEX, { message: 'from phải có định dạng YYYY-MM-DD' })
   @IsDateString({ strict: true }, { message: 'from phải là ngày hợp lệ' })
   from?: string;
@@ -35,6 +41,7 @@ export class QueryAdminOrdersDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(160)
   q?: string;
 
   @IsOptional()

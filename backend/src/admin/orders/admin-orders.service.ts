@@ -1,11 +1,18 @@
 import {
+  assertAssignedWarehouses,
+  staffOrderWhere,
+} from '../../staff/warehouse-scope';
+import {
   ConflictException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
-import { OrdersService } from '../../orders/orders.service';
+import {
+  ORDER_STATUS_TRANSITIONS,
+  OrdersService,
+} from '../../orders/orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { QueryAdminOrdersDto } from './dto/query-admin-orders.dto';
 import type { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
@@ -22,7 +29,7 @@ export class AdminOrdersQueryService {
     private readonly ordersService: OrdersService,
   ) {}
 
-  async findAll(query: QueryAdminOrdersDto) {
+  async findAll(query: QueryAdminOrdersDto, staffId?: string) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
@@ -50,9 +57,7 @@ export class AdminOrdersQueryService {
     const search = query.q?.trim();
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.warehouseId
-        ? { items: { some: { warehouseId: query.warehouseId } } }
-        : {}),
+      ...staffOrderWhere(staffId, query.warehouseId),
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
       ...(search
         ? {
@@ -64,6 +69,22 @@ export class AdminOrdersQueryService {
           }
         : {}),
     };
+
+    if (query.reservation) {
+      const now = new Date();
+      where.AND = {
+        status: 'PENDING_PAYMENT',
+        reservationExpiresAt:
+          query.reservation === 'EXPIRED'
+            ? { lte: now }
+            : {
+                gt: now,
+                ...(query.reservation === 'EXPIRING'
+                  ? { lte: new Date(now.getTime() + 15 * 60_000) }
+                  : {}),
+              },
+      };
+    }
 
     const listQuery = {
       where,
@@ -148,9 +169,8 @@ export class AdminOrdersQueryService {
     };
   }
 
-  async findOne(id: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
+  async findOne(id: string, staffId?: string) {
+    const selection = {
       include: {
         user: {
           select: {
@@ -172,6 +192,12 @@ export class AdminOrdersQueryService {
             discountAmount: true,
             quantity: true,
             lineTotal: true,
+            product: { select: { imageUrl: true } },
+            reservations: {
+              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+              take: 1,
+              select: { status: true },
+            },
             warehouse: {
               select: {
                 id: true,
@@ -215,19 +241,33 @@ export class AdminOrdersQueryService {
           },
         },
       },
-    });
+    } satisfies Pick<Prisma.OrderFindFirstArgs, 'include'>;
+    const order = staffId
+      ? await this.prisma.order.findFirst({
+          where: { id, ...staffOrderWhere(staffId) },
+          ...selection,
+        })
+      : await this.prisma.order.findUnique({ where: { id }, ...selection });
 
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
 
-    return this.serializeOrder(order);
+    const detail = this.serializeOrder(order);
+    if (!staffId) return detail;
+    return {
+      ...detail,
+      nextStatuses: (ORDER_STATUS_TRANSITIONS[order.status] ?? []).filter(
+        (status) => ADMIN_ALLOWED_TARGETS.has(status),
+      ),
+    };
   }
 
   async updateStatus(
     orderId: string,
     dto: UpdateAdminOrderStatusDto,
     actorId: string,
+    staffId?: string,
   ) {
     const nextStatus = dto.targetStatus ?? dto.status;
     if (!nextStatus) {
@@ -247,8 +287,26 @@ export class AdminOrdersQueryService {
       nextStatus,
       actorId,
       reason,
+      ...(staffId
+        ? [
+            async (tx: Prisma.TransactionClient) => {
+              const rows = await tx.orderItem.findMany({
+                where: { orderId },
+                distinct: ['warehouseId'],
+                select: { warehouseId: true },
+              });
+              await assertAssignedWarehouses(
+                tx,
+                staffId,
+                rows.map(({ warehouseId }) => warehouseId),
+              );
+            },
+          ]
+        : []),
     );
-    return this.findOne(updated.id);
+    return staffId
+      ? this.findOne(updated.id, staffId)
+      : this.findOne(updated.id);
   }
 
   private serializeOrder(order: {
@@ -267,6 +325,7 @@ export class AdminOrdersQueryService {
     shippingRegion: string | null;
     confirmedAt: Date | null;
     cancelledAt: Date | null;
+    reservationExpiresAt?: Date | null;
     createdAt: Date;
     updatedAt: Date;
     user?: { id: string; username: string; fullName: string; email: string };
@@ -281,6 +340,8 @@ export class AdminOrdersQueryService {
       discountAmount?: Prisma.Decimal;
       quantity: number;
       lineTotal: Prisma.Decimal;
+      product?: { imageUrl: string | null };
+      reservations?: Array<{ status: string }>;
       warehouse?: { id: string; code: string; name: string };
     }>;
     payments: Array<{
@@ -325,6 +386,7 @@ export class AdminOrdersQueryService {
       shippingRegion: order.shippingRegion,
       confirmedAt: order.confirmedAt,
       cancelledAt: order.cancelledAt,
+      reservationExpiresAt: order.reservationExpiresAt,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       customer: order.user ?? null,
@@ -336,6 +398,8 @@ export class AdminOrdersQueryService {
           ? { inventoryId: item.inventoryId.toString() }
           : {}),
         productName: item.productName,
+        imageUrl: item.product?.imageUrl,
+        reservationStatus: item.reservations?.[0]?.status,
         sku: item.sku,
         unitPrice: item.unitPrice.toFixed(2),
         ...(item.discountAmount !== undefined

@@ -22,6 +22,14 @@ interface CheckoutSnapshotRow {
   availableStock: number | null;
 }
 
+export const ORDER_STATUS_TRANSITIONS: Partial<
+  Record<OrderStatus, OrderStatus[]>
+> = {
+  PENDING_PAYMENT: ['CANCELLED'],
+  CONFIRMED: ['SHIPPING'],
+  SHIPPING: ['DELIVERED'],
+};
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -222,22 +230,19 @@ export class OrdersService {
     target: OrderStatus,
     actorId: string,
     reason?: string,
+    authorize?: (tx: Prisma.TransactionClient) => Promise<void>,
   ) {
-    const transitions: Partial<Record<OrderStatus, OrderStatus[]>> = {
-      PENDING_PAYMENT: ['CANCELLED'],
-      CONFIRMED: ['SHIPPING'],
-      SHIPPING: ['DELIVERED'],
-    };
     const result = await this.prisma.$transaction(
       async (tx) => {
         const locked = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
         if (!locked.length)
           throw new NotFoundException('Không tìm thấy đơn hàng.');
+        await authorize?.(tx);
         const order = await tx.order.findUniqueOrThrow({
           where: { id: orderId },
         });
-        if (!transitions[order.status]?.includes(target)) {
+        if (!ORDER_STATUS_TRANSITIONS[order.status]?.includes(target)) {
           throw new ConflictException(
             `Không thể chuyển trạng thái ${order.status} -> ${target}.`,
           );

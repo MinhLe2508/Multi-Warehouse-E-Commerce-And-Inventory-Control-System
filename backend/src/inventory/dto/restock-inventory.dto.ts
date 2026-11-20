@@ -1,10 +1,10 @@
 // =============================================================================
 // DTO cho Endpoint "POST /inventory/:id/restock"
-// Admin NHẬP THÊM hàng vào một dòng tồn kho. Đây là thao tác TĂNG: số lượng gửi lên được cộng thêm vào
+// Nhập thêm hàng vào một dòng tồn kho. Đây là thao tác TĂNG: số lượng gửi lên được cộng thêm vào
 // "stock" hiện có (khác với PUT /inventory/:id dùng UpdateStockDto để đặt lại "stock" về một con số cụ thể sau kiểm kê).
 //
 // Quy tắc chung:
-// - Chỉ Admin được nhập hàng (quyết định thiết kế): được kiểm tra ở Controller.
+// - Nhân viên chỉ được nhập hàng vào kho được giao.
 // - "userId" người thực hiện KHÔNG nằm trong body: lấy từ @CurrentUser ở Controller.
 // - Nếu Client gửi thừa trường, ValidationPipe (forbidNonWhitelisted: true trong main.ts) sẽ từ chối request với HTTP 400.
 // - Kho phải đang hoạt động và tổng tồn sau khi nhập không được vượt sức chứa (capacity) của kho: kiểm tra trong InventoryService.restock().
@@ -15,6 +15,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -24,6 +25,10 @@ import {
 const INT4_MAX = 2147483647;
 
 export class RestockInventoryDto {
+  @IsOptional()
+  @IsUUID('4')
+  requestId?: string;
+
   // Số lượng nhập THÊM vào kho (phải là số nguyên dương).
   @IsInt({ message: 'Số lượng nhập phải là số nguyên.' })
   @Min(1, { message: 'Số lượng nhập phải lớn hơn 0.' })

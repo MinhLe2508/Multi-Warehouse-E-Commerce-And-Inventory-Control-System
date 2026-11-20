@@ -92,10 +92,13 @@ describe('Warehouses HTTP với JWT, guard và ValidationPipe thật', () => {
 
   it('STAFF chỉ xem kho đang hoạt động, ADMIN xem được cả kho đã ngừng', async () => {
     await get('/warehouses', STAFF).expect(200);
-    expect(service.findAll).toHaveBeenLastCalledWith({
-      includeInactive: false,
-      region: undefined,
-    });
+    expect(service.findAll).toHaveBeenLastCalledWith(
+      {
+        includeInactive: false,
+        region: undefined,
+      },
+      STAFF,
+    );
     await get('/warehouses?includeInactive=true', STAFF).expect(403);
     expect(service.findAll).toHaveBeenCalledTimes(1);
     await get('/warehouses?includeInactive=true').expect(200);
@@ -104,7 +107,7 @@ describe('Warehouses HTTP với JWT, guard và ValidationPipe thật', () => {
       region: undefined,
     });
     await get(`/warehouses/${WAREHOUSE}`, STAFF).expect(200);
-    expect(service.findOne).toHaveBeenLastCalledWith(WAREHOUSE, false);
+    expect(service.findOne).toHaveBeenLastCalledWith(WAREHOUSE, false, STAFF);
     await get(`/warehouses/${WAREHOUSE}`).expect(200);
     expect(service.findOne).toHaveBeenLastCalledWith(WAREHOUSE, true);
   });

@@ -18,6 +18,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ChatbotModule } from './chatbot/chatbot.module';
 import { AdminApiModule } from './adminapi/adminapi.module';
+import { StaffPortalModule } from './staff/staff-portal.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AdminApiModule } from './adminapi/adminapi.module';
     WarehousesModule,
     CategoriesModule,
     ChatbotModule,
+    StaffPortalModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, HealthService],

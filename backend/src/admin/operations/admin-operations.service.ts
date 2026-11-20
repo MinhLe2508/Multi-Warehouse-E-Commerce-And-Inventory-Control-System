@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { staffWarehouseWhere } from '../../staff/warehouse-scope';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ChatRole, Prisma, UserRole } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -145,13 +150,32 @@ export class AdminOperationsService {
     };
   }
 
-  async listInventoryAudit(query: InventoryAuditListQuery) {
+  async listInventoryAudit(query: InventoryAuditListQuery, staffId?: string) {
     const filter = query.search && contains(query.search);
+    if (query.from && query.to && query.from > query.to) {
+      throw new BadRequestException(
+        'Ngày kết thúc phải từ ngày bắt đầu trở đi.',
+      );
+    }
+    const from = query.from
+      ? new Date(`${query.from}T00:00:00+07:00`)
+      : undefined;
+    const to = query.to
+      ? new Date(new Date(`${query.to}T00:00:00+07:00`).getTime() + 86_400_000)
+      : undefined;
     const where: Prisma.InventoryAuditLogWhereInput = {
       reason: query.reason,
-      inventory: query.warehouseId
-        ? { warehouseId: query.warehouseId }
+      inventory:
+        staffId || query.warehouseId
+          ? {
+              warehouseId: query.warehouseId,
+              ...(staffId ? { warehouse: staffWarehouseWhere(staffId) } : {}),
+            }
+          : undefined,
+      actor: query.actor?.trim()
+        ? { fullName: contains(query.actor.trim()) }
         : undefined,
+      createdAt: from || to ? { gte: from, lt: to } : undefined,
       ...(filter && {
         OR: [
           { referenceId: filter },
