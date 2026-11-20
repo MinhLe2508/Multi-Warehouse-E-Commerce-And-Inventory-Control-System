@@ -146,6 +146,16 @@ describe('AuthService', () => {
   });
 
   describe('login and refresh', () => {
+    it('matches a full Gmail to its email column even when the username differs', async () => {
+      const { service, prisma, user } = setup();
+      await expect(
+        service.login({ username: ` ${user.email.toUpperCase()} `, password }),
+      ).resolves.toMatchObject({ user });
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { email: user.email } }),
+      );
+    });
+
     it('signs an access JWT and stores only the refresh hash for a valid login', async () => {
       const { service, prisma, tx, jwt, user } = setup();
 
@@ -186,7 +196,7 @@ describe('AuthService', () => {
       await expect(
         service.login({ username: user.username, password }),
       ).rejects.toMatchObject(rejection);
-      prisma.user.findUnique.mockResolvedValueOnce(null);
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
       await expect(
         service.login({ username: 'unknown-fixture-user', password }),
       ).rejects.toMatchObject(rejection);

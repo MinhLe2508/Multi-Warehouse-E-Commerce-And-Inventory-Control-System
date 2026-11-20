@@ -270,13 +270,25 @@ export class AuthService {
         'Tên đăng nhập hoặc mật khẩu không chính xác.',
       );
     }
-    const username = input.username.trim();
+    const identifier = input.username.trim();
     const invalidMessage = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
 
-    const existing = await this.prisma.user.findUnique({
-      where: { username },
-      select: { id: true, passwordHash: true },
+    const emailLogin = identifier.includes('@');
+    const loginSelect = { id: true, passwordHash: true } as const;
+    const direct = await this.prisma.user.findUnique({
+      where: emailLogin
+        ? { email: identifier.toLowerCase() }
+        : { username: identifier },
+      select: loginSelect,
     });
+    // Tên đăng nhập đã lưu được ưu tiên nếu trùng với phần trước @gmail.com của tài khoản khác.
+    const existing = direct ??
+      (!emailLogin && /^[a-z0-9._+\-]{1,92}$/i.test(identifier)
+        ? await this.prisma.user.findUnique({
+            where: { email: identifier.toLowerCase() + '@gmail.com' },
+            select: loginSelect,
+          })
+        : null);
     const hashToCompare =
       existing?.passwordHash ?? (await this.dummyPasswordHash);
     const valid = await bcrypt.compare(input.password, hashToCompare);
@@ -830,14 +842,14 @@ export class AuthService {
     };
   }
 
-  // Sinh username từ local-part email, có fallback nếu toàn ký tự đặc biệt
+  // Gmail đã xác thực vẫn đăng nhập được nếu tên đăng nhập cần thêm hậu tố.
   private generateUsernameCandidate(email: string, attempt: number): string {
     const localPart = email.split('@')[0] ?? '';
     const base =
       localPart
-        .replace(/[^a-z0-9]/gi, '')
+        .replace(/[^a-z0-9._+\-]/gi, '')
         .toLowerCase()
-        .slice(0, 20) || 'user';
+        .slice(0, 92) || 'user';
     return attempt === 0 ? base : `${base}${randomBytes(4).toString('hex')}`;
   }
 

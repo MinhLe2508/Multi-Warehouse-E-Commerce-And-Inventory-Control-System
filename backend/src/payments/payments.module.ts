@@ -4,10 +4,11 @@ import { StockReservationModule } from '../stock-reservation/stock-reservation.m
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { MockPaymentGatewayService } from './mock-payment-gateway.service';
+import { BankTransferService } from './bank-transfer.service';
 @Module({
   imports: [StockReservationModule, InventoryEventsModule],
   controllers: [PaymentsController],
-  providers: [PaymentsService, MockPaymentGatewayService],
+  providers: [PaymentsService, MockPaymentGatewayService, BankTransferService],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

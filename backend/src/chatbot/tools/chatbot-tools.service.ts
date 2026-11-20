@@ -324,6 +324,8 @@ export class ChatbotToolsService {
         sku: true,
         name: true,
         isActive: true,
+        basePrice: true,
+        discountPercent: true,
         inventory: {
           where: isStaff ? {} : { warehouse: { isActive: true } },
           select: {
@@ -361,10 +363,15 @@ export class ChatbotToolsService {
     });
     const totalAvailable = rows.reduce((sum, r) => sum + r.available, 0);
 
+    const price = product.basePrice == null ? null : new Prisma.Decimal(product.basePrice);
+    const discounted = price?.minus(price.mul(product.discountPercent ?? 0)
+      .div(100).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP));
     const base = {
       productId: product.id,
       sku: product.sku,
       name: product.name,
+      ...(discounted && { salePrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+        .format(discounted.toNumber()) }),
       totalAvailable,
       overallStatus: totalAvailable > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
     };

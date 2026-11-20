@@ -25,7 +25,7 @@ export interface AdminOrder {
   id: string; orderCode: string; status: OrderStatus; customerName: string; grandTotal: number;
   warehouseCodes: string[]; createdAt: string; updatedAt: string;
   shipping: { recipient: string; phone: string; address: string };
-  paymentMethod: 'MOCK_CARD' | 'MOCK_EWALLET' | 'COD';
+  paymentMethod: 'MOCK_CARD' | 'MOCK_EWALLET' | 'COD' | 'BANK_TRANSFER';
   items: AdminOrderItem[]; history: OrderHistoryItem[];
 }
 export interface RevenuePoint { date: string; revenue: number; orders: number }

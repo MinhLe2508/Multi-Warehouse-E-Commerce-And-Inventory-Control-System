@@ -13,6 +13,8 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { CustomerOrdersQueryDto } from './dto/customer-orders-query.dto';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 import { mockPaymentsEnabled } from '../payments/payment-mode';
+import { transferCodeForOrder } from '../payments/vietqr';
+import { getVietQrRecipient } from '../payments/vietqr-config';
 import { recordCustomerOrderNotice } from './customer-order-notice';
 
 interface CheckoutSnapshotRow {
@@ -56,6 +58,7 @@ const customerOrderInclude = {
       amount: true,
       transactionRef: true,
       processedAt: true,
+      bankReceipts: { where: { issue: { not: null } }, take: 1, select: { id: true } },
     },
   },
 } satisfies Prisma.OrderInclude;
@@ -75,8 +78,9 @@ export class OrdersService {
 
   async create(userId: string, dto: CreateOrderDto) {
     const cod = dto.paymentMethod === 'COD';
-    if (dto.paymentMethod && !cod && !mockPaymentsEnabled()) {
-      throw new ConflictException('Phương thức thanh toán này chưa được mở.');
+    const transfer = dto.paymentMethod === 'BANK_TRANSFER';
+    if (!cod && !transfer && !mockPaymentsEnabled()) {
+      throw new BadRequestException('Chọn một phương thức thanh toán đang hỗ trợ.');
     }
     const codeToken = dto.checkoutId
       ? createHash('sha256')
@@ -93,7 +97,10 @@ export class OrdersService {
             where: { orderCode },
             include: {
               items: true,
-              payments: { where: { method: 'COD' }, select: { id: true } },
+              payments: {
+                where: { method: { in: ['COD', 'BANK_TRANSFER'] } },
+                select: { method: true },
+              },
             },
           });
           if (previous) {
@@ -106,7 +113,8 @@ export class OrdersService {
             }
             if (
               previous.userId !== userId ||
-              cod !== previous.payments.length > 0 ||
+              (previous.payments[0]?.method ?? null) !==
+                (cod ? 'COD' : transfer ? 'BANK_TRANSFER' : null) ||
               previous.shippingRecipient !== dto.shippingRecipient ||
               previous.shippingPhone !== dto.shippingPhone ||
               previous.shippingAddress !== dto.shippingAddress ||
@@ -123,6 +131,10 @@ export class OrdersService {
             const { payments: _payments, ...replayed } = previous;
             return { order: this.serialize(replayed), inventoryEvents: [] };
           }
+        }
+        const recipient = transfer ? getVietQrRecipient() : null;
+        if (transfer && !recipient) {
+          throw new ConflictException('Chuyển khoản VietQR đang tạm dừng. Bạn có thể chọn COD.');
         }
         const productIds = dto.items.map(({ productId }) => productId);
         const snapshot = await tx.$queryRaw<CheckoutSnapshotRow[]>`
@@ -225,6 +237,9 @@ export class OrdersService {
             discountPercent: byId.get(l.productId)!.discountPercent,
           })),
         );
+        if (recipient && (!price.grandTotal.isInteger() || price.grandTotal.lte(0))) {
+          throw new BadRequestException('Đơn VietQR cần tổng tiền là số nguyên dương VND. Vui lòng chọn COD.');
+        }
         const order = await tx.order.create({
           data: {
             orderCode,
@@ -293,6 +308,18 @@ export class OrdersService {
               status: 'CONFIRMED',
               confirmedAt: new Date(),
               reservationExpiresAt: null,
+            },
+          });
+        }
+        if (recipient) {
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              transactionRef: transferCodeForOrder(order.orderCode),
+              amount: order.grandTotal,
+              currency: order.currency,
+              method: 'BANK_TRANSFER',
+              gatewayResponse: { ...recipient },
             },
           });
         }
@@ -511,6 +538,7 @@ export class OrdersService {
   }
 
   private serializeCustomerOrder(order: CustomerOrderRow) {
+    const payment = order.payments[0];
     return {
       id: order.id,
       orderCode: order.orderCode,
@@ -536,9 +564,14 @@ export class OrdersService {
         discountAmount: item.discountAmount.toFixed(2),
         lineTotal: item.lineTotal.toFixed(2),
       })),
-      payment: order.payments[0]
-        ? { ...order.payments[0], amount: order.payments[0].amount.toFixed(2) }
-        : null,
+      payment: payment ? {
+        method: payment.method,
+        status: payment.status,
+        amount: payment.amount.toFixed(2),
+        transactionRef: payment.transactionRef,
+        processedAt: payment.processedAt,
+        reviewRequired: payment.bankReceipts.length > 0,
+      } : null,
     };
   }
 }

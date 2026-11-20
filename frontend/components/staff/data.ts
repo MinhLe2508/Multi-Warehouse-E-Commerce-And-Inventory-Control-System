@@ -35,7 +35,7 @@ export type Order = {
     reservationStatus?: string;
   }>;
   payments: Array<{
-    id: string; method: 'COD' | 'MOCK_CARD' | 'MOCK_EWALLET';
+    id: string; method: 'COD' | 'BANK_TRANSFER' | 'MOCK_CARD' | 'MOCK_EWALLET';
     status: 'PENDING' | 'SUCCESS' | 'FAILED'; amount: string; transactionRef?: string;
   }>;
   statusHistory: Array<{

@@ -59,6 +59,7 @@ enum PaymentMethod {
   MOCK_CARD // Giả lập thanh toán thẻ
   MOCK_EWALLET // Giả lập thanh toán ví điện tử
   COD // Thanh toán khi nhận hàng
+  BANK_TRANSFER // VietQR theo đơn
 }
 
 // Mức độ nghiêm trọng của cảnh báo tồn kho thấp
@@ -542,10 +543,31 @@ model Payment {
 
   // onDelete: Restrict, lịch sử thanh toán không được xóa cùng Order
   order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  bankReceipts BankTransferReceipt[]
 
   @@index([orderId])
   @@index([status])
   @@map("payments")
+}
+
+// Biên nhận tiền vào, kể cả tiền đến muộn hoặc sai số tiền của đơn.
+model BankTransferReceipt {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId     String   @map("payment_id") @db.Uuid
+  accountNumber String   @map("account_number") @db.VarChar(19)
+  bankReference String?  @map("bank_reference") @db.VarChar(100)
+  providerId    String?  @unique @map("provider_id") @db.VarChar(32)
+  receivedAt    DateTime @map("received_at") @db.Timestamptz
+  amount        Decimal  @db.Decimal(14, 2)
+  issue         String?  @db.VarChar(32) // null nếu khoản tiền đã xác nhận đơn
+  actorId       String?  @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([accountNumber, bankReference])
+  @@index([paymentId, receivedAt])
+  @@map("bank_transfer_receipts")
 }
 
 // =============================================================================

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
-import { MapPin, PackageCheck, Wallet } from "lucide-react";
+import { MapPin, PackageCheck, CreditCard } from "lucide-react";
 import { useCartSync } from "@/hooks/useCartSync";
 import { useProduct } from "@/hooks/useCatalog";
 import { useHydrated } from "@/hooks/useHydrated";
@@ -34,7 +34,7 @@ function CheckoutForm({ selected, direct }: { selected?: string[]; direct?: { id
   const hydrated = useHydrated();
   const user = useAuthStore((state) => state.session?.user);
   const profile = useShopResource<CustomerProfile>("/customer/profile", { identity: user?.id });
-  const modes = useShopResource<{ demo: boolean }>("/payments/methods", { publicRead: true });
+  const modes = useShopResource<{ bankTransfer: boolean }>("/payments/methods", { publicRead: true });
   const cart = useCartStore((state) => state.items);
   const sync = useCartStore((state) => state.syncStatus);
   const refresh = useCartSync();
@@ -47,7 +47,8 @@ function CheckoutForm({ selected, direct }: { selected?: string[]; direct?: { id
     && items.every((item) => item.quantity <= 100);
   const [draft, setDraft] = useState<Partial<Destination>>({});
   const [choice, setChoice] = useState<CheckoutMethod>("COD");
-  const method = modes.data?.demo ? choice : "COD";
+  const bankTransfer = Boolean(modes.data?.bankTransfer);
+  const method = bankTransfer ? choice : "COD";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const locked = useRef(false);
@@ -89,7 +90,7 @@ function CheckoutForm({ selected, direct }: { selected?: string[]; direct?: { id
         }
       }
       window.dispatchEvent(new Event(SHOP_NOTIFICATIONS_CHANGED));
-      router.replace("/checkout/confirmation?" + new URLSearchParams({ id: order.id, ...(method !== "COD" && { method }) }));
+      router.replace("/checkout/confirmation?" + new URLSearchParams({ id: order.id }));
     } catch (cause) {
       if (cause instanceof AuthError && cause.code === "INSUFFICIENT_STOCK") {
         setError(tx("Tồn kho vừa thay đổi. Kiểm tra lại số lượng trước khi đặt.", "Stock has changed. Review quantities before placing the order."));
@@ -134,10 +135,10 @@ function CheckoutForm({ selected, direct }: { selected?: string[]; direct?: { id
                 </fieldset>
               </section>
               <section className="mm-panel mm-checkout-panel">
-                <div className="mm-block-heading"><span><Wallet size={21} /></span><div><h2>{tx("Phương thức thanh toán", "Payment method")}</h2></div></div>
-                <fieldset disabled={busy}>
-                  <PaymentOptions method={method} demo={Boolean(modes.data?.demo)} onChange={setChoice} />
-                </fieldset>
+                <div className="mm-block-heading"><span><CreditCard size={21} /></span><div><h2>{tx("Phương thức thanh toán", "Payment method")}</h2></div></div>
+                <PaymentOptions method={method} bankTransfer={bankTransfer} disabled={busy} onChange={setChoice} />
+                {Boolean(modes.error) && <p className="mm-summary-note">{tx("Hiện chỉ tải được phương thức COD.", "Only cash on delivery is available right now.")}{" "}
+                  <button type="button" className="mm-link" onClick={modes.refresh}>{tx("Cập nhật", "Refresh")}</button></p>}
               </section>
             </form>
             <OrderSummary subtotal={totals.subtotal} discount={totals.discount} total={totals.total} estimated
@@ -149,11 +150,11 @@ function CheckoutForm({ selected, direct }: { selected?: string[]; direct?: { id
                 : tx("Kiểm tra lại số lượng sản phẩm.", "Please review item quantities.")}</p>}
               <button className="mm-button primary full" type="submit" form="customer-checkout" disabled={busy || !ok}>
                 <PackageCheck size={18} /> {busy ? tx("Đang tạo đơn…", "Placing order…")
-                  : method === "COD" ? tx("Đặt đơn COD", "Place COD order") : tx("Tạo đơn và tiếp tục", "Place order and continue")}
+                  : method === "COD" ? tx("Đặt đơn COD", "Place COD order") : tx("Đặt đơn và lấy mã QR", "Place order and get QR")}
               </button>
               <p className="mm-summary-note">{method === "COD"
                 ? tx("Bạn trả tổng tiền xác nhận khi nhận hàng.", "Pay the confirmed total when your order arrives.")
-                : tx("Giao dịch thử nghiệm dùng giá trị đơn do hệ thống tính.", "The demo uses the order total calculated by the system.")}</p>
+                : tx("Mã QR sẽ xuất hiện cùng số tiền chính xác sau khi đặt đơn.", "Your QR code and exact amount will appear after the order is placed.")}</p>
             </OrderSummary>
           </div>}
   </div>;

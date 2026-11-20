@@ -71,7 +71,11 @@ export class AdminOperationsService {
       status: query.status,
       method: query.method,
       ...(filter && {
-        OR: [{ transactionRef: filter }, { order: { orderCode: filter } }],
+        OR: [
+          { transactionRef: filter },
+          { order: { orderCode: filter } },
+          { bankReceipts: { some: { bankReference: filter } } },
+        ],
       }),
     };
     const page = await this.readPage(
@@ -91,16 +95,28 @@ export class AdminOperationsService {
           callbackCount: true,
           createdAt: true,
           processedAt: true,
-          order: { select: orderIdentity },
+          gatewayResponse: true,
+          order: { select: { ...orderIdentity, status: true, reservationExpiresAt: true } },
+          bankReceipts: {
+            take: 5,
+            orderBy: { receivedAt: 'desc' },
+            select: { id: true, bankReference: true, amount: true, receivedAt: true, issue: true },
+          },
         },
       }),
       this.prisma.payment.count({ where }),
     );
     return {
       ...page,
-      items: page.items.map((row) => ({
+      items: page.items.map(({ gatewayResponse, bankReceipts, ...row }) => ({
         ...row,
         amount: row.amount.toFixed(2),
+        accountNumber: row.method === 'BANK_TRANSFER' && gatewayResponse &&
+          typeof gatewayResponse === 'object' && !Array.isArray(gatewayResponse) &&
+          typeof gatewayResponse.accountNumber === 'string' ? gatewayResponse.accountNumber : null,
+        bankReceipts: bankReceipts.map((receipt) => ({ ...receipt, amount: receipt.amount.toFixed(0) })),
+        canReconcile: row.method === 'BANK_TRANSFER' && row.status === 'PENDING' &&
+          row.order.status === 'PENDING_PAYMENT' && (row.order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
       })),
     };
   }

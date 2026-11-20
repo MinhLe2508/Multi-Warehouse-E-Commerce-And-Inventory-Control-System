@@ -1,51 +1,78 @@
 "use client";
+
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
-  Layers3,
-  ArrowLeft,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  CheckCircle2,
+  ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, Eye, EyeOff,
+  KeyRound, Layers3, LoaderCircle, LockKeyhole, Mail, PackageCheck, UserRound,
 } from "lucide-react";
-import { AuthError, authRequest, type AuthSession } from "@/shared/lib/authApi";
+import { AuthError, authRequest } from "@/shared/lib/authApi";
 import { actionRequest, passwordError, type AccountAction } from "@/shared/lib/authContract";
 import { getSafeNextRoute } from "@/shared/lib/roleRedirect";
 import { authenticatedRequest, useAuthStore } from "@/store/useAuthStore";
+import styles from "./AuthForm.module.css";
 
 type Mode = AccountAction | "login" | "register" | "forgot-password" | "change-password";
 
-const titles: Record<Mode, string> = {
-  login: "Đăng nhập",
-  register: "Tạo tài khoản",
-  "verify-email": "Xác thực email",
-  "staff-invitation": "Kích hoạt tài khoản nhân viên",
-  "reset-password": "Đặt lại mật khẩu",
-  "forgot-password": "Quên mật khẩu",
-  "change-password": "Đổi mật khẩu",
-};
+const views = {
+  login: { title: "Đăng nhập", description: "Truy cập tài khoản MultiMart của bạn.", submit: "Đăng nhập", icon: UserRound },
+  register: { title: "Tạo tài khoản", description: "Bắt đầu với Gmail. Chúng mình sẽ gửi liên kết để bạn xác thực và tạo mật khẩu.", submit: "Gửi Email xác thực", icon: UserRound },
+  "verify-email": { title: "Thiết lập mật khẩu", description: "Tạo mật khẩu để xác thực Gmail và hoàn tất đăng ký MultiMart.", submit: "Xác thực Email", icon: KeyRound },
+  "staff-invitation": { title: "Kích hoạt tài khoản nhân viên", description: "Thiết lập mật khẩu để truy cập khu vực làm việc của MultiMart.", submit: "Kích hoạt tài khoản", icon: KeyRound },
+  "reset-password": { title: "Đặt lại mật khẩu", description: "Chọn mật khẩu mới cho tài khoản MultiMart của bạn.", submit: "Lưu mật khẩu mới", icon: KeyRound },
+  "forgot-password": { title: "Quên mật khẩu", description: "Nhập Gmail đã đăng ký để nhận liên kết đặt lại mật khẩu.", submit: "Gửi liên kết", icon: Mail },
+  "change-password": { title: "Đổi mật khẩu", description: "Nhập mật khẩu hiện tại để thiết lập mật khẩu mới.", submit: "Lưu mật khẩu mới", icon: LockKeyhole },
+} as const;
 
-const inputClass =
-  "w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-100/80 transition-all";
+function Field({ name, label, type = "text", autoComplete, optional, placeholder, maxLength, defaultValue, describedBy }: {
+  name: string; label: string; type?: string; autoComplete?: string; optional?: boolean;
+  placeholder?: string; maxLength?: number; defaultValue?: string; describedBy?: string;
+}) {
+  const id = useId();
+  const [shown, setShown] = useState(false);
+  const isPassword = type === "password";
+  return (
+    <div className={styles.field}>
+      <label htmlFor={id}>{label}{optional && <span>Không bắt buộc</span>}</label>
+      <div className={styles.inputWrap}>
+        <input id={id} name={name} type={shown ? "text" : type} required={!optional}
+          autoComplete={autoComplete} placeholder={placeholder} maxLength={maxLength}
+          defaultValue={defaultValue} aria-describedby={describedBy}
+          autoCapitalize={autoComplete === "username" || type === "email" ? "none" : undefined}
+          spellCheck={isPassword || autoComplete === "username" || type === "email" ? false : undefined}
+          className={isPassword ? styles.passwordInput : undefined} />
+        {isPassword && <button type="button" className={styles.showPassword}
+          aria-label={shown ? "Ẩn mật khẩu" : "Hiện mật khẩu"} aria-pressed={shown}
+          onClick={() => setShown(!shown)}>
+          {shown ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>}
+      </div>
+    </div>
+  );
+}
 
 export default function AuthForm({ mode }: { mode: Mode }) {
   const params = useSearchParams();
   const router = useRouter();
+  const firstLogin = useAuthStore(state => !!state.session?.user.mustChangePassword);
   const token = params.get("token") || "";
   const action = mode === "verify-email" || mode === "staff-invitation" || mode === "reset-password";
-  const [busy, setBusy] = useState(false);
-  const submitting = useRef(false);
+  const createsPassword = action || mode === "change-password";
+  const validLink = !action || /^[0-9a-f]{64}$/.test(token);
+  const showResend = mode === "verify-email" || mode === "register" || mode === "login";
+  const [busy, setBusy] = useState<"submit" | "resend" | null>(null);
+  const pending = useRef(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [sentTo, setSentTo] = useState("");
   const [cooldown, setCooldown] = useState(0);
-
-  // Toggle ẩn/hiện mật khẩu
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const view = views[mode];
+  const finished = done && !sentTo;
+  const title = sentTo ? "Kiểm tra hộp thư Gmail" : finished ? "Hoàn tất" :
+    mode === "change-password" && firstLogin ? "Đổi mật khẩu lần đầu" : view.title;
+  const Icon = sentTo ? Mail : finished ? CheckCircle2 : view.icon;
 
   useEffect(() => {
     if (!cooldown) return;
@@ -55,19 +82,19 @@ export default function AuthForm({ mode }: { mode: Mode }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current) return;
+    if (pending.current || !validLink || (mode === "forgot-password" && cooldown)) return;
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) || "");
+    const email = value("email").trim();
+    const phone = value("phone").trim();
     setError("");
     setMessage("");
 
-    const phone = value("phone").trim();
     if (mode === "register" && phone && !/^(0\d{9}|\+84\d{9})$/.test(phone)) {
-      setError("Số điện thoại không hợp lệ. Định dạng cho phép: 0xxxxxxxxx hoặc +84xxxxxxxxx.");
+      setError("Nhập số điện thoại theo dạng 0xxxxxxxxx hoặc +84xxxxxxxxx.");
       return;
     }
-
-    if (action || mode === "change-password") {
+    if (createsPassword) {
       const problem = passwordError(value("password"), value("confirmPassword"));
       if (problem) {
         setError(problem);
@@ -75,29 +102,13 @@ export default function AuthForm({ mode }: { mode: Mode }) {
       }
     }
 
-    submitting.current = true;
-    setBusy(true);
-
+    pending.current = true;
+    setBusy("submit");
     try {
       if (mode === "login") {
-        // Chuẩn hóa tên đăng nhập theo T1
-        let username = value("username").trim().toLowerCase();
-        if (username.includes("@")) {
-          const parts = username.split("@");
-          if (parts.length !== 2 || parts[1] !== "gmail.com") {
-            setError("Chỉ chấp nhận tài khoản Gmail (@gmail.com).");
-            return;
-          }
-          username = parts[0];
-        }
-
-        const session: AuthSession = await useAuthStore.getState().login(username, value("password"));
-        const nextParam = params.get("next");
-        const target = session.user.mustChangePassword
-          ? "/change-password"
-          : getSafeNextRoute(session.user.role, nextParam);
-
-        router.replace(target);
+        const session = await useAuthStore.getState().login(value("username").trim(), value("password"));
+        router.replace(session.user.mustChangePassword ? "/change-password" :
+          getSafeNextRoute(session.user.role, params.get("next")));
       } else if (action) {
         const request = actionRequest(mode, token, value("password"));
         const result = await authRequest<{ message: string }>(request.path, request.body);
@@ -105,337 +116,126 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         setDone(true);
         window.history.replaceState(null, "", window.location.pathname);
       } else if (mode === "register") {
-        const result = await authRequest<{ message: string }>("/auth/register", {
-          email: value("email").trim(),
-          fullName: value("fullName").trim(),
-          ...(phone ? { phone } : {}),
-        });
-        setMessage(result.message);
+        await authRequest("/auth/register", { email, fullName: value("fullName").trim(), ...(phone && { phone }) });
+        setSentTo(email);
         setDone(true);
       } else if (mode === "forgot-password") {
-        const result = await authRequest<{ message: string }>("/auth/forgot-password", {
-          email: value("email").trim(),
-        });
+        const result = await authRequest<{ message: string }>("/auth/forgot-password", { email });
         setMessage(result.message);
         setCooldown(60);
       } else {
         await authenticatedRequest("/auth/change-password", {
-          currentPassword: value("currentPassword"),
-          newPassword: value("password"),
+          currentPassword: value("currentPassword"), newPassword: value("password"),
         });
         await useAuthStore.getState().logout();
-        setMessage("Đã đổi mật khẩu. Vui lòng đăng nhập lại.");
+        setMessage("Đã lưu mật khẩu mới. Hãy đăng nhập lại để tiếp tục.");
         setDone(true);
       }
     } catch (cause) {
-      if (mode === "login" && cause instanceof AuthError) {
-        if (cause.status === 401) {
-          setError("Tên đăng nhập hoặc mật khẩu không chính xác.");
-          return;
-        }
-        if (cause.status === 403) {
-          setError("Tài khoản đã bị khóa hoặc chưa được kích hoạt.");
-          return;
-        }
+      if (mode === "login" && cause instanceof AuthError && cause.status === 401) {
+        setError("Tên đăng nhập, Gmail hoặc mật khẩu không chính xác.");
+      } else {
+        setError(cause instanceof Error ? cause.message : "Có lỗi xảy ra. Vui lòng thử lại.");
       }
-      setError(cause instanceof Error ? cause.message : "Có lỗi xảy ra. Vui lòng thử lại.");
     } finally {
-      submitting.current = false;
-      setBusy(false);
+      pending.current = false;
+      setBusy(null);
     }
   }
 
   async function resend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || cooldown) return;
+    if (pending.current || cooldown) return;
     const email = String(new FormData(event.currentTarget).get("email") || "").trim();
-    submitting.current = true;
-    setBusy(true);
+    pending.current = true;
+    setBusy("resend");
     setError("");
-
+    setMessage("");
     try {
       const result = await authRequest<{ message: string }>("/auth/resend-verification", { email });
       setMessage(result.message);
       setCooldown(60);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không gửi được email.");
+      setError(cause instanceof Error ? cause.message : "Không gửi được Email.");
     } finally {
-      submitting.current = false;
-      setBusy(false);
+      pending.current = false;
+      setBusy(null);
     }
   }
 
-  const field = (
-    name: string,
-    label: string,
-    type = "text",
-    autoComplete?: string,
-    required = true,
-    placeholder?: string
-  ) => {
-    const isPasswordField = type === "password";
-    const actualType = isPasswordField
-      ? name === "confirmPassword"
-        ? showConfirmPassword
-          ? "text"
-          : "password"
-        : name === "currentPassword"
-        ? showCurrentPassword
-          ? "text"
-          : "password"
-        : showPassword
-        ? "text"
-        : "password"
-      : type;
-
-    return (
-      <div className="space-y-1.5" key={name}>
-        <label htmlFor={"auth-" + name} className="block text-sm font-semibold text-slate-700">
-          {label}
-        </label>
-        <div className="relative">
-          <input
-            name={name}
-            id={"auth-" + name}
-            type={actualType}
-            required={required}
-            autoComplete={autoComplete}
-            placeholder={placeholder}
-            className={`${inputClass} ${isPasswordField ? "pr-10" : ""}`}
-          />
-          {isPasswordField && (
-            <button
-              type="button"
-              onClick={() => {
-                if (name === "confirmPassword") setShowConfirmPassword(!showConfirmPassword);
-                else if (name === "currentPassword") setShowCurrentPassword(!showCurrentPassword);
-                else setShowPassword(!showPassword);
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 focus:outline-none p-1 transition-colors"
-              aria-label="Ẩn hoặc hiện mật khẩu"
-            >
-              {(name === "confirmPassword"
-                ? showConfirmPassword
-                : name === "currentPassword"
-                ? showCurrentPassword
-                : showPassword) ? (
-                <EyeOff size={17} />
-              ) : (
-                <Eye size={17} />
-              )}
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <main className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 bg-slate-50">
-      <div className="relative w-full max-w-[440px] rounded-3xl border border-slate-200 bg-white p-7 sm:p-9 shadow-sm">
-        {/* Thanh tiêu đề trên cùng */}
-        <div className="flex items-center justify-between mb-6">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900 transition-colors group"
-          >
-            <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
-            <span>Về trang chủ</span>
+    <main className={styles.page}>
+      <div className={styles.shell}>
+        <aside className={styles.brand}>
+          <Link href="/" className={styles.wordmark} aria-label="MultiMart, về trang chủ">
+            <span><Layers3 size={22} aria-hidden="true" /></span>MultiMart
           </Link>
-          <span className="text-[11px] font-semibold text-slate-400 tracking-wide uppercase">
-            MultiMart
-          </span>
-        </div>
-
-        {/* Brand Header */}
-        <div className="flex items-center gap-3.5 mb-5">
-          <div
-            className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md shadow-blue-500/25 flex-shrink-0"
-            style={{ background: "#2563eb" }}
-          >
-            <Layers3 size={22} />
+          <div className={styles.brandCopy}>
+            <p>Công nghệ cho<br />mỗi ngày</p>
+            <Link href="/products">Khám phá sản phẩm <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight leading-tight">
-              {titles[mode]}
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {mode === "login"
-                ? "Đăng nhập vào tài khoản MultiMart"
-                : mode === "register"
-                ? "Tạo tài khoản khách hàng mới bằng Gmail"
-                : "Xác thực tài khoản và phân quyền người dùng"}
-            </p>
+          <div className={styles.brandFoot}><PackageCheck size={18} aria-hidden="true" /> Mua sắm và theo dõi đơn hàng trên MultiMart</div>
+        </aside>
+        <section className={styles.panel} aria-labelledby="auth-heading">
+          <Link href="/" className={styles.home}><ArrowLeft size={16} aria-hidden="true" /> Về trang chủ</Link>
+          <div className={styles.heading}>
+            <span className={styles.icon}><Icon size={22} aria-hidden="true" /></span>
+            <h1 id="auth-heading">{title}</h1>
+            {sentTo ? <p>Email xác thực đã được gửi tới <strong>{sentTo}</strong>. Mở liên kết trong thư để đặt mật khẩu.</p> :
+              !finished && <p>{view.description}</p>}
           </div>
-        </div>
 
-        {/* Thông báo lỗi */}
-        {error && (
-          <div
-            role="alert"
-            className="mb-4 rounded-xl bg-rose-50 border border-rose-200/80 p-3.5 text-xs sm:text-sm text-rose-800 flex items-start gap-2.5 shadow-sm"
-          >
-            <AlertCircle size={17} className="text-rose-600 flex-shrink-0 mt-0.5" />
-            <span className="leading-snug">{error}</span>
-          </div>
-        )}
+          {error && <div role="alert" className={styles.error}><CircleAlert size={18} aria-hidden="true" />{error}</div>}
+          {message && <div role="status" className={styles.notice}><CheckCircle2 size={18} aria-hidden="true" />{message}</div>}
+          {!validLink && !done && <div role="alert" className={styles.error}>
+            <CircleAlert size={18} aria-hidden="true" /> Mở liên kết mới nhất trong Email để tiếp tục.
+          </div>}
 
-        {/* Thông báo thành công */}
-        {message && (
-          <div
-            role="status"
-            className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200/80 p-3.5 text-xs sm:text-sm text-emerald-800 flex items-start gap-2.5 shadow-sm"
-          >
-            <CheckCircle2 size={17} className="text-emerald-600 flex-shrink-0 mt-0.5" />
-            <span className="leading-snug">{message}</span>
-          </div>
-        )}
-
-        {!done && (
-          <form onSubmit={submit} className="space-y-4">
-            {mode === "login" &&
-              field(
-                "username",
-                "Tên đăng nhập (hoặc Gmail)",
-                "text",
-                "username",
-                true,
-                "admin hoặc staff (không cần @gmail.com)"
-              )}
-            {mode === "register" && field("fullName", "Họ và tên", "text", "name")}
-            {(mode === "register" || mode === "forgot-password") &&
-              field("email", "Gmail", "email", "email", true, "example@gmail.com")}
-            {mode === "register" &&
-              field("phone", "Số điện thoại (không bắt buộc)", "tel", "tel", false)}
-            {mode === "change-password" &&
-              field("currentPassword", "Mật khẩu hiện tại", "password", "current-password")}
-            {(mode === "login" || action || mode === "change-password") &&
-              field(
-                "password",
-                mode === "login" ? "Mật khẩu" : "Mật khẩu mới",
-                "password",
-                mode === "login" ? "current-password" : "new-password"
-              )}
-            {(action || mode === "change-password") &&
-              field("confirmPassword", "Nhập lại mật khẩu mới", "password", "new-password")}
-            {(action || mode === "change-password") && (
-              <p className="text-xs text-slate-500">Ít nhất 8 ký tự, tối đa 72 byte UTF-8.</p>
-            )}
-            {action && !/^[0-9a-f]{64}$/.test(token) && (
-              <p role="alert" className="text-sm text-red-700">
-                Liên kết thiếu token hoặc không hợp lệ. Hãy mở đúng liên kết trong email.
-              </p>
-            )}
-
-            <button
-              disabled={
-                busy ||
-                (action && !/^[0-9a-f]{64}$/.test(token)) ||
-                (mode === "forgot-password" && cooldown > 0)
-              }
-              className="w-full rounded-xl text-white font-semibold py-3 px-4 text-sm shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/35 focus:outline-none focus:ring-4 focus:ring-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] flex items-center justify-center gap-2"
-              style={{ background: "#2563eb" }}
-            >
-              {busy && (
-                <span
-                  className="spinner-border spinner-border-sm"
-                  role="status"
-                  aria-hidden="true"
-                  style={{ width: "1rem", height: "1rem" }}
-                />
-              )}
-              <span>
-                {busy
-                  ? "Đang xử lý…"
-                  : mode === "forgot-password" && cooldown
-                  ? `Gửi lại sau ${cooldown}s`
-                  : titles[mode]}
-              </span>
+          {!done && validLink && <form onSubmit={submit} className={styles.form}>
+            {mode === "login" && <Field name="username" label="Tên đăng nhập hoặc Gmail" autoComplete="username"
+              placeholder="Tên đăng nhập hoặc Gmail" maxLength={254} />}
+            {mode === "register" && <Field name="fullName" label="Họ và tên" autoComplete="name" maxLength={150} />}
+            {(mode === "register" || mode === "forgot-password") && <Field name="email" label="Gmail" type="email"
+              autoComplete="email" placeholder="ban@gmail.com" maxLength={254} />}
+            {mode === "register" && <Field name="phone" label="Số điện thoại" type="tel" autoComplete="tel" optional maxLength={20} />}
+            {mode === "change-password" && <Field name="currentPassword" label="Mật khẩu hiện tại" type="password" autoComplete="current-password" />}
+            {(mode === "login" || createsPassword) && <Field name="password" label={mode === "login" ? "Mật khẩu" : "Mật khẩu mới"}
+              type="password" autoComplete={mode === "login" ? "current-password" : "new-password"}
+              describedBy={createsPassword ? "auth-password-rule" : undefined} />}
+            {createsPassword && <>
+              <Field name="confirmPassword" label="Nhập lại mật khẩu mới" type="password" autoComplete="new-password" />
+              <p id="auth-password-rule" className={styles.hint}>Ít nhất 8 ký tự, tối đa 72 byte UTF-8.</p>
+            </>}
+            {mode === "login" && <Link className={styles.forgot} href="/forgot-password">Quên mật khẩu?</Link>}
+            <button type="submit" disabled={!!busy || (mode === "forgot-password" && cooldown > 0)} className={styles.primary}>
+              {busy === "submit" ? <><LoaderCircle size={18} className={styles.spin} aria-hidden="true" /> Đang xử lý…</> :
+                mode === "forgot-password" && cooldown ? `Gửi lại sau ${cooldown}s` : <>{view.submit} <ArrowRight size={17} aria-hidden="true" /></>}
             </button>
-          </form>
-        )}
+          </form>}
 
-        {mode === "login" && process.env.NODE_ENV === "development" && (
-          <p className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-            Tài khoản Customer thử nghiệm <code className="font-semibold">customer / customer</code>
-          </p>
-        )}
+          {sentTo && <a className={styles.primary} href="https://mail.google.com/" target="_blank" rel="noreferrer">
+            Mở Gmail <ArrowRight size={17} aria-hidden="true" />
+          </a>}
+          {finished && <Link className={styles.primary} href="/login">Đến trang đăng nhập <ArrowRight size={17} aria-hidden="true" /></Link>}
 
-        {/* Khối gửi lại email xác thực */}
-        {(mode === "verify-email" || mode === "register" || mode === "login") && (
-          <details className="mt-4 text-xs group">
-            <summary className="cursor-pointer text-slate-500 hover:text-blue-700 font-medium list-none flex items-center justify-between py-1 transition-colors">
-              <span>Chưa nhận được email hoặc liên kết hết hạn?</span>
-              <span className="text-blue-600 font-bold group-open:rotate-180 transition-transform">
-                ▾
-              </span>
-            </summary>
-            <form
-              onSubmit={resend}
-              className="mt-3 space-y-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80"
-            >
-              <label className="block text-xs font-semibold text-slate-600">
-                Gmail đã đăng ký
-                <input
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  className={inputClass}
-                  placeholder="your-account@gmail.com"
-                />
-              </label>
-              <button
-                disabled={busy || cooldown > 0}
-                className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50 transition-colors"
-              >
-                {cooldown ? `Gửi lại sau ${cooldown}s` : "Gửi lại email xác thực"}
+          {showResend && !finished && <details className={styles.resend}>
+            <summary>Chưa nhận được Email hoặc liên kết hết hạn? <span aria-hidden="true">▾</span></summary>
+            <form className={styles.form} onSubmit={resend}>
+              <Field name="email" label="Gmail đã đăng ký" type="email" defaultValue={sentTo}
+                autoComplete="email" placeholder="ban@gmail.com" maxLength={254} />
+              <button type="submit" className={styles.secondary} disabled={!!busy || cooldown > 0}>
+                {busy === "resend" ? "Đang gửi…" : cooldown ? `Gửi lại sau ${cooldown}s` : "Gửi lại Email xác thực"}
               </button>
             </form>
-          </details>
-        )}
+          </details>}
+          {mode === "staff-invitation" && !done && <p className={styles.hint}>Lời mời hết hạn? Liên hệ quản trị viên để nhận liên kết mới.</p>}
 
-        {mode === "staff-invitation" && (
-          <p className="mt-5 text-sm text-slate-600">
-            Lời mời hết hạn? Liên hệ Admin để được gửi lại lời mời.
-          </p>
-        )}
-
-        {/* Thanh liên kết điều hướng */}
-        <nav className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs sm:text-sm">
-          {mode !== "login" && (
-            <Link
-              href="/login"
-              className="font-semibold text-blue-700 hover:text-blue-900 transition-colors"
-            >
-              ← Quay lại Đăng nhập
-            </Link>
-          )}
-          {mode === "login" && (
-            <>
-              <Link
-                href="/register"
-                className="font-semibold text-blue-700 hover:text-blue-900 transition-colors"
-              >
-                Tạo tài khoản mới
-              </Link>
-              <Link
-                href="/forgot-password"
-                className="text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                Quên mật khẩu?
-              </Link>
-            </>
-          )}
-          {mode === "reset-password" && (
-            <Link
-              href="/forgot-password"
-              className="font-semibold text-blue-700 hover:text-blue-900 transition-colors"
-            >
-              Yêu cầu liên kết mới
-            </Link>
-          )}
-        </nav>
+          {!finished && <nav className={styles.nav} aria-label="Tài khoản">
+            {mode === "login" ? <p>Chưa có tài khoản? <Link href="/register">Tạo tài khoản</Link></p> :
+              <Link href="/login">Quay lại đăng nhập</Link>}
+            {mode === "reset-password" && <Link href="/forgot-password">Yêu cầu liên kết mới</Link>}
+          </nav>}
+        </section>
       </div>
     </main>
   );

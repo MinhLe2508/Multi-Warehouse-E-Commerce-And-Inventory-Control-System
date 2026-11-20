@@ -32,6 +32,7 @@ import {
   ToolExecutionContext,
 } from './tools/chatbot-tools.service';
 import { randomUUID } from 'crypto';
+import { getStoreHelpReply, NEED_MORE_CONTEXT } from './store-help';
 
 export interface SendMessageOptions {
   sessionToken?: string;
@@ -251,8 +252,9 @@ export class ChatbotService {
       process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
     )?.trim();
 
-    this.defaultModel =
-      process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022';
+    const claudeModel = process.env.ANTHROPIC_MODEL?.trim();
+    this.defaultModel = !claudeModel || claudeModel === 'claude-3-5-haiku-20241022'
+      ? 'claude-haiku-4-5-20251001' : claudeModel;
     this.defaultGeminiModel = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
     if (
@@ -260,7 +262,7 @@ export class ChatbotService {
       anthropicKey.startsWith('sk-ant-') &&
       !anthropicKey.startsWith('mock_')
     ) {
-      this.anthropicClient = new Anthropic({ apiKey: anthropicKey });
+      this.anthropicClient = new Anthropic({ apiKey: anthropicKey, timeout: 9000, maxRetries: 0 });
       this.logger.log(
         `Khởi tạo Anthropic Claude SDK thành công (Model: ${this.defaultModel})`,
       );
@@ -271,7 +273,7 @@ export class ChatbotService {
       geminiKey.startsWith('AIza') &&
       !geminiKey.startsWith('mock_')
     ) {
-      this.geminiClient = new GoogleGenAI({ apiKey: geminiKey });
+      this.geminiClient = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { timeout: 9000 } });
       this.logger.log(
         `Khởi tạo Google Gemini SDK thành công (Model: ${this.defaultGeminiModel})`,
       );
@@ -349,14 +351,15 @@ export class ChatbotService {
 
     // 2. Kiểm tra ý định kết nối người thật (FR-BOT-04)
     const wantsHuman = checkHumanEscalationIntent(userMessage);
-    if (wantsHuman) {
-      const escalationReply =
-        'Dạ, em đã ghi nhận yêu cầu kết nối bạn với chuyên viên tư vấn. Phiên chat đã được đánh dấu cần hỗ trợ (hiện chưa xác nhận có nhân viên trực tuyến tiếp nhận ngay).';
+    const quickReply = wantsHuman ? null : getStoreHelpReply(userMessage);
+    if (wantsHuman || quickReply) {
+      const reply = quickReply ??
+        'Mình đã ghi nhận yêu cầu. Nhân viên có thể xem phiên chat này để hỗ trợ bạn khi có mặt.';
 
       await this.prisma.chatSession.update({
         where: { id: session.id },
         data: {
-          escalatedToHuman: true,
+          escalatedToHuman: wantsHuman ? true : undefined,
           messageCount: { increment: 2 },
         },
       });
@@ -366,7 +369,7 @@ export class ChatbotService {
         data: {
           sessionId: session.id,
           role: 'ASSISTANT',
-          content: escalationReply,
+          content: reply,
           isFallback: false,
           latencyMs,
         },
@@ -374,10 +377,10 @@ export class ChatbotService {
 
       return {
         sessionToken: session.sessionToken,
-        reply: escalationReply,
+        reply,
         role: 'ASSISTANT',
         isFallback: false,
-        escalatedToHuman: true,
+        escalatedToHuman: wantsHuman,
         retrievedDocuments: [],
         generationSource: 'LOCAL',
         retrievalMode: 'NONE',
@@ -498,7 +501,6 @@ export class ChatbotService {
         this.logger.warn(
           `Google Gemini API không khả dụng (${errorMsg}), chuyển hẳn sang bộ xử lý RAG + Tool nội bộ tốc độ cao.`,
         );
-        this.geminiClient = null;
         const localGen = await this.generateSmartLocalResponse(
           userMessage,
           retrievedDocs,
@@ -522,10 +524,20 @@ export class ChatbotService {
       toolCalls = localGen.toolCalls;
     }
 
-    if (!replyText.trim()) {
-      replyText =
-        'Dạ, em chưa có đủ thông tin để trả lời chính xác. Tôi sẽ kết nối bạn với chuyên viên tư vấn để được hỗ trợ chính xác nhất.';
-      isFallback = true;
+    if (isFallback || !replyText.trim()) {
+      // Một model có thể không nhận ra tiếng Việt có dấu hoặc tên sản phẩm.
+      if (generationSource !== 'LOCAL') {
+        const local = await this.generateSmartLocalResponse(userMessage, retrievedDocs, toolCtx, priorHistory);
+        replyText = local.replyText;
+        isFallback = local.isFallback;
+        toolCalls = local.toolCalls;
+        tokenUsage = 0;
+        generationSource = 'LOCAL';
+      }
+      if (isFallback || !replyText.trim()) {
+        replyText = NEED_MORE_CONTEXT;
+        isFallback = true;
+      }
     }
 
     const latencyMs = Date.now() - startTime;
@@ -551,15 +563,10 @@ export class ChatbotService {
     });
 
     // Cập nhật session messageCount
-    const shouldEscalate =
-      isFallback &&
-      session.escalatedToHuman === false &&
-      isFallbackResponse(replyText);
     await this.prisma.chatSession.update({
       where: { id: session.id },
       data: {
         messageCount: { increment: 2 },
-        escalatedToHuman: shouldEscalate ? true : undefined,
       },
     });
 
@@ -568,7 +575,7 @@ export class ChatbotService {
       reply: savedAssistantMsg.content,
       role: 'ASSISTANT',
       isFallback,
-      escalatedToHuman: shouldEscalate,
+      escalatedToHuman: false,
       retrievedDocuments: retrievedDocs,
       generationSource,
       retrievalMode: retrievalResult.mode ?? 'NONE',
@@ -806,14 +813,13 @@ export class ChatbotService {
         normalized,
       );
     const isPersonalOrderLookup =
-      (isPronounOrderRef ||
-        /(tra\s*cứu.*đơn|kiểm\s*tra.*đơn|xem.*đơn|đơn\s*(?:hàng)?\s*của\s*(?:tôi|mình|em|bạn)|đơn\s*(?:hàng)?\s*(?:gần\s*đây|mới\s*nhất|vừa\s*đặt)|lịch\s*sử\s*mua|tình\s*trạng\s*đơn)/i.test(
+      /(tra\s*cứu.*đơn|kiểm\s*tra.*đơn|xem.*đơn|đơn\s*(?:hàng)?\s*của\s*(?:tôi|mình|em|bạn)|đơn\s*(?:hàng)?\s*(?:gần\s*đây|mới\s*nhất|vừa\s*đặt)|lịch\s*sử\s*mua|tình\s*trạng\s*đơn)/i.test(
           normalized,
-        )) &&
+        ) &&
       !/(làm\s*sao|cách\s*(?:nào|để)|hướng\s*dẫn|chính\s*sách|quy\s*định|bao\s*nhiêu|miễn\s*phí|điều\s*kiện)/i.test(
         normalized,
       );
-    const isOrderQuery = hasOrderCode || isPersonalOrderLookup;
+    const isOrderQuery = hasOrderCode || isPronounOrderRef || isPersonalOrderLookup;
 
     if (isOrderQuery) {
       const codeMatch = normalized.match(/\b(ORD-[A-Z0-9]{4,28})\b/i);
@@ -1012,8 +1018,9 @@ export class ChatbotService {
 
     // Không xử lý browseCategory nếu người dùng đang hỏi đích danh 1 mã sản phẩm cụ thể (ví dụ SKU-00128, Model 128) mà không phải lọc theo giá
     const isSpecificProductQuery =
-      /\b(sku-\d+)\b/i.test(normalized) ||
-      (/\bmodel\s*\d+\b/i.test(normalized) && !priceFilter);
+      /\b(?:sku|demo)-[a-z0-9-]+\b/i.test(normalized) ||
+      (/\bmodel\s*\d+\b/i.test(normalized) && !priceFilter) ||
+      /(giá bao nhiêu|bao nhiêu tiền|giá mấy|còn hàng không|còn không)/i.test(normalized);
 
     if (isCatalogOrFilterQuery && !isSpecificProductQuery) {
       const browseInput: Record<string, unknown> = {
@@ -1151,18 +1158,19 @@ export class ChatbotService {
     );
 
     if (
-      (hasStockKeyword || matchedPrefix) &&
+      (isSpecificProductQuery || hasStockKeyword || matchedPrefix) &&
       (retrievedDocs.length === 0 || hasStockKeyword)
     ) {
       const candidateKeywords: string[] = [];
-      const skuMatch = normalized.match(/\b(SKU-\d+)\b/i);
+      const skuMatch = normalized.match(/\b((?:SKU|DEMO)-[a-z0-9-]+)\b/i);
       if (skuMatch) {
         candidateKeywords.push(skuMatch[1].toUpperCase());
       }
 
       const cleanedKeyword = normalized
+        .replace(/(?:^|\s)(?:giá bao nhiêu|bao nhiêu tiền|giá mấy|hiện giờ|shop có|cho hỏi)(?=\s|[!?.]|$)/gi, ' ')
         .replace(
-          /(cho\s*(tôi|mình|em)\s*hỏi|shop\s*ơi|kiểm\s*tra\s*tồn\s*kho|tình\s*trạng\s*tồn\s*kho|tồn\s*kho|còn\s*hàng\s*không|có\s*hàng\s*không|còn\s*hàng|hết\s*hàng|còn\s*không|sản\s*phẩm|trong\s*kho|ở\s*kho|ạ|nhé|\?|!|\.)/gi,
+          /(cho\s*(tôi|mình|em)\s*hỏi|shop\s*ơi|kiểm\s*tra\s*tồn\s*kho|tình\s*trạng\s*tồn\s*kho|tồn\s*kho|còn\s*hàng\s*không|có\s*hàng\s*không|còn\s*hàng|hết\s*hàng|còn\s*không|sản\s*phẩm|trong\s*kho|ở\s*kho|(?:^|\s)(?:ạ|nhé)(?=[?!.\s]|$)|\?|!|\.$)/gi,
           ' ',
         )
         .replace(/\s+/g, ' ')
@@ -1171,7 +1179,7 @@ export class ChatbotService {
       if (cleanedKeyword && cleanedKeyword.length >= 2) {
         candidateKeywords.push(cleanedKeyword);
       }
-      if (matchedPrefix && !candidateKeywords.includes(matchedPrefix)) {
+      if (matchedPrefix && !isSpecificProductQuery && !candidateKeywords.includes(matchedPrefix)) {
         candidateKeywords.push(matchedPrefix);
       }
 
@@ -1195,6 +1203,7 @@ export class ChatbotService {
             name: string;
             totalAvailable: number;
             overallStatus: string;
+            salePrice?: string;
             regions?: Array<{ region: string; status: string }>;
             warehouses?: Array<{
               warehouseName: string;
@@ -1230,6 +1239,7 @@ export class ChatbotService {
           return {
             replyText:
               `Dạ, thông tin tồn kho thực tế của sản phẩm **${invData.name}** (Mã SKU: \`${invData.sku}\`) trên hệ thống:\n` +
+              (invData.salePrice ? `• Giá bán hiện tại: **${invData.salePrice}**\n` : '') +
               `• Trạng thái chung: **${statusVi}** (Tổng số lượng khả dụng: **${invData.totalAvailable}** sản phẩm)` +
               details,
             isFallback: false,
@@ -1258,7 +1268,7 @@ export class ChatbotService {
     // 4. Không có dữ liệu tin cậy -> Phản hồi dự phòng chống ảo giác (NFR-04.4 & FR-BOT-04)
     return {
       replyText:
-        'Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!',
+        NEED_MORE_CONTEXT,
       isFallback: true,
       toolCalls,
     };

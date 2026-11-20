@@ -7,7 +7,7 @@ describe('PaymentsService ACID payment - week 4', () => {
   const tx = {
     $queryRaw: jest.fn(),
     order: { findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
-    payment: { findUnique: jest.fn(), create: jest.fn() },
+    payment: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
     orderStatusHistory: { create: jest.fn() },
     notification: { create: jest.fn() },
   };

@@ -29,7 +29,7 @@ export class PaymentsService {
     approved: boolean,
   ) {
     if (!mockPaymentsEnabled()) {
-      throw new ForbiddenException('Máy chủ chưa mở thanh toán thử nghiệm.');
+      throw new ForbiddenException('Phương thức thanh toán không khả dụng.');
     }
     if (method !== 'MOCK_CARD' && method !== 'MOCK_EWALLET')
       throw new ConflictException('Chỉ cho phép thanh toán mock.');
@@ -65,6 +65,14 @@ export class PaymentsService {
           }
           if (order.status !== 'PENDING_PAYMENT')
             throw new ConflictException('Đơn không còn chờ thanh toán.');
+          if (
+            await tx.payment.findFirst({
+              where: { orderId, method: 'BANK_TRANSFER' },
+              select: { id: true },
+            })
+          ) {
+            throw new ConflictException('Đơn yêu cầu đối soát chuyển khoản.');
+          }
           if (
             order.reservationExpiresAt &&
             order.reservationExpiresAt.getTime() <= Date.now()

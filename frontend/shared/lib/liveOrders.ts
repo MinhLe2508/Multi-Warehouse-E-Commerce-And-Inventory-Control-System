@@ -1,7 +1,10 @@
 import { authenticatedRequest } from "@/store/useAuthStore";
 
-export type Method = "MOCK_CARD" | "MOCK_EWALLET";
-export type CheckoutMethod = "COD" | Method;
+export type CheckoutMethod = "COD" | "BANK_TRANSFER";
+export type OrderPaymentMethod = CheckoutMethod | "MOCK_CARD" | "MOCK_EWALLET";
+export type VietQrInstructions = {
+  bankName: string; accountName: string; accountNumber: string; amount: string; transferCode: string; qrImage: string;
+};
 export type OrderState = "PENDING_PAYMENT" | "CONFIRMED" | "SHIPPING" | "DELIVERED" | "CANCELLED";
 export type Line = { productId: string; quantity: number };
 export type Destination = { shippingRecipient: string; shippingPhone: string; shippingAddress: string; shippingRegion: string };
@@ -20,8 +23,8 @@ export interface CustomerOrder {
   reservationExpiresAt: string | null;
   cancelledReason: string | null;
   items: OrderLine[];
-  payment: { method: CheckoutMethod; status: "PENDING" | "SUCCESS" | "FAILED"; amount: string;
-    transactionRef: string; processedAt: string | null } | null;
+  payment: { method: OrderPaymentMethod; status: "PENDING" | "SUCCESS" | "FAILED"; amount: string;
+    transactionRef: string; processedAt: string | null; reviewRequired: boolean } | null;
 }
 export interface Receipt extends CustomerOrder {
   statusHistory: { id: string; fromStatus: OrderState | null; toStatus: OrderState; reason: string | null; createdAt: string }[];
@@ -38,13 +41,6 @@ export function createOrder(items: Line[], shipping: Destination, checkout?: { m
 }
 
 export const readOrder = (id: string) => authenticatedRequest<Receipt>("/orders/" + encodeURIComponent(id));
-
-export function payOrder(id: string, method: Method, approved: boolean, attempt?: string) {
-  return authenticatedRequest<{ status: string; orderStatus: string }>(
-    "/payments/mock/" + encodeURIComponent(id),
-    { method, approved, transactionRef: attempt ?? (id + "-" + method + (approved ? "-ok" : "-no")) },
-  );
-}
 
 export function UUIDForCheckout() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();

@@ -20,7 +20,9 @@ dotenv.config({
 };
 
 async function bootstrap() {
-  const app = await NestFactory.create<INestApplication<Server>>(AppModule);
+  const app = await NestFactory.create<INestApplication<Server>>(AppModule, {
+    rawBody: true,
+  });
   configureHttpApp(app);
   app.enableShutdownHooks();
   const launchedLocally =

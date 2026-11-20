@@ -67,6 +67,7 @@ export class CreateOrderDto {
   @IsOptional()
   @IsIn([
     PaymentMethod.COD,
+    PaymentMethod.BANK_TRANSFER,
     PaymentMethod.MOCK_CARD,
     PaymentMethod.MOCK_EWALLET,
   ])

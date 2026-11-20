@@ -13,7 +13,7 @@ import { AdminFeedback, Dialog, Field, Filters, PageTitle, Records, Refresh, Tab
 import { type List, type Order, count, dateTime, query, warehouseParam } from './data';
 
 const pageSize = 20;
-const paymentMethods = { COD: 'Thanh toán khi nhận hàng', MOCK_CARD: 'Thẻ mô phỏng', MOCK_EWALLET: 'Ví mô phỏng' };
+const paymentMethods = { COD: 'Thanh toán khi nhận hàng', BANK_TRANSFER: 'Chuyển khoản VietQR', MOCK_CARD: 'Thẻ (trước đây)', MOCK_EWALLET: 'Ví (trước đây)' };
 const paymentStatus = { PENDING: 'Đang chờ', SUCCESS: 'Thành công', FAILED: 'Thất bại' };
 const holds: Record<string, string> = {
   HOLDING: 'Đang giữ chỗ', COMMITTED: 'Đã trừ kho', RELEASED: 'Đã trả chỗ', EXPIRED: 'Đã hết hạn',

@@ -90,7 +90,7 @@ describe('ChatbotService', () => {
     });
 
     expect(result.escalatedToHuman).toBe(true);
-    expect(result.reply).toContain('kết nối bạn với chuyên viên tư vấn');
+    expect(result.reply).toContain('đã ghi nhận yêu cầu');
     expect(prisma.chatSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ escalatedToHuman: true }),
@@ -116,12 +116,25 @@ describe('ChatbotService', () => {
     });
 
     expect(result.isFallback).toBe(true);
+    expect(result.escalatedToHuman).toBe(false);
     expect(result.reply).toContain('chưa tìm thấy thông tin');
     expect(retrievalService.searchKnowledgeBase).toHaveBeenCalledWith(
       'Kho có bán xe tăng không?',
       expect.any(Object),
     );
   });
+
+  it.each(['Chào bạn', 'Co thanh toan COD khong?', 'Đặt hàng như thế nào?'])(
+    'trả lời câu hỏi phổ biến "%s" ngay cả khi chưa cấu hình API key',
+    async (message) => {
+      const session = { id: 'sess-help', sessionToken: 'help', userId: null };
+      prisma.chatSession.findUnique.mockResolvedValue(session);
+      const result = await service.processUserMessage({ sessionToken: 'help', message });
+      expect(result).toMatchObject({ isFallback: false, escalatedToHuman: false, generationSource: 'LOCAL' });
+      expect(result.reply.trim().length).toBeGreaterThan(15);
+      expect(retrievalService.searchKnowledgeBase).not.toHaveBeenCalled();
+    },
+  );
 
   describe('Phân quyền phiên chat', () => {
     it('không tái sử dụng sessionToken thuộc về người dùng khác', async () => {
@@ -374,6 +387,10 @@ describe('ChatbotService', () => {
         { role: 'USER', content: 'Kiểm tra đơn ORD-AAAA1111' },
       ]);
 
+      toolsService.execute.mockResolvedValueOnce({
+        ok: true,
+        data: { orders: [{ orderCode: 'ORD-AAAA1111', statusLabel: 'Đang giao', grandTotal: '350000.00' }] },
+      });
       const generateContent = jest.fn().mockResolvedValue({
         text: 'Đơn ORD-AAAA1111 có tổng tiền 350.000 VND.',
         usageMetadata: { totalTokenCount: 42 },

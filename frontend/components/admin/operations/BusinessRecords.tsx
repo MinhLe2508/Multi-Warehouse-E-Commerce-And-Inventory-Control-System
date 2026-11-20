@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import BankReconciliation, { TRANSFER_ISSUE } from './BankReconciliation';
 import { useAdminCtx } from '../AdminContext';
 import { formatVnd } from '../../../shared/lib/format';
 import {
@@ -15,9 +17,10 @@ const PAYMENT_STATES = {
   FAILED: 'Thất bại',
 };
 const PAYMENT_METHODS = {
-  MOCK_CARD: 'Thẻ mô phỏng',
-  MOCK_EWALLET: 'Ví mô phỏng',
+  MOCK_CARD: 'Thẻ (trước đây)',
+  MOCK_EWALLET: 'Ví (trước đây)',
   COD: 'Khi nhận hàng',
+  BANK_TRANSFER: 'Chuyển khoản VietQR',
 };
 const RESERVATION_STATES = {
   HOLDING: 'Đang giữ',
@@ -45,7 +48,10 @@ type PaymentRecord = {
   transactionRef: string;
   amount: string;
   currency: string;
-  order: OrderIdentity;
+  order: OrderIdentity & { status: string };
+  accountNumber: string | null;
+  canReconcile: boolean;
+  bankReceipts: { id: string; bankReference: string | null; amount: string; receivedAt: string; issue: string | null }[];
   method: keyof typeof PAYMENT_METHODS;
   status: keyof typeof PAYMENT_STATES;
   failureReason: string | null;
@@ -88,8 +94,13 @@ function InventoryName({ inventory }: { inventory: InventoryIdentity }) {
 }
 
 export function PaymentsView() {
-  return (
+  const [selected, setSelected] = useState<PaymentRecord | null>(null);
+  const [version, setVersion] = useState(0);
+  const [notice, setNotice] = useState('');
+  return (<>
     <AdminCollection<PaymentRecord>
+      version={version}
+      beforeTable={() => notice ? <p role="status" className="alert alert-info mb-0">{notice}</p> : null}
       title="Thanh toán"
       description="Đối chiếu giao dịch theo mã đơn, phương thức và kết quả xử lý."
       endpoint="/admin/payments"
@@ -132,7 +143,8 @@ export function PaymentsView() {
           render: (row) => (
             <>
               <RecordStatus
-                label={PAYMENT_STATES[row.status]}
+                label={row.method === 'BANK_TRANSFER' && row.status === 'PENDING' && row.order.status === 'CANCELLED'
+                  ? 'Hết hiệu lực' : PAYMENT_STATES[row.status]}
                 tone={
                   row.status === 'SUCCESS'
                     ? 'good'
@@ -152,9 +164,27 @@ export function PaymentsView() {
           className: 'text-nowrap',
           render: (row) => localDateTime(row.processedAt ?? row.createdAt),
         },
+        {
+          heading: 'Đối soát',
+          render: (row) => row.method !== 'BANK_TRANSFER' ? null : <>
+            {row.bankReceipts.length > 0 && <details className="admin-record-meta mb-1">
+              <summary>Khoản tiền đã ghi nhận</summary>
+              <ul className="mb-1 ps-3">
+                {row.bankReceipts.map((item) => <li key={item.id}>
+                  {formatVnd(Number(item.amount))} · {item.issue ? TRANSFER_ISSUE[item.issue] ?? 'Cần kiểm tra' : 'Khớp đơn'}<br />
+                  {item.bankReference && <>{item.bankReference} · </>}{localDateTime(item.receivedAt)}
+                </li>)}
+              </ul>
+            </details>}
+            {row.canReconcile && <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setSelected(row)}>Đối soát sao kê</button>}
+          </>,
+        },
       ]}
     />
-  );
+    {selected && <BankReconciliation payment={{ ...selected, orderCode: selected.order.orderCode }}
+      onClose={() => setSelected(null)}
+      onSaved={(message) => { setSelected(null); setNotice(message); setVersion(value => value + 1); }} />}
+  </>);
 }
 
 export function ReservationsView() {

@@ -1,0 +1,205 @@
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 3.5rem);
+  color: #0f172a;
+  background: #f1f5fa;
+}
+.shell {
+  width: 100%;
+  max-width: 67rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  border: 1px solid #dde5f0;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 18px 55px #0f172a12;
+}
+.brand {
+  min-height: 36rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: clamp(1.75rem, 4vw, 3.5rem);
+  color: #fff;
+  background:
+    linear-gradient(180deg, #05132eee 0%, #07132e69 51%, #07132efa 100%),
+    url("/storefront/technology-hero.webp") 78% center / cover no-repeat #0a1630;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: .7rem;
+  color: #fff;
+  text-decoration: none;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -.035em;
+}
+.wordmark:hover { color: #bfdbfe; }
+.wordmark span, .icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: .85rem;
+}
+.wordmark span { background: #2563eb; }
+.brandCopy { margin-block: auto 2.4rem; }
+.brandCopy p {
+  margin: 0 0 .85rem;
+  font-weight: 850;
+  font-size: clamp(1.75rem, 3.4vw, 3.05rem);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+.brandCopy a {
+  display: inline-flex;
+  gap: .5rem;
+  align-items: center;
+  font-size: .95rem;
+  font-weight: 650;
+  color: #bfdbfe;
+  text-decoration: none;
+}
+.brandCopy a:hover { color: #fff; text-decoration: underline; }
+.brandFoot { display: flex; gap: .6rem; align-items: center; color: #cbd5e1; font-size: .84rem; }
+.brandFoot svg { flex-shrink: 0; color: #93c5fd; }
+
+.panel { min-width: 0; padding: clamp(1.5rem, 4vw, 3.5rem); }
+.panel a { text-underline-offset: .2em; }
+.home, .forgot, .nav a {
+  color: #1d4ed8;
+  text-decoration: none;
+  font-weight: 650;
+}
+.home:hover, .forgot:hover, .nav a:hover { text-decoration: underline; }
+.home { display: inline-flex; align-items: center; gap: .5rem; font-size: .875rem; }
+.heading { margin: 1.5rem 0 1.4rem; }
+.icon { background: #eff6ff; color: #1d4ed8; margin-bottom: .85rem; }
+.panel .heading h1 {
+  margin: 0;
+  color: #0f172a;
+  font: inherit;
+  font-size: clamp(1.8rem, 3.4vw, 2.65rem);
+  font-weight: 790;
+  line-height: 1.1;
+  letter-spacing: -.052em;
+}
+.heading p { margin: .65rem 0 0; font-size: .91rem; line-height: 1.6; color: #475569; overflow-wrap: anywhere; }
+.form { display: grid; gap: 1rem; }
+.field { display: grid; gap: .4rem; }
+.field label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .65rem; font-size: .88rem; font-weight: 650; }
+.field label span { font-size: .77rem; color: #64748b; font-weight: 500; }
+.inputWrap { position: relative; min-width: 0; }
+.field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 3rem;
+  padding: .72rem .83rem;
+  border: 1px solid #cdd8e6;
+  border-radius: .75rem;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .95rem;
+  transition: border-color .15s, background-color .15s, box-shadow .15s;
+}
+.field input:focus { border-color: #2563eb; background: #fff; outline: none; box-shadow: 0 0 0 3px #dbeafe; }
+.field input::placeholder { color: #64748b; }
+.field .passwordInput { padding-right: 3rem; }
+.showPassword {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  right: .35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.35rem;
+  height: 2.35rem;
+  border: 0;
+  border-radius: .5rem;
+  background: transparent;
+  color: #475569;
+}
+.showPassword:hover { background: #eaf1fc; color: #1d4ed8; }
+.forgot { justify-self: end; font-size: .85rem; }
+.primary, .secondary {
+  display: flex;
+  width: 100%;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  border-radius: .75rem;
+  padding: .65rem .85rem;
+  text-decoration: none;
+  font: inherit;
+  font-size: .95rem;
+  font-weight: 680;
+}
+.primary { border: 1px solid #2563eb; background: #2563eb; color: #fff; }
+.primary:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.secondary { border: 1px solid #cadaf1; background: #fff; color: #1d4ed8; }
+.secondary:hover:not(:disabled) { background: #f0f6ff; }
+.primary:disabled, .secondary:disabled { opacity: .55; cursor: not-allowed; }
+.hint { margin: 0; color: #475569; font-size: .8rem; line-height: 1.6; }
+.panel > .hint { margin-top: 1rem; }
+.resend { margin-top: 1.1rem; }
+.resend summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem;
+  padding: .42rem 0;
+  list-style: none;
+  cursor: pointer;
+  color: #475569;
+  font-size: .84rem;
+}
+.resend summary::-webkit-details-marker { display: none; }
+.resend summary span { color: #1d4ed8; }
+.resend[open] summary span { transform: rotate(180deg); }
+.resend .form { margin-top: .5rem; border-radius: .75rem; background: #f2f6fc; padding: .85rem; }
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e6edf5;
+  color: #475569;
+  font-size: .86rem;
+}
+.nav p { margin: 0; }
+.error, .notice {
+  display: flex;
+  gap: .65rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: .75rem .85rem;
+  border: 1px solid;
+  border-radius: .75rem;
+  font-size: .875rem;
+  line-height: 1.55;
+}
+.error svg, .notice svg { flex-shrink: 0; margin-top: .18rem; }
+.error { color: #9f1239; border-color: #fecdd3; background: #fff1f2; }
+.notice { color: #065f46; border-color: #a7f3d0; background: #ecfdf5; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: minmax(0, 1fr); max-width: 34rem; border-radius: 1.125rem; }
+  .brand { min-height: 0; padding: 1rem 1.5rem; background-position: 85% 45%; }
+  .brandCopy, .brandFoot { display: none; }
+  .wordmark { font-size: 1.24rem; }
+  .wordmark span { width: 2.3rem; height: 2.3rem; border-radius: .68rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+  .field input { transition: none; }
+}

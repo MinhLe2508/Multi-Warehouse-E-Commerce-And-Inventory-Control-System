@@ -2,11 +2,16 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../core/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../core/decorators/current-user.decorator';
@@ -17,16 +22,61 @@ import { PasswordChangedGuard } from '../core/guards/password-changed.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import { MockPaymentDto } from './dto/mock-payment.dto';
 import { PaymentsService } from './payments.service';
-import { mockPaymentsEnabled } from './payment-mode';
+import { BankTransferService } from './bank-transfer.service';
+import { ReconcileTransferDto } from './dto/reconcile-transfer.dto';
+import { authorizeSePay, readSePayTransfer } from './sepay-webhook';
+import { getVietQrRecipient } from './vietqr-config';
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly bankTransfer: BankTransferService,
+  ) {}
 
   @Public()
   @Get('methods')
   methods() {
-    return { cod: true, demo: mockPaymentsEnabled() };
+    return { cod: true, bankTransfer: getVietQrRecipient() !== null };
+  }
+
+  @Get('bank-transfer/:orderId')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
+  bankTransferInstructions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+  ) {
+    return this.bankTransfer.instructions(user.userId, orderId);
+  }
+
+  @Public()
+  @Post('sepay/webhook')
+  @HttpCode(200)
+  async sePay(
+    @Headers('x-sepay-timestamp') timestamp: string | undefined,
+    @Headers('x-sepay-signature') signature: string | undefined,
+    @Req() request: RawBodyRequest<Request>,
+  ) {
+    authorizeSePay(timestamp, signature, request.rawBody);
+    const transfer = readSePayTransfer(request.body);
+    if (transfer) await this.bankTransfer.record(transfer);
+    return { success: true };
+  }
+
+  @Post('bank-transfer/:paymentId/reconcile')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(200)
+  reconcile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Body() dto: ReconcileTransferDto,
+  ) {
+    return this.bankTransfer.record(
+      { ...dto, receivedAt: new Date(dto.receivedAt), actorId: user.userId },
+      paymentId,
+    );
   }
 
   @Post('mock/:orderId')

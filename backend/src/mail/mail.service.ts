@@ -11,6 +11,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
+import { renderAccountEmail } from './account-email.template';
 
 // 1. INTERFACES
 
@@ -45,19 +46,6 @@ interface SendMailParams {
 }
 
 // 2. HELPER FUNCTIONS
-
-// Chuyển các ký tự HTML đặc biệt thành HTML entities.
-function escapeHtml(value: string): string {
-  const entities: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  };
-
-  return value.replace(/[&<>"']/g, (character) => entities[character]);
-}
 
 function readTtlSeconds(envName: string, defaultValue: number): number {
   const rawValue = process.env[envName];
@@ -204,7 +192,7 @@ export class MailService {
     try {
       await this.transporter.sendMail({
         from: {
-          name: 'Multi-Warehouse E-Commerce',
+          name: 'MultiMart',
           address: this.senderAddress,
         },
 
@@ -238,261 +226,69 @@ export class MailService {
     }
   }
 
-  // 6. SEND CUSTOMER VERIFICATION
   async sendCustomerVerification(
     params: CustomerVerificationParams,
   ): Promise<void> {
-    const verifyUrl = this.validateFrontendUrl(params.verifyUrl);
-
-    const safeName = escapeHtml(params.fullName);
-    const safeUrl = escapeHtml(verifyUrl);
-
-    const ttl = formatTtl(this.customerVerificationTtlSeconds);
-
+    const title = 'Xác thực tài khoản MultiMart';
     await this.sendMail({
       to: params.to,
-
-      subject: 'Xác thực tài khoản - Multi Warehouse E-Commerce',
-
-      text: [
-        `Xin chào ${params.fullName},`,
-        '',
-        'Cảm ơn bạn đã đăng ký tài khoản tại hệ thống.',
-        '',
-        'Vui lòng mở liên kết sau để xác thực Gmail và thiết lập mật khẩu:',
-        verifyUrl,
-        '',
-        `Liên kết có hiệu lực tối đa ${ttl} kể từ khi được tạo.`,
-        'Liên kết chỉ được sử dụng một lần.',
-        '',
-        'Nếu liên kết hết hạn, vui lòng quay lại trang đăng ký',
-        'và chọn Gửi lại Email xác thực.',
-        '',
-        'Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua Email.',
-        '',
-        'Multi Warehouse E-Commerce',
-      ].join('\n'),
-
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2>Xác thực tài khoản</h2>
-
-          <p>Xin chào <strong>${safeName}</strong>,</p>
-
-          <p>
-            Cảm ơn bạn đã đăng ký tài khoản tại
-            Multi-Warehouse E-Commerce & Inventory Control System.
-          </p>
-
-          <p>
-            Vui lòng nhấn vào liên kết sau để xác thực Gmail
-            và thiết lập mật khẩu cho tài khoản của bạn
-          </p>
-
-          <p>
-            <a href="${safeUrl}">
-              Xác thực Gmail và thiết lập mật khẩu
-            </a>
-          </p>
-
-          <p>
-            <strong>Lưu ý:</strong>
-            Liên kết có hiệu lực tối đa ${ttl}
-            kể từ khi được tạo và chỉ được sử dụng một lần.
-          </p>
-
-          <p>
-            Nếu liên kết đã hết hạn, vui lòng quay lại
-            trang đăng ký và chọn
-            "Gửi lại Email xác thực".
-          </p>
-
-          <p>
-            Nếu bạn không thực hiện yêu cầu này,
-            vui lòng bỏ qua Email.
-          </p>
-
-          <hr />
-
-          <p>
-            <small>Multi Warehouse E-Commerce</small>
-          </p>
-        </div>
-      `,
+      subject: title,
+      ...renderAccountEmail({
+        title,
+        fullName: params.fullName,
+        intro:
+          'Mở liên kết để xác thực Gmail và thiết lập mật khẩu cho tài khoản mới.',
+        actionLabel: 'Xác thực Email',
+        url: this.validateFrontendUrl(params.verifyUrl),
+        ttl: formatTtl(this.customerVerificationTtlSeconds),
+        recovery:
+          'Nếu liên kết hết hạn, chọn Gửi lại Email xác thực trên trang đăng ký.',
+        footer:
+          'Nếu bạn không đăng ký tài khoản MultiMart, bạn có thể bỏ qua thư này.',
+      }),
     });
   }
 
-  // 7. SEND STAFF INVITATION
   async sendStaffInvitation(params: StaffInvitationParams): Promise<void> {
-    const setupUrl = this.validateFrontendUrl(params.setupUrl);
-
-    const safeName = escapeHtml(params.fullName);
-    const safeUsername = escapeHtml(params.username);
-    const safeUrl = escapeHtml(setupUrl);
-
-    const ttl = formatTtl(this.staffInvitationTtlSeconds);
-
+    const title = 'Kích hoạt tài khoản nhân viên MultiMart';
     await this.sendMail({
       to: params.to,
-
-      subject: 'Thư mời kích hoạt tài khoản nhân viên',
-
-      text: [
-        `Xin chào ${params.fullName},`,
-        '',
-        'Quản trị viên đã tạo tài khoản nhân viên cho bạn.',
-        '',
-        `Tên đăng nhập: ${params.username}`,
-        '',
-        'Vui lòng mở liên kết sau để xác nhận Gmail',
-        'và thiết lập mật khẩu lần đầu:',
-        setupUrl,
-        '',
-        `Liên kết có hiệu lực tối đa ${ttl} kể từ khi được tạo.`,
-        'Liên kết chỉ được sử dụng một lần.',
-        '',
-        'Nếu liên kết hết hạn, vui lòng liên hệ Quản trị viên',
-        'để được gửi lại thư mời.',
-        '',
-        'Nếu bạn không mong đợi thư mời này,',
-        'vui lòng liên hệ Quản trị viên.',
-        '',
-        'Multi Warehouse E-Commerce',
-      ].join('\n'),
-
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2>Thư mời kích hoạt tài khoản nhân viên</h2>
-
-          <p>Xin chào <strong>${safeName}</strong>,</p>
-
-          <p>
-            Quản trị viên đã tạo tài khoản nhân viên
-            cho bạn trong hệ thống
-            Multi-Warehouse E-Commerce & Inventory Control System.
-          </p>
-
-          <p>
-            Tên đăng nhập của bạn: 
-            <strong>${safeUsername}</strong>
-          </p>
-
-          <p>
-            Vui lòng nhấn vào liên kết sau để xác nhận Gmail
-            và thiết lập mật khẩu lần đầu:
-          </p>
-
-          <p>
-            <a href="${safeUrl}">
-              Kích hoạt tài khoản nhân viên
-            </a>
-          </p>
-
-          <p>
-            <strong>Lưu ý:</strong>
-            Liên kết có hiệu lực tối đa ${ttl}
-            kể từ khi được tạo và chỉ được sử dụng một lần.
-          </p>
-
-          <p>
-            Nếu liên kết đã hết hạn,
-            vui lòng liên hệ Quản trị viên
-            để được gửi lại thư mời.
-          </p>
-
-          <p>
-            Nếu bạn không mong đợi thư mời này,
-            vui lòng liên hệ Quản trị viên.
-          </p>
-
-          <hr />
-
-          <p>
-            <small>Multi Warehouse E-Commerce</small>
-          </p>
-        </div>
-      `,
+      subject: title,
+      ...renderAccountEmail({
+        title,
+        fullName: params.fullName,
+        username: params.username,
+        intro:
+          'Quản trị viên đã tạo tài khoản nhân viên cho bạn. Đặt mật khẩu để truy cập khu vực làm việc.',
+        actionLabel: 'Kích hoạt tài khoản',
+        url: this.validateFrontendUrl(params.setupUrl),
+        ttl: formatTtl(this.staffInvitationTtlSeconds),
+        recovery:
+          'Nếu liên kết hết hạn, liên hệ quản trị viên để được gửi lại lời mời.',
+        footer:
+          'Nếu bạn không mong đợi lời mời này, vui lòng liên hệ quản trị viên MultiMart.',
+      }),
     });
   }
 
-  // 8. SEND PASSWORD RESET
   async sendPasswordReset(params: PasswordResetParams): Promise<void> {
-    const resetUrl = this.validateFrontendUrl(params.resetUrl);
-
-    const safeName = escapeHtml(params.fullName);
-    const safeUrl = escapeHtml(resetUrl);
-
-    const ttl = formatTtl(this.passwordResetTtlSeconds);
-
+    const title = 'Đặt lại mật khẩu MultiMart';
     await this.sendMail({
       to: params.to,
-
-      subject: 'Yêu cầu đặt lại mật khẩu - Multi Warehouse E-Commerce',
-
-      text: [
-        `Xin chào ${params.fullName},`,
-        '',
-        'Hệ thống đã nhận được yêu cầu đặt lại mật khẩu',
-        'cho tài khoản của bạn.',
-        '',
-        'Vui lòng mở liên kết sau để đặt lại mật khẩu:',
-        resetUrl,
-        '',
-        `Liên kết có hiệu lực tối đa ${ttl} kể từ khi được tạo.`,
-        'Liên kết chỉ được sử dụng một lần.',
-        '',
-        'Nếu bạn không yêu cầu đổi mật khẩu,',
-        'vui lòng bỏ qua Email này.',
-        'Mật khẩu hiện tại không bị thay đổi bởi yêu cầu này.',
-        '',
-        'Multi Warehouse E-Commerce',
-      ].join('\n'),
-
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2>Đặt lại mật khẩu</h2>
-
-          <p>Xin chào <strong>${safeName}</strong>,</p>
-
-          <p>
-            Hệ thống đã nhận được yêu cầu
-            đặt lại mật khẩu cho tài khoản của bạn.
-          </p>
-
-          <p>
-            Vui lòng nhấn vào liên kết sau
-            để thiết lập mật khẩu mới:
-          </p>
-
-          <p>
-            <a href="${safeUrl}">
-              Đặt lại mật khẩu
-            </a>
-          </p>
-
-          <p>
-            <strong>Lưu ý:</strong>
-            Liên kết có hiệu lực tối đa ${ttl}
-            kể từ khi được tạo và chỉ được sử dụng một lần.
-          </p>
-
-          <p>
-            Nếu bạn không yêu cầu đặt lại mật khẩu,
-            vui lòng bỏ qua Email này.
-          </p>
-
-          <p>
-            Yêu cầu này không tự động thay đổi
-            mật khẩu hiện tại của bạn.
-          </p>
-
-          <hr />
-
-          <p>
-            <small>Multi Warehouse E-Commerce</small>
-          </p>
-        </div>
-      `,
+      subject: title,
+      ...renderAccountEmail({
+        title,
+        fullName: params.fullName,
+        intro:
+          'MultiMart đã nhận được yêu cầu đặt lại mật khẩu. Mở liên kết để chọn mật khẩu mới.',
+        actionLabel: 'Đặt lại mật khẩu',
+        url: this.validateFrontendUrl(params.resetUrl),
+        ttl: formatTtl(this.passwordResetTtlSeconds),
+        recovery:
+          'Nếu liên kết hết hạn, yêu cầu liên kết mới trên trang Quên mật khẩu.',
+        footer:
+          'Nếu bạn không yêu cầu đặt lại mật khẩu, bạn có thể bỏ qua thư này.',
+      }),
     });
   }
 }

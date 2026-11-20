@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
-import { MessageCircle, Send, X, RotateCcw, LoaderCircle, Headphones, Plus } from "lucide-react";
+import { MessageCircle, Send, X, RotateCcw, LoaderCircle, Headphones, Plus, ArrowUpRight, Bot } from "lucide-react";
 import { useChatbot } from "@/hooks/useChatbot";
 import { MAX_CHAT_LENGTH } from "@/shared/lib/chatSession";
 import FormattedChatMessage from "./FormattedChatMessage";
+
+const starterQuestions = [
+  "Đặt hàng như thế nào?",
+  "Có những cách thanh toán nào?",
+  "Shop có tai nghe nào?",
+  "Đơn hàng của tôi tới đâu rồi?",
+];
 
 function ChatComposer({ ready, sending, onSend, inputRef }: {
   ready: boolean; sending: boolean; onSend: (text: string) => Promise<boolean>;
@@ -53,7 +60,7 @@ export default function ChatWidget() {
     if (open) input.current?.focus();
   }, [open]);
   useEffect(() => {
-    if (open) end.current?.scrollIntoView({ block: "nearest" });
+    if (open && (chat.messages.length || chat.sending)) end.current?.scrollIntoView({ block: "nearest" });
   }, [open, chat.messages.length, chat.sending]);
 
   function close() { setOpen(false); launcher.current?.focus(); }
@@ -66,7 +73,7 @@ export default function ChatWidget() {
           className="mb-3 flex h-[min(36rem,calc(100dvh-7rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-2xl">
           <header className="flex items-center gap-3 bg-brand-700 p-4 text-white">
             <MessageCircle size={24} aria-hidden="true" />
-            <div className="flex-1"><h2 id="chat-title" className="font-semibold">Trợ lý MultiMart</h2><p className="text-xs text-brand-100">Hỏi về sản phẩm và chính sách mua hàng</p></div>
+            <div className="flex-1"><h2 id="chat-title" className="font-semibold">Trợ lý MultiMart</h2><p className="text-xs text-brand-100">Hỗ trợ sản phẩm, thanh toán và đơn hàng</p></div>
             <button type="button" onClick={close} aria-label="Đóng chat" className="rounded-lg p-2 hover:bg-white/15"><X size={20} /></button>
           </header>
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
@@ -90,10 +97,19 @@ export default function ChatWidget() {
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4">
-            {chat.messages.length === 0 && <div className="space-y-3 py-5 text-sm text-slate-600">
-              <p className="font-semibold text-slate-900">MultiMart có thể hỗ trợ gì cho bạn?</p>
-              <p>Hỏi về đổi trả, giao hàng hoặc sản phẩm. Đăng nhập để tra cứu thông tin đơn hàng khi dịch vụ hỗ trợ.</p>
-              <p className="text-xs">Không gửi mật khẩu, mã OTP hay thông tin thẻ ngân hàng.</p>
+            {chat.messages.length === 0 && <div className="space-y-3 pb-4 text-sm text-slate-700">
+              <div className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><Bot size={20} aria-hidden="true" /></span>
+                <div><p className="mb-1 font-semibold text-slate-950">Chào bạn! Mình là trợ lý MultiMart.</p>
+                  <p className="mb-0 leading-relaxed">Chọn một câu bên dưới hoặc gõ câu hỏi của bạn.</p></div>
+              </div>
+              <div className="grid gap-1.5" aria-label="Câu hỏi gợi ý">
+                {starterQuestions.map(question => <button key={question} type="button" disabled={!chat.ready || chat.sending}
+                  onClick={() => void chat.send(question)}
+                  className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-800 hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50">
+                  {question}<ArrowUpRight size={15} className="shrink-0 text-blue-700" aria-hidden="true" />
+                </button>)}
+              </div>
             </div>}
             <div role="log" aria-label="Lịch sử hội thoại" aria-live="polite" aria-relevant="additions" className="space-y-3">
               {chat.messages.map(message => <div key={message.id} className={message.role === "user" ? "ml-6" : "mr-6"}>
@@ -108,22 +124,17 @@ export default function ChatWidget() {
                   <FormattedChatMessage content={message.text} isUser={message.role === "user"} />
                 </div>
                 {message.delivery === "failed" && <p className="mt-1 text-xs text-red-700">Chưa nhận được phản hồi</p>}
-                {message.role === "assistant" && message.isFallback && !message.escalateToSupport && (
-                  <p className="mt-1.5 text-[11.5px] font-medium text-amber-700">
-                    Phản hồi dự phòng — cần nhân viên xác nhận thêm.
-                  </p>
-                )}
                 {message.escalateToSupport && (
                   <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-950 shadow-xs">
                     <p className="flex items-center gap-1.5 font-semibold text-amber-900">
                       <Headphones size={15} className="text-amber-700" />
-                      Đã ghi nhận nhu cầu CSKH
+                      Đã gửi yêu cầu hỗ trợ
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-amber-900">
-                      {message.escalationMessage || "Phiên chat đã được đánh dấu cần nhân viên hỗ trợ."}
+                      {message.escalationMessage || "Nhân viên có thể xem phiên chat này để hỗ trợ bạn."}
                     </p>
                     <p className="mt-1.5 text-[11px] text-amber-700/80">
-                      Chưa xác nhận có nhân viên trực tuyến hoặc tiếp nhận xử lý.
+                      Bạn có thể tiếp tục hỏi trợ lý trong lúc chờ.
                     </p>
                   </div>
                 )}
