@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAdminCtx } from '../../../components/admin/AdminContext';
 import { OrderDrawer } from '../../../components/admin/OrderDrawer';
 import { OrderBadge } from '../../../components/admin/StatusBadge';
@@ -23,6 +24,7 @@ import {
 
 export default function AdminOrdersPage() {
   const { warehouseId } = useAdminCtx();
+  const isStaff = usePathname().startsWith('/staff/');
   const {
     orders,
     total,
@@ -136,7 +138,7 @@ export default function AdminOrdersPage() {
             className="form-control"
           />
         </label>
-        <WarehouseScope />
+        {!isStaff && <WarehouseScope />}
       </div>
 
       <div className="admin-workspace-panel overflow-hidden">

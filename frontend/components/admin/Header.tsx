@@ -7,7 +7,11 @@ import { Dropdown } from 'react-bootstrap';
 import { Bell, AlertTriangle } from 'lucide-react';
 import { useAdminCtx } from './AdminContext';
 import { useStockAlerts } from '../../hooks/useStockAlerts';
-import { ADMIN_NAV_GROUPS, activeAdminNavItem } from '../../shared/config/adminNav';
+import {
+  ADMIN_NAV_GROUPS,
+  STAFF_NAV_GROUPS,
+  activeAdminNavItem,
+} from '../../shared/config/adminNav';
 import { formatTime } from '../../shared/lib/format';
 
 export interface HeaderProps {
@@ -32,7 +36,7 @@ export function Header({
     if (pathname.includes('/orders')) return 'Quản lý đơn hàng';
     if (pathname.includes('/inventory/alerts') || pathname.includes('/alerts')) return 'Cảnh báo tồn kho';
     if (pathname.includes('/inventory')) return 'Quản lý tồn kho';
-    if (pathname.includes('/products')) return 'Quản lý sản phẩm';
+    if (pathname.includes('/products')) return 'Tra cứu sản phẩm';
     if (pathname.includes('/categories')) return 'Danh mục sản phẩm';
     if (pathname.includes('/settings')) return 'Cài đặt hệ thống';
     return 'Dashboard';
@@ -54,14 +58,39 @@ export function Header({
   }, []);
 
   const isStaff = variant === 'staff';
-  const adminItem = activeAdminNavItem(pathname, ADMIN_NAV_GROUPS);
+  const navItem = activeAdminNavItem(
+    pathname,
+    isStaff ? STAFF_NAV_GROUPS : ADMIN_NAV_GROUPS,
+  );
   const isOrderDetail = pathname.startsWith('/admin/orders/');
   const adminTitle = isOrderDetail ? 'Chi tiết đơn hàng'
     : pathname === '/admin/alerts' ? 'Cảnh báo tồn kho'
-      : adminItem?.label ?? 'Quản trị';
-  const showWarehouseSelector = isStaff || pathname === '/admin/alerts' ||
-    (adminItem?.warehouseScoped && !isOrderDetail);
+      : navItem?.label ?? 'Quản trị';
+  const showWarehouseSelector = pathname === '/admin/alerts' ||
+    (navItem?.warehouseScoped && !isOrderDetail);
+  const staffScopedHeader = isStaff && showWarehouseSelector;
   const alertsPageUrl = isStaff ? '/staff/inventory/alerts' : '/admin/inventory/alerts';
+  const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId);
+  const warehouseSelector = showWarehouseSelector && (
+    <select
+      value={warehouseId}
+      onChange={(event) => setWarehouseId(event.target.value)}
+      className="form-select form-select-sm"
+      style={{
+        minHeight: '34px',
+        fontSize: '0.8rem',
+        borderColor: '#d1d5db',
+        borderRadius: '6px',
+        maxWidth: isStaff ? undefined : '180px',
+      }}
+      aria-label="Chọn kho xem dữ liệu"
+    >
+      <option value="ALL">Tất cả kho hàng</option>
+      {warehouses.map((warehouse) => (
+        <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+      ))}
+    </select>
+  );
 
   return (
     <>
@@ -70,11 +99,14 @@ export function Header({
       <header
         className={`admin-header ${hasScrolled ? 'has-shadow' : ''} px-3 px-md-4`}
         style={{
-          height: '56px',
+          height: staffScopedHeader ? 'auto' : '56px',
           borderBottom: '1px solid #ede9fe',
         }}
       >
-        <div className="d-flex align-items-center justify-content-between h-100 w-100">
+        <div className={staffScopedHeader
+          ? 'staff-header-content'
+          : 'd-flex align-items-center justify-content-between h-100 w-100'}
+        >
           {/* Cụm trái: Nút hamburger (mobile) & Tiêu đề trang */}
           <div className="d-flex align-items-center gap-2">
             <button
@@ -96,29 +128,16 @@ export function Header({
             </span>
 
             {/* Dropdown chọn kho đang xem */}
-            {showWarehouseSelector && <div className="d-none d-md-flex align-items-center gap-2 ms-3">
-              <select
-                value={warehouseId}
-                onChange={e => setWarehouseId(e.target.value)}
-                className="form-select form-select-sm"
-                style={{
-                  minHeight: '34px',
-                  fontSize: '0.8rem',
-                  borderColor: '#d1d5db',
-                  borderRadius: '6px',
-                  maxWidth: '180px',
-                }}
-                aria-label="Chọn kho xem dữ liệu"
-              >
-                <option value="ALL">Tất cả kho hàng</option>
-                {warehouses.map(w => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>}
+            {!isStaff && showWarehouseSelector && (
+              <div className="d-none d-md-flex align-items-center gap-2 ms-3">
+                {warehouseSelector}
+              </div>
+            )}
           </div>
+
+          {staffScopedHeader && (
+            <div className="staff-header-warehouse">{warehouseSelector}</div>
+          )}
 
           {/* Cụm phải: Chuông cảnh báo (Dropdown T5) & Nhãn vai trò */}
           <div className="d-flex align-items-center gap-3">
@@ -166,6 +185,12 @@ export function Header({
                     {openAlertsCount} đang mở
                   </span>
                 </div>
+
+                {isStaff && (
+                  <div className="px-3 py-2 bg-light border-bottom small text-secondary">
+                    {selectedWarehouse?.name ?? 'Tất cả kho hàng'}
+                  </div>
+                )}
 
                 <div
                   className="list-group list-group-flush"

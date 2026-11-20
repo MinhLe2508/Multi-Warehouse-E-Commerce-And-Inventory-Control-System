@@ -25,11 +25,63 @@ import type { InventorySummaryResponse } from '../../shared/types/admin';
 
 interface WarehouseStockChartProps {
   summary: InventorySummaryResponse | null;
+  variant?: 'admin' | 'staff';
 }
 
 const emptySubscribe = () => () => {};
 
-export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summary }) => {
+function StaffWarehouseDistribution({
+  warehouses,
+}: {
+  warehouses: InventorySummaryResponse['warehouseDistribution'];
+}) {
+  if (warehouses.length === 0) {
+    return <p className="small text-secondary mb-0">Không có dữ liệu kho theo bộ lọc.</p>;
+  }
+
+  const maxStock = warehouses.reduce(
+    (max, warehouse) => Math.max(max, warehouse.totalAvailable + warehouse.totalReserved),
+    1,
+  );
+
+  return (
+    <ul className="list-unstyled d-grid gap-3 mb-0" aria-label="Phân bổ tồn kho theo kho">
+      {warehouses.map((warehouse) => (
+        <li key={warehouse.warehouseId}>
+          <div className="d-flex flex-wrap gap-2 small mb-2">
+            <strong>{warehouse.warehouseCode}</strong>
+            <span className="text-secondary">{warehouse.warehouseName}</span>
+          </div>
+          <div className="staff-stock-track" aria-hidden="true">
+            <span
+              className="staff-stock-available"
+              style={{ width: `${(warehouse.totalAvailable / maxStock) * 100}%` }}
+            />
+            <span
+              className="staff-stock-reserved"
+              style={{ width: `${(warehouse.totalReserved / maxStock) * 100}%` }}
+            />
+          </div>
+          <div className="d-flex flex-wrap gap-3 small text-secondary mt-2">
+            <span>
+              <span className="staff-stock-key staff-stock-available" aria-hidden="true" />
+              Khả dụng <strong>{warehouse.totalAvailable.toLocaleString('vi-VN')}</strong>
+            </span>
+            <span>
+              <span className="staff-stock-key staff-stock-reserved" aria-hidden="true" />
+              Giữ chỗ <strong>{warehouse.totalReserved.toLocaleString('vi-VN')}</strong>
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
+  summary,
+  variant = 'admin',
+}) => {
   const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   if (!summary) return null;
@@ -129,8 +181,9 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
 
       {/* Grid Biểu đồ & Thẻ kho */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Biểu đồ Recharts */}
-        <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        <div
+          className={`lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col ${variant === 'admin' ? 'justify-between' : ''}`}
+        >
           <div className="mb-3">
             <h2 className="admin-panel-heading d-flex align-items-center gap-2">
               <TrendingUp size={16} className="text-purple-600" aria-hidden="true" />
@@ -138,46 +191,50 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({ summar
             </h2>
           </div>
 
-          <div className="w-full h-64">
-            {mounted && chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={chartData}
-                  margin={{ top: 20, right: 30, left: 10, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '12px',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
-                  <Bar
-                    dataKey="Khả dụng"
-                    fill="#7c3aed"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={48}
-                  />
-                  <Bar
-                    dataKey="Giữ chỗ"
-                    fill="#0284c7"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={48}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                {mounted ? 'Không có dữ liệu kho theo bộ lọc' : 'Đang tải biểu đồ...'}
-              </div>
-            )}
-          </div>
+          {variant === 'staff' ? (
+            <StaffWarehouseDistribution warehouses={warehouseDistribution} />
+          ) : (
+            <div className="w-full h-64">
+              {mounted && chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 20, right: 30, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
+                    <Bar
+                      dataKey="Khả dụng"
+                      fill="#7c3aed"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={48}
+                    />
+                    <Bar
+                      dataKey="Giữ chỗ"
+                      fill="#0284c7"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={48}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                  {mounted ? 'Không có dữ liệu kho theo bộ lọc' : 'Đang tải biểu đồ...'}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Danh sách kho và Top cảnh báo */}

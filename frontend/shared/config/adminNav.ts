@@ -166,6 +166,7 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/staff/dashboard',
+        warehouseScoped: true,
         label: 'Dashboard',
         roles: ['WAREHOUSE_STAFF'],
       },
@@ -178,6 +179,7 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/staff/orders',
+        warehouseScoped: true,
         label: 'Đơn hàng',
         roles: ['WAREHOUSE_STAFF'],
       },
@@ -190,6 +192,7 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/staff/inventory',
+        warehouseScoped: true,
         label: 'Tồn kho',
         roles: ['WAREHOUSE_STAFF'],
       },
@@ -202,6 +205,7 @@ export const STAFF_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       {
         href: '/staff/inventory/alerts',
+        warehouseScoped: true,
         label: 'Cảnh báo',
         roles: ['WAREHOUSE_STAFF'],
       },
@@ -234,4 +238,8 @@ export function activeAdminNavItem(path: string, groups: AdminNavGroup[]) {
     }
   }
   return match;
+}
+
+export function staffInventoryHref(warehouseId: string, sku: string): string {
+  return '/staff/inventory?' + new URLSearchParams({ warehouseId, sku });
 }

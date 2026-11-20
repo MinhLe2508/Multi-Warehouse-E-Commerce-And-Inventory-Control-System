@@ -1,5 +1,6 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import '../admin/admin.css';
+import './staff.css';
 import { Be_Vietnam_Pro } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { AdminShell } from '../../components/admin/AdminShell';

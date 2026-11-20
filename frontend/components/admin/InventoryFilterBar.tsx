@@ -13,6 +13,7 @@ interface InventoryFilterBarProps {
   warehouseId: string;
   onWarehouseChange: (val: string) => void;
   warehouses: Warehouse[];
+  showWarehouseFilter?: boolean;
   status: string;
   onStatusChange: (val: string) => void;
   onReset: () => void;
@@ -29,6 +30,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
   warehouseId,
   onWarehouseChange,
   warehouses,
+  showWarehouseFilter = true,
   status,
   onStatusChange,
   onReset,
@@ -38,7 +40,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
   const isFiltered =
     search.trim() !== '' ||
     category !== 'ALL' ||
-    warehouseId !== 'ALL' ||
+    (showWarehouseFilter && warehouseId !== 'ALL') ||
     status !== 'ALL';
 
   return (
@@ -51,7 +53,9 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
           <div>
             <h3 className="text-base font-bold text-slate-800">Bộ lọc tồn kho</h3>
             <p className="text-xs text-slate-500">
-              Tìm kiếm và phân loại sản phẩm theo kho hàng và trạng thái cảnh báo
+              {showWarehouseFilter
+                ? 'Tìm kiếm và phân loại sản phẩm theo kho hàng và trạng thái cảnh báo'
+                : 'Tìm theo tên, mã SKU, danh mục hoặc trạng thái tồn kho'}
             </p>
           </div>
         </div>
@@ -74,16 +78,17 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${showWarehouseFilter ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4 pt-4`}>
         {/* Tìm kiếm */}
         <div className="relative">
-          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
+          <label htmlFor="inventory-search" className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Tìm kiếm theo SKU hoặc Tên
           </label>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
+              id="inventory-search"
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Gõ mã SKU hoặc tên SP..."
@@ -91,7 +96,9 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
             />
             {search && (
               <button
+                type="button"
                 onClick={() => onSearchChange('')}
+                aria-label="Xóa tìm kiếm tồn kho"
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
               >
                 <X className="w-3.5 h-3.5" />
@@ -102,10 +109,11 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
 
         {/* Danh mục */}
         <div>
-          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
+          <label htmlFor="inventory-category" className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Danh mục sản phẩm
           </label>
           <select
+            id="inventory-category"
             value={category}
             onChange={(e) => onCategoryChange(e.target.value)}
             className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"
@@ -118,31 +126,34 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
           </select>
         </div>
 
-        {/* Kho hàng — Nhãn văn bản thẳng hàng, không icon, responsive hoàn hảo */}
-        <div>
-          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
-            Kho hàng
-          </label>
-          <select
-            value={warehouseId}
-            onChange={(e) => onWarehouseChange(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"
-          >
-            <option value="ALL">Toàn bộ kho (Toàn quốc)</option>
-            {warehouses.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.code} - {wh.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {showWarehouseFilter && (
+          <div>
+            <label htmlFor="inventory-warehouse" className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
+              Kho hàng
+            </label>
+            <select
+              id="inventory-warehouse"
+              value={warehouseId}
+              onChange={(e) => onWarehouseChange(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"
+            >
+              <option value="ALL">Toàn bộ kho (Toàn quốc)</option>
+              {warehouses.map((wh) => (
+                <option key={wh.id} value={wh.id}>
+                  {wh.code} - {wh.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Trạng thái tồn kho */}
         <div>
-          <label className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
+          <label htmlFor="inventory-status" className="text-xs font-semibold text-slate-600 mb-1.5 h-5 flex items-center">
             Trạng thái tồn kho
           </label>
           <select
+            id="inventory-status"
             value={status}
             onChange={(e) => onStatusChange(e.target.value)}
             className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"

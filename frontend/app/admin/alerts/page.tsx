@@ -7,6 +7,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAdminCtx } from '../../../components/admin/AdminContext';
 import { AlertBadge } from '../../../components/admin/StatusBadge';
 import { useStockAlerts } from '../../../hooks/useStockAlerts';
+import { staffInventoryHref } from '../../../shared/config/adminNav';
 import { formatTime } from '../../../shared/lib/format';
 import type { AlertLevel } from '../../../shared/types/admin';
 
@@ -162,7 +163,9 @@ export default function AdminAlertsPage() {
 
                 <div className="d-flex flex-wrap gap-2">
                   <Link
-                    href={isStaff ? '/staff/inventory' : '/admin/inventory'}
+                    href={isStaff
+                      ? staffInventoryHref(a.warehouseId, a.productSku)
+                      : '/admin/inventory'}
                     className="btn btn-gradient-purple small d-inline-flex align-items-center gap-1"
                     style={{
                       minHeight: '40px',

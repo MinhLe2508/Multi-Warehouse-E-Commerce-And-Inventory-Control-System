@@ -234,7 +234,18 @@ function toInventorySummary(
   };
 }
 
-export function useAdminInventory(): UseAdminInventoryReturn {
+interface InventoryOptions {
+  initialSearch?: string;
+  warehouseScope?: {
+    warehouseId: string;
+    setWarehouseId: (id: string) => void;
+  };
+}
+
+export function useAdminInventory({
+  initialSearch = '',
+  warehouseScope,
+}: InventoryOptions = {}): UseAdminInventoryReturn {
   const scope = useAuthStore(accountScope);
   const [snapshot, setSnapshot] = useState<InventorySnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -243,11 +254,15 @@ export function useAdminInventory(): UseAdminInventoryReturn {
   const catalogRequest = useRef<CatalogRequest | null>(null);
   const realtimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [highlightedInventoryIds, setHighlightedInventoryIds] = useState<string[]>([]);
-  const [search, setSearchState] = useState('');
+  const [search, setSearchState] = useState(initialSearch);
   const [category, setCategoryState] = useState('ALL');
-  const [warehouseId, setWarehouseIdState] = useState('ALL');
+  const [localWarehouseId, setWarehouseIdState] = useState('ALL');
+  const warehouseId = warehouseScope?.warehouseId ?? localWarehouseId;
   const [status, setStatusState] = useState('ALL');
-  const [page, setPageState] = useState(1);
+  const [paging, setPaging] = useState({ warehouseId, page: 1 });
+  if (paging.warehouseId !== warehouseId) {
+    setPaging({ warehouseId, page: 1 });
+  }
   const [pageSize, setPageSizeState] = useState(10);
   const [editingTarget, setEditingTarget] =
     useState<UseAdminInventoryReturn['editingTarget']>(null);
@@ -327,7 +342,7 @@ export function useAdminInventory(): UseAdminInventoryReturn {
       return;
     }
     setRevision((value) => value + 1);
-  }, []);
+  }, [setRevision]);
 
   const refreshFromEvent = useCallback(() => {
     if (realtimeTimer.current !== null) return;
@@ -352,7 +367,7 @@ export function useAdminInventory(): UseAdminInventoryReturn {
       );
       refreshFromEvent();
     },
-    [refreshFromEvent]
+    [refreshFromEvent, setHighlightedInventoryIds]
   );
 
   const { status: realtimeStatus } = useInventoryRealtime({
@@ -388,9 +403,10 @@ export function useAdminInventory(): UseAdminInventoryReturn {
   );
   const totalFilteredCount = filteredProducts.length;
   const totalPages = Math.max(1, Math.ceil(totalFilteredCount / pageSize));
-  const currentPage = Math.min(page, totalPages);
+  const currentPage = Math.min(paging.page, totalPages);
   const start = (currentPage - 1) * pageSize;
 
+  const setPageState = (page: number) => setPaging({ warehouseId, page });
   const setSearch = (value: string) => {
     setSearchState(value);
     setPageState(1);
@@ -400,7 +416,8 @@ export function useAdminInventory(): UseAdminInventoryReturn {
     setPageState(1);
   };
   const setWarehouseId = (value: string) => {
-    setWarehouseIdState(value);
+    const selectWarehouse = warehouseScope?.setWarehouseId ?? setWarehouseIdState;
+    selectWarehouse(value);
     setPageState(1);
   };
   const setStatus = (value: string) => {
@@ -414,7 +431,7 @@ export function useAdminInventory(): UseAdminInventoryReturn {
   const resetFilters = () => {
     setSearchState('');
     setCategoryState('ALL');
-    setWarehouseIdState('ALL');
+    if (!warehouseScope) setWarehouseIdState('ALL');
     setStatusState('ALL');
     setPageState(1);
   };
