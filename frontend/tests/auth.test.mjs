@@ -11,7 +11,15 @@ function load(path, deps = {}) {
   return loaded.exports;
 }
 const { actionRequest, passwordError, apiErrorMessage } = load('../shared/lib/authContract.ts');
+const { getSafeNextRoute } = load('../shared/lib/roleRedirect.ts');
 const token = 'a'.repeat(64);
+test('staff can return to checkout after signing in while restricted destinations stay scoped', () => {
+  assert.equal(getSafeNextRoute('WAREHOUSE_STAFF', '/checkout?items=sku'), '/checkout?items=sku');
+  assert.equal(getSafeNextRoute('WAREHOUSE_STAFF', '/staff/inventory'), '/staff/inventory');
+  assert.equal(getSafeNextRoute('WAREHOUSE_STAFF', '/orders/../admin/orders'), '/staff/dashboard');
+  assert.equal(getSafeNextRoute('CUSTOMER', '/%2e/staff/dashboard'), '/');
+  assert.equal(getSafeNextRoute('CUSTOMER', '/x/..//example.test'), '/');
+});
 test('account action payloads match backend DTOs and omit confirmPassword', () => {
   assert.deepEqual(actionRequest('staff-invitation', token, 'Password1'), { path: '/auth/activate-staff', body: { token, password: 'Password1' } });
   assert.deepEqual(actionRequest('verify-email', token, 'Password1'), { path: '/auth/verify-email', body: { token, password: 'Password1' } });

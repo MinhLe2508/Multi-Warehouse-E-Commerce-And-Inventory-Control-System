@@ -94,14 +94,14 @@ function CustomerNoticeList() {
   const [message, setMessage] = useState("");
   const limit = 12;
   const resource = useShopResource<{ items: Notification[]; total: number }>("/notifications?" + new URLSearchParams({
-    limit: String(limit), offset: String((page - 1) * limit), ...(unreadOnly && { unreadOnly: "true" }),
+    scope: "shopping", limit: String(limit), offset: String((page - 1) * limit), ...(unreadOnly && { unreadOnly: "true" }),
   }), { identity, interval: 30_000 });
 
   async function mark(id?: string) {
     if (busy) return;
     setBusy(true); setMessage("");
     try {
-      await authenticatedRequest(id ? "/notifications/" + id + "/read" : "/notifications/read-all", {}, "PATCH");
+      await authenticatedRequest(id ? "/notifications/" + id + "/read" : "/notifications/read-all?scope=shopping", {}, "PATCH");
       setPage(1);
       resource.refresh();
       window.dispatchEvent(new Event(SHOP_NOTIFICATIONS_CHANGED));

@@ -118,6 +118,9 @@
 .mm-product-link { display: block; height: 100%; }
 .mm-product-image { aspect-ratio: 1.13; background: #f1f5f9; position: relative; overflow: hidden; }
 .mm-product-image img { object-fit: cover; transition: transform .25s; }
+.mm-product-category-art { position: absolute; inset: 0; display: grid; place-items: center; }
+.mm-product-category-art .mm-category-mark { width: 4.25rem; height: 4.25rem; border-radius: 1.15rem; }
+.mm-product-category-art svg { width: 2rem; height: 2rem; }
 .mm-product-card:hover .mm-product-image img { transform: scale(1.025); }
 .mm-discount { position: absolute; left: 11px; top: 11px; border-radius: 6px; background: #fee8ee; color: #9f1239; font-size: .78rem; font-weight: 730; padding: 3px 7px; }
 .mm-product-text { padding: 13px 14px 5px; }

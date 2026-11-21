@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowUpRight, Boxes, HandCoins, Truck } from "lucide-react";
+import { ArrowUpRight, Boxes, ChevronDown, HandCoins, Truck } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useCategories, useProducts } from "@/hooks/useCatalog";
 import ProductCard from "@/components/storefront/ProductCard";
@@ -13,8 +14,10 @@ export default function HomePage() {
   const { language } = useTranslation();
   const products = useProducts({ pageSize: 8, inStock: true });
   const categories = useCategories();
+  const [allCategories, setAllCategories] = useState(false);
   const featured = products.data?.items ?? [];
   const roots = categories.data?.filter((item) => !item.parentId) ?? [];
+  const visibleCategories = allCategories ? roots : roots.slice(0, 8);
 
   return <div className="mm-container mm-home">
     <section className="mm-hero">
@@ -22,8 +25,8 @@ export default function HomePage() {
         <Image src="/storefront/technology-hero.webp" alt="" fill preload sizes="(max-width: 700px) 100vw, 70vw" />
       </div>
       <div className="mm-hero-content">
-        <h1>{tx("Công nghệ cho mỗi ngày", "Technology for every day")}</h1>
-        <p>{tx("Từ điện thoại, tai nghe đến thiết bị thông minh cho ngôi nhà của bạn.", "From phones and headphones to smart devices for your home.")}</p>
+        <h1>{tx("Mua sắm cho mỗi ngày", "Shop for every day")}</h1>
+        <p>{tx("Khám phá đồ công nghệ, gia dụng, đồ dùng nhà bếp và nhiều ngành hàng tại MultiMart.", "Explore tech, home essentials, kitchenware and more at MultiMart.")}</p>
         <div className="mm-cta-group">
           <Link href="/products" className="mm-button hero-primary">{tx("Khám phá sản phẩm", "Explore products")}</Link>
           <a href="#categories" className="mm-button hero-secondary">{tx("Xem danh mục", "Browse categories")}</a>
@@ -36,10 +39,17 @@ export default function HomePage() {
       <div><HandCoins size={22} /><span><strong>{tx("Thanh toán khi nhận hàng", "Cash on delivery")}</strong><small>{tx("Xem số tiền cần trả trước khi xác nhận", "See your total before placing an order")}</small></span></div>
     </section>
     <section className="mm-home-section" id="categories">
-      <div className="mm-section-heading"><h2>{tx("Mua theo danh mục", "Shop by category")}</h2></div>
+      <div className="mm-section-heading">
+        <h2>{tx("Mua theo danh mục", "Shop by category")}</h2>
+        {roots.length > 8 && <button className="mm-link" type="button" aria-expanded={allCategories} aria-controls="store-categories"
+          onClick={() => setAllCategories((value) => !value)}>
+          {allCategories ? tx("Thu gọn", "Show fewer") : tx(`Xem đủ ${roots.length} danh mục`, `View all ${roots.length} categories`)}
+          <ChevronDown size={17} aria-hidden="true" />
+        </button>}
+      </div>
       {categories.loading && <ShopLoading />}
       {Boolean(categories.error) && <ShopError retry={categories.retry} />}
-      {roots.length > 0 && <div className="mm-category-grid">{roots.map((item) =>
+      {roots.length > 0 && <div className="mm-category-grid" id="store-categories">{visibleCategories.map((item) =>
         <Link key={item.id} href={"/products?category=" + encodeURIComponent(item.slug ?? item.id)}>
           <CategoryMark name={item.name.vi} /><strong>{item.name[language]}</strong>
         </Link>)}</div>}

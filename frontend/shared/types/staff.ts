@@ -47,12 +47,6 @@ export interface UpdateStaffInput {
   phone?: string | null;
 }
 
-// PATCH /admin/staff/:id/status
-export interface UpdateStaffStatusInput {
-  isActive: boolean;
-  reason?: string;
-}
-
 // POST /admin/staff: tài khoản có thể đã tạo dù gửi email thất bại
 export interface CreateStaffResponse {
   staff: Staff;
@@ -64,4 +58,21 @@ export interface CreateStaffResponse {
 export interface ResendStaffInvitationResponse {
   invitationSent: true;
   message: string;
+}
+
+export type StaffRoleChange = 'CUSTOMER' | 'WAREHOUSE_STAFF';
+
+export interface StaffRoleChangeResponse {
+  userId: string;
+  role: StaffRoleChange;
+  activationEmail: 'NOT_REQUIRED' | 'SENT' | 'FAILED';
+}
+
+export interface ExistingCustomer {
+  id: string;
+  fullName: string;
+  email: string;
+  username: string;
+  isActive: boolean;
+  emailVerifiedAt: string | null;
 }

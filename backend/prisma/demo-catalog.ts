@@ -41,6 +41,7 @@ export type DemoWarehouseCode = (typeof DEMO_WAREHOUSES)[number]['code'];
 
 interface DemoProduct {
   sku: string;
+  legacySku: string;
   slug: string;
   name: string;
   description: string;
@@ -53,7 +54,8 @@ interface DemoProduct {
 // Giá demo tính theo VND. Ảnh lấy từ frontend/public/products/<slug>.webp.
 export const DEMO_PRODUCTS: readonly DemoProduct[] = [
   {
-    sku: 'DEMO-PHONE-18D',
+    sku: 'MOB-IP18DUO-256',
+    legacySku: 'DEMO-PHONE-18D',
     slug: 'iphone18duo',
     name: 'iPhone 18 Duo 256 GB',
     description:
@@ -64,7 +66,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 28, 'WH-DN01': 12, 'WH-HCM01': 44 },
   },
   {
-    sku: 'DEMO-TAB-AIR11',
+    sku: 'TAB-NOVAAIR-11',
+    legacySku: 'DEMO-TAB-AIR11',
     slug: 'nova-tab-air-11',
     name: 'Máy tính bảng Nova Tab Air 11',
     description:
@@ -75,7 +78,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 24, 'WH-DN01': 11, 'WH-HCM01': 36 },
   },
   {
-    sku: 'DEMO-NBOOK-A14',
+    sku: 'LAP-NOVABOOK-A14',
+    legacySku: 'DEMO-NBOOK-A14',
     slug: 'novabook-air-14',
     name: 'Laptop NovaBook Air 14',
     description:
@@ -86,7 +90,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 24, 'WH-DN01': 13, 'WH-HCM01': 36 },
   },
   {
-    sku: 'DEMO-NBOOK-P16',
+    sku: 'LAP-NOVABOOK-P16',
+    legacySku: 'DEMO-NBOOK-P16',
     slug: 'novabook-pro-16',
     name: 'Laptop NovaBook Pro 16',
     description:
@@ -97,7 +102,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 14, 'WH-DN01': 4, 'WH-HCM01': 22 },
   },
   {
-    sku: 'DEMO-BUDS-2',
+    sku: 'AUD-AIRBEAM-BUDS2',
+    legacySku: 'DEMO-BUDS-2',
     slug: 'airbeam-buds-2',
     name: 'Tai nghe AirBeam Buds 2',
     description:
@@ -108,7 +114,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 68, 'WH-DN01': 36, 'WH-HCM01': 72 },
   },
   {
-    sku: 'DEMO-WAVE-MINI',
+    sku: 'AUD-WAVE-MINI',
+    legacySku: 'DEMO-WAVE-MINI',
     slug: 'wave-mini',
     name: 'Loa Bluetooth Wave Mini',
     description: 'Loa di động vỏ lưới, có dây đeo và cổng sạc USB-C.',
@@ -118,7 +125,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 40, 'WH-DN01': 20, 'WH-HCM01': 56 },
   },
   {
-    sku: 'DEMO-PULSE-WATCH',
+    sku: 'WRB-PULSE-WATCH-S',
+    legacySku: 'DEMO-PULSE-WATCH',
     slug: 'pulse-watch-s',
     name: 'Đồng hồ Pulse Watch S',
     description:
@@ -129,7 +137,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 6, 'WH-DN01': 9, 'WH-HCM01': 32 },
   },
   {
-    sku: 'DEMO-PULSE-BAND',
+    sku: 'WRB-PULSE-BAND-FIT',
+    legacySku: 'DEMO-PULSE-BAND',
     slug: 'pulse-band-fit',
     name: 'Vòng đeo Pulse Band Fit',
     description:
@@ -140,7 +149,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 32, 'WH-DN01': 17, 'WH-HCM01': 48 },
   },
   {
-    sku: 'DEMO-GAN-65W',
+    sku: 'ACC-GAN-65W',
+    legacySku: 'DEMO-GAN-65W',
     slug: 'sac-gan-65w',
     name: 'Củ sạc GaN 65 W',
     description:
@@ -151,7 +161,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 60, 'WH-DN01': 27, 'WH-HCM01': 86 },
   },
   {
-    sku: 'DEMO-SWIFT-M3',
+    sku: 'ACC-SWIFT-M3',
+    legacySku: 'DEMO-SWIFT-M3',
     slug: 'chuot-swift-m3',
     name: 'Chuột không dây Swift M3',
     description:
@@ -162,7 +173,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 54, 'WH-DN01': 24, 'WH-HCM01': 68 },
   },
   {
-    sku: 'DEMO-HOME-C2',
+    sku: 'SMH-HOMEVIEW-C2',
+    legacySku: 'DEMO-HOME-C2',
     slug: 'homeview-c2',
     name: 'Camera HomeView C2',
     description:
@@ -173,7 +185,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 30, 'WH-DN01': 5, 'WH-HCM01': 48 },
   },
   {
-    sku: 'DEMO-SWEEP-R5',
+    sku: 'SMH-SWEEP-R5',
+    legacySku: 'DEMO-SWEEP-R5',
     slug: 'sweep-r5',
     name: 'Robot hút bụi Sweep R5',
     description:
@@ -184,7 +197,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 22, 'WH-DN01': 11, 'WH-HCM01': 30 },
   },
   {
-    sku: 'DEMO-VIEW-27',
+    sku: 'DSP-NOVAVIEW-27QHD',
+    legacySku: 'DEMO-VIEW-27',
     slug: 'novaview-27-qhd',
     name: 'Màn hình NovaView 27 QHD',
     description:
@@ -195,7 +209,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 24, 'WH-DN01': 14, 'WH-HCM01': 33 },
   },
   {
-    sku: 'DEMO-BEAM-MINI',
+    sku: 'DSP-POCKETBEAM-MINI',
+    legacySku: 'DEMO-BEAM-MINI',
     slug: 'pocketbeam-mini',
     name: 'Máy chiếu PocketBeam Mini',
     description: 'Máy chiếu nhỏ gọn cho phòng tối, hỗ trợ đầu vào HDMI.',
@@ -205,7 +220,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 0, 'WH-DN01': 0, 'WH-HCM01': 0 },
   },
   {
-    sku: 'DEMO-SSD-1TB',
+    sku: 'STG-SWIFT-SSD1TB',
+    legacySku: 'DEMO-SSD-1TB',
     slug: 'ssd-swift-1tb',
     name: 'SSD di động Swift 1 TB',
     description: 'Ổ SSD gắn ngoài vỏ nhôm, dung lượng 1 TB, kết nối USB-C.',
@@ -215,7 +231,8 @@ export const DEMO_PRODUCTS: readonly DemoProduct[] = [
     stock: { 'WH-HN01': 45, 'WH-DN01': 25, 'WH-HCM01': 55 },
   },
   {
-    sku: 'DEMO-SD-128',
+    sku: 'STG-SDPRO-128',
+    legacySku: 'DEMO-SD-128',
     slug: 'the-nho-pro-128gb',
     name: 'Thẻ nhớ SD Pro 128 GB',
     description:

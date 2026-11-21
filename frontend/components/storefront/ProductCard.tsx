@@ -7,7 +7,7 @@ import ProductImage from "@/components/products/ProductImage";
 import { useCartStore } from "@/store/useCartStore";
 import type { Product } from "@/shared/types/product";
 import { formatVND, getTotalStock } from "@/shared/lib/utils";
-import { StockPill, useShopCopy } from "./ShopUi";
+import { CategoryMark, StockPill, useShopCopy } from "./ShopUi";
 
 export function ProductPrice({ product }: { product: Product }) {
   const base = product.basePrice ?? product.price;
@@ -28,7 +28,9 @@ export default function ProductCard({ product }: { product: Product }) {
   return <article className="mm-product-card">
     <Link className="mm-product-link" href={"/products/" + product.id}>
       <div className="mm-product-image">
-        <ProductImage src={product.image} alt="" fill sizes="(max-width: 580px) 48vw, (max-width: 950px) 32vw, 280px" />
+        {product.image && product.image !== "/product-placeholder.svg"
+          ? <ProductImage src={product.image} alt="" fill sizes="(max-width: 580px) 48vw, (max-width: 950px) 32vw, 280px" />
+          : <div className="mm-product-category-art" aria-hidden="true"><CategoryMark name={product.categoryName ?? ""} /></div>}
         {discount > 0 && <span className="mm-discount">−{discount}%</span>}
       </div>
       <div className="mm-product-text">

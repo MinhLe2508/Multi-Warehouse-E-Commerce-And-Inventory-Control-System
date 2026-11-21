@@ -72,9 +72,12 @@ docker compose up -d postgres redis
 cd backend
 npm install
 npx prisma migrate deploy
-npx prisma db seed
-npm run sync:kb
+npx prisma generate
+ALLOW_DEMO_SEED=true npx prisma db seed
 ```
+
+Hướng dẫn cập nhật dự án đã chạy trên Windows và nạp bộ mẫu mở rộng nằm trong [Tài khoản, danh mục và kho tri thức](docs/guides/Multimart-staff-customer-va-du-lieu-mau.md).
+Nếu đã cấu hình `VOYAGE_API_KEY`, chạy `npm run sync:kb` để tạo vector cho tài liệu.
 
 ### Bước 4: Chạy Backend và Frontend
 

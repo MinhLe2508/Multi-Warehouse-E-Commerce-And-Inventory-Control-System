@@ -54,6 +54,7 @@ describe('Warehouses HTTP với JWT, guard và ValidationPipe thật', () => {
                 isActive: true,
                 emailVerifiedAt: new Date(),
                 mustChangePassword,
+                sessionVersion: 0,
               }),
             },
           },

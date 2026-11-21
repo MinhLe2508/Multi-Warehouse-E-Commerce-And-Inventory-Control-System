@@ -74,6 +74,7 @@ describe('Categories HTTP contract', () => {
                       isActive: true,
                       emailVerifiedAt: new Date(),
                       mustChangePassword,
+                      sessionVersion: 0,
                     }
                   : null;
               },

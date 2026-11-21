@@ -11,13 +11,16 @@ const pageSize = 20;
 const types = { LOW_STOCK: 'Tồn kho', ORDER_UPDATE: 'Đơn hàng', SYSTEM: 'Hệ thống' };
 type Notice = {
   id: string; type: keyof typeof types; title: string; body: string; referenceId: string | null;
-  referenceType: string | null; isRead: boolean; createdAt: string;
+  referenceType: string | null; warehouseId: string | null; isRead: boolean; createdAt: string;
 };
 
 function related(notice: Notice) {
   if (!notice.referenceId) return null;
   if (notice.referenceType === 'StockAlert') return query('/staff/inventory/alerts', { alert: notice.referenceId });
-  if (notice.referenceType?.toLowerCase() === 'order') return '/staff/orders/' + encodeURIComponent(notice.referenceId);
+  if (notice.referenceType?.toLowerCase() === 'order') {
+    const ordersPath = notice.warehouseId ? '/staff/orders/' : '/orders/';
+    return ordersPath + encodeURIComponent(notice.referenceId);
+  }
   return null;
 }
 

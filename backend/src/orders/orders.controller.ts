@@ -31,7 +31,7 @@ import { OrdersService } from './orders.service';
 // Nếu về sau đăng ký global, bỏ JwtAuthGuard khỏi @UseGuards để khỏi xác thực hai lần.
 @Controller('orders')
 @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
-@Roles(UserRole.CUSTOMER)
+@Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 

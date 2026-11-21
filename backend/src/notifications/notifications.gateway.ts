@@ -23,6 +23,9 @@ const FORBIDDEN_BROADCAST_FIELDS = new Set([
   'tokenHash',
 ]);
 
+const staffSessionRoom = (userId: string, sessionVersion: number) =>
+  `staff:${userId}:${sessionVersion}`;
+
 function stripSensitiveFields(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -42,6 +45,7 @@ interface AccessTokenPayload {
   sub?: unknown;
   type?: unknown;
   exp?: unknown;
+  sessionVersion?: unknown;
 }
 
 /**
@@ -162,12 +166,12 @@ export class NotificationsGateway
             mustChangePassword: false,
           },
         },
-        select: { userId: true },
+        select: { userId: true, user: { select: { sessionVersion: true } } },
       })
       .then((recipients) => {
         if (recipients.length)
           this.server
-            ?.to(recipients.map(({ userId }) => userId))
+            ?.to(recipients.map(({ userId, user }) => staffSessionRoom(userId, user.sessionVersion)))
             .emit(event, payload);
       })
       .catch(() =>
@@ -207,11 +211,13 @@ export class NotificationsGateway
         isActive: true,
         emailVerifiedAt: true,
         mustChangePassword: true,
+        sessionVersion: true,
       },
     });
     if (
       !user ||
       !user.isActive ||
+      (payload.sessionVersion ?? 0) !== user.sessionVersion ||
       user.mustChangePassword === true ||
       (user.role !== UserRole.ADMIN && user.emailVerifiedAt === null)
     ) {
@@ -221,6 +227,7 @@ export class NotificationsGateway
     const prevData = (client.data ?? {}) as {
       userId?: string;
       role?: UserRole;
+      staffRoom?: string;
     };
     if (prevData.userId && prevData.userId !== user.id) {
       await client.leave?.(prevData.userId);
@@ -229,9 +236,17 @@ export class NotificationsGateway
       await client.leave?.(`role:${prevData.role}`);
     }
 
+    const staffRoom = user.role === UserRole.WAREHOUSE_STAFF
+      ? staffSessionRoom(user.id, user.sessionVersion)
+      : undefined;
+    if (prevData.staffRoom && prevData.staffRoom !== staffRoom) {
+      await client.leave?.(prevData.staffRoom);
+    }
+    if (staffRoom) await client.join(staffRoom);
     Object.assign(client.data as object, {
       userId: user.id,
       role: user.role,
+      staffRoom,
     });
     await client.join(user.id);
 

@@ -194,7 +194,7 @@ describe('InternalOrderController - STT 29', () => {
     expect(svc.findForUser).not.toHaveBeenCalled();
   });
 
-  it('gắn đủ guard theo thứ tự JWT -> đổi mật khẩu -> vai trò, chỉ CUSTOMER', () => {
+  it('gắn đủ guard theo thứ tự JWT, đổi mật khẩu và vai trò của người mua', () => {
     expect(Reflect.getMetadata('__guards__', InternalOrderController)).toEqual([
       JwtAuthGuard,
       PasswordChangedGuard,
@@ -202,6 +202,7 @@ describe('InternalOrderController - STT 29', () => {
     ]);
     expect(Reflect.getMetadata(ROLES_KEY, InternalOrderController)).toEqual([
       UserRole.CUSTOMER,
+      UserRole.WAREHOUSE_STAFF,
     ]);
     expect(Reflect.getMetadata('path', InternalOrderController)).toBe(
       'internal/orders',

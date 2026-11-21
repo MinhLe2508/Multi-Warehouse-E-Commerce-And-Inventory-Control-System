@@ -756,6 +756,36 @@
   overflow-wrap: anywhere;
 }
 
+.admin-customer-sheet {
+  padding: 1rem;
+  border: 1px solid #e9e1f5;
+  border-radius: .75rem;
+  background: #fff;
+}
+
+.admin-customer-icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: .75rem;
+  color: #6631bf;
+  background: #f1e8fc;
+}
+
+.admin-customer-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: .7rem 1rem;
+}
+
+.admin-customer-fields .admin-customer-address { grid-column: 1 / -1; }
+.admin-customer-fields dt { color: #5c5d75; font-size: .8rem; font-weight: 500; }
+.admin-customer-fields dd,
+.admin-order-totals dd { margin: 0; overflow-wrap: anywhere; }
+.admin-order-totals div { display: flex; justify-content: space-between; gap: .75rem; margin-bottom: .4rem; }
+.admin-order-totals dt { font-weight: inherit; }
+
 .admin-record-reference {
   display: inline-block;
   max-width: 15rem;

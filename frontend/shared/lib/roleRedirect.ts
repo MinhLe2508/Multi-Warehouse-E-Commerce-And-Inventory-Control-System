@@ -1,5 +1,12 @@
 export type UserRole = 'ADMIN' | 'WAREHOUSE_STAFF' | 'CUSTOMER';
 
+export function isBuyerRole(role?: UserRole): boolean {
+  return role === 'CUSTOMER' || role === 'WAREHOUSE_STAFF';
+}
+
+const storefrontPaths = ['/products', '/cart', '/checkout', '/orders', '/account', '/notifications'];
+const inArea = (path: string, area: string) => path === area || path.startsWith(area + '/');
+
 /**
  * Điều hướng trang chủ dựa trên vai trò người dùng (SRS mục 5.7).
  * - ADMIN           → /admin/dashboard
@@ -23,21 +30,24 @@ export function getHomeByRole(role: UserRole | string): string {
  * Kiểm tra tham số next có an toàn và thuộc đúng khu vực của vai trò không (tránh open redirect).
  */
 export function getSafeNextRoute(role: UserRole | string, next: string | null | undefined): string {
-  if (!next || typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//')) {
+  if (typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//') || /[\\\r\n\t]/.test(next)) {
     return getHomeByRole(role);
   }
-
+  const { pathname, search, hash } = new URL(next, 'http://multimart.local');
+  if (pathname.startsWith('//')) return getHomeByRole(role);
+  const route = pathname + search + hash;
   if (role === 'ADMIN') {
-    if (next.startsWith('/admin') && !next.startsWith('/admin/forbidden')) {
-      return next;
+    if (inArea(pathname, '/admin') && !inArea(pathname, '/admin/forbidden')) {
+      return route;
     }
   } else if (role === 'WAREHOUSE_STAFF') {
-    if (next.startsWith('/staff')) {
-      return next;
+    if (inArea(pathname, '/staff') || pathname === '/' ||
+        storefrontPaths.some((path) => inArea(pathname, path))) {
+      return route;
     }
   } else if (role === 'CUSTOMER') {
-    if (!next.startsWith('/admin') && !next.startsWith('/staff')) {
-      return next;
+    if (!inArea(pathname, '/admin') && !inArea(pathname, '/staff')) {
+      return route;
     }
   }
 

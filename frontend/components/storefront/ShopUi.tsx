@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import {
-  AlertCircle, Archive, ArrowLeft, ChevronLeft, ChevronRight, HardDrive, Headphones,
-  HousePlug, Laptop, Layers3, Minus, Monitor, PackageOpen, Plus, Smartphone, Watch,
+  AlertCircle, Archive, ArrowLeft, Baby, BrushCleaning, Camera, CarFront, ChevronLeft, ChevronRight,
+  Coffee, CookingPot, Dumbbell, Gamepad2, HardDrive, Headphones, HousePlug, LampDesk, Laptop,
+  Layers3, Luggage, Minus, Monitor, NotebookPen, PackageOpen, PawPrint, Plug, Plus, Router,
+  Smartphone, Sparkles, Watch, Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useAuthStore } from "@/store/useAuthStore";
 import { normalizeText } from "@/shared/lib/utils";
+import { isBuyerRole } from "@/shared/lib/roleRedirect";
 
 export function useShopCopy() {
   const { language } = useTranslation();
@@ -66,10 +69,10 @@ export function BuyerGate({ children, next }: { children: ReactNode; next: strin
   const user = useAuthStore((state) => state.session?.user);
   const tx = useShopCopy();
   if (!ready) return <div className="mm-container mm-page"><ShopLoading /></div>;
-  if (user?.role === "CUSTOMER" && !user.mustChangePassword) return children;
+  if (user && isBuyerRole(user.role) && !user.mustChangePassword) return children;
   return <div className="mm-container mm-page"><ShopEmpty
     title={tx("Đăng nhập để tiếp tục", "Sign in to continue")}
-    detail={tx("Sử dụng tài khoản khách hàng MultiMart.", "Use a MultiMart customer account.")}
+    detail={tx("Dùng tài khoản MultiMart để mua sắm và xem đơn hàng của bạn.", "Use your MultiMart account to shop and view your orders.")}
     action={<Link className="mm-button primary" href={user?.mustChangePassword ? "/change-password" : "/login?next=" + encodeURIComponent(next)}>
       {user?.mustChangePassword ? tx("Đổi mật khẩu", "Change password") : tx("Đăng nhập", "Sign in")}
     </Link>}
@@ -98,6 +101,12 @@ export function ShopPager({ page, pages, onPage }: { page: number; pages: number
 }
 
 const categoryIcons: Array<[string, LucideIcon]> = [
+  ["dien gia dung", CookingPot], ["mang & wi-fi", Router], ["gaming", Gamepad2],
+  ["chup anh", Camera], ["bep", CookingPot], ["nha cua & trang tri", LampDesk],
+  ["van phong", NotebookPen], ["the thao", Dumbbell], ["du lich", Luggage],
+  ["ca nhan", Sparkles], ["me & be", Baby], ["thu cung", PawPrint],
+  ["xe & phu kien", CarFront], ["sua chua", Wrench], ["ve sinh", BrushCleaning],
+  ["do uong", Coffee], ["phu kien", Plug],
   ["am thanh", Headphones], ["dien thoai", Smartphone], ["laptop", Laptop], ["may chieu", Monitor],
   ["man hinh", Monitor], ["gia dung", HousePlug], ["thiet bi deo", Watch], ["luu tru", HardDrive],
 ];

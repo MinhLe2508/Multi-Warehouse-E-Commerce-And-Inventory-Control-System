@@ -85,6 +85,7 @@ describe('Inventory HTTP boundary — real JWT/guards/DTOs, isolated service dou
         emailVerifiedAt: new Date(),
         isActive: true,
         mustChangePassword: false,
+        sessionVersion: 0,
       });
     inventory.findAll.mockResolvedValue({
       items: [],

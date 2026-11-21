@@ -13,6 +13,19 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
   DELIVERED: 'Đã giao', CANCELLED: 'Đã hủy',
 };
 
+export const PAYMENT_METHOD_LABEL = {
+  MOCK_CARD: 'Thẻ (trước đây)',
+  MOCK_EWALLET: 'Ví (trước đây)',
+  COD: 'Thanh toán khi nhận hàng',
+  BANK_TRANSFER: 'Chuyển khoản VietQR',
+};
+
+export const PAYMENT_STATUS_LABEL = {
+  PENDING: 'Đang chờ',
+  SUCCESS: 'Thành công',
+  FAILED: 'Thất bại',
+};
+
 // State machine một chiều theo FR-ORD-05
 export const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   CONFIRMED: 'SHIPPING', SHIPPING: 'DELIVERED',

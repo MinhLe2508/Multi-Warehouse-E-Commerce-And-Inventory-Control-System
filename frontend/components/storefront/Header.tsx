@@ -13,6 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { selectTotalItems, useCartStore } from "@/store/useCartStore";
 import { formatVND } from "@/shared/lib/utils";
 import { StoreBrand, SupportButton, useShopCopy } from "./ShopUi";
+import { isBuyerRole } from "@/shared/lib/roleRedirect";
 
 export default function Header() {
   const tx = useShopCopy();
@@ -23,9 +24,9 @@ export default function Header() {
   const cartCount = useCartStore(selectTotalItems);
   const user = useAuthStore((state) => state.session?.user);
   const signOut = useAuthStore((state) => state.logout);
-  const customer = user?.role === "CUSTOMER" && !user.mustChangePassword ? user : undefined;
-  const unread = useShopResource<{ count: number }>(customer ? "/notifications/unread-count" : null,
-    { identity: customer?.id, interval: 30_000, event: SHOP_NOTIFICATIONS_CHANGED });
+  const buyer = user && isBuyerRole(user.role) && !user.mustChangePassword ? user : undefined;
+  const unread = useShopResource<{ count: number }>(buyer ? "/notifications/unread-count?scope=shopping" : null,
+    { identity: buyer?.id, interval: 30_000, event: SHOP_NOTIFICATIONS_CHANGED });
   const [query, setQuery] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [focus, setFocus] = useState(false);
@@ -80,17 +81,18 @@ export default function Header() {
             </ul>}
           </form>
           <div className="mm-header-actions">
-            {customer && <Link className="mm-icon-button mm-counter" href="/notifications"
+            {buyer && <Link className="mm-icon-button mm-counter" href="/notifications"
               aria-label={tx("Thông báo", "Notifications") + (unread.data?.count ? " · " + unread.data.count : "")}>
               <Bell size={20} />
               {Boolean(unread.data?.count) && <sup>{Math.min(unread.data?.count ?? 0, 99)}</sup>}
             </Link>}
-            {customer ? <details className="mm-account" ref={account}>
+            {buyer ? <details className="mm-account" ref={account}>
               <summary className="mm-icon-button" aria-label={tx("Tài khoản", "Account")}><UserRound size={20} /><ChevronDown size={13} className="mm-account-chevron" /></summary>
               <div className="mm-account-menu">
-                <strong>{customer.username}</strong>
+                <strong>{buyer.username}</strong>
                 <Link href="/account" onClick={() => account.current?.removeAttribute("open")}>{tx("Hồ sơ cá nhân", "Profile")}</Link>
                 <Link href="/orders" onClick={() => account.current?.removeAttribute("open")}>{tx("Đơn hàng của tôi", "My orders")}</Link>
+                {buyer.role === "WAREHOUSE_STAFF" && <Link href="/staff/dashboard" onClick={() => account.current?.removeAttribute("open")}>{tx("Khu vực nhân viên", "Staff portal")}</Link>}
                 <button type="button" onClick={() => { account.current?.removeAttribute("open"); void signOut().finally(() => router.replace("/")); }}>{tx("Đăng xuất", "Sign out")}</button>
               </div>
             </details> : <Link href="/login" className="mm-icon-button" aria-label={tx("Đăng nhập", "Sign in")}><UserRound size={20} /></Link>}

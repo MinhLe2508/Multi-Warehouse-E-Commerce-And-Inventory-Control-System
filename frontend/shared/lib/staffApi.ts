@@ -2,13 +2,15 @@ import { authenticatedRequest } from '@/store/useAuthStore';
 import type {
   CreateStaffInput,
   CreateStaffResponse,
+  ExistingCustomer,
   ResendStaffInvitationResponse,
   Staff,
   StaffListQuery,
   StaffListResponse,
   StaffStatusFilter,
   UpdateStaffInput,
-  UpdateStaffStatusInput,
+  StaffRoleChange,
+  StaffRoleChangeResponse,
 } from '@/shared/types/staff';
 
 const STAFF_ENDPOINT = '/admin/staff';
@@ -106,20 +108,19 @@ export function updateStaff(id: string, input: UpdateStaffInput): Promise<Staff>
 }
 
 
-export function setStaffStatus(
+export function findCustomerByEmail(email: string): Promise<ExistingCustomer | null> {
+  return authenticatedRequest<ExistingCustomer | null>(
+    `${STAFF_ENDPOINT}/customer-by-email`,
+    { email },
+    'POST',
+  );
+}
+
+export function changeStaffRole(
   id: string,
-  input: UpdateStaffStatusInput,
-): Promise<Staff> {
-  const url = `${staffUrl(id)}/status`;
-  if (typeof input.isActive !== 'boolean') {
-    throw new TypeError('isActive phải là Boolean True hoặc False.');
-  }
-  const reason = input.reason?.trim();
-  const payload: UpdateStaffStatusInput = {
-    isActive: input.isActive,
-    ...(reason ? { reason } : {}),
-  };
-  return authenticatedRequest<Staff>(url, payload, 'PATCH');
+  role: StaffRoleChange,
+): Promise<StaffRoleChangeResponse> {
+  return authenticatedRequest<StaffRoleChangeResponse>(`${staffUrl(id)}/role`, { role }, 'PATCH');
 }
 
 
@@ -137,6 +138,7 @@ export const staffApi = {
   get: getStaff,
   create: createStaff,
   update: updateStaff,
-  setStatus: setStaffStatus,
+  findCustomerByEmail,
+  changeRole: changeStaffRole,
   resendInvitation: resendStaffInvitation,
 } as const;

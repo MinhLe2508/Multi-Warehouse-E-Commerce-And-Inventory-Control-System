@@ -21,14 +21,14 @@ import { InternalOrdersService } from './internal-orders.service';
 //
 // "Chỉ trả đúng dữ liệu của user đang hỏi, không lộ đơn người khác":
 //   1. JwtAuthGuard xác minh chữ ký/hạn token (không decode thủ công).
-//   2. PasswordChangedGuard + RolesGuard(CUSTOMER) giống OrdersController.
+//   2. PasswordChangedGuard + RolesGuard cho khách mua hàng giống OrdersController.
 //   3. :userId trên đường dẫn BẮT BUỘC trùng user trong JWT, nếu không -> 403.
 //      Nhờ vậy dù ai đó (hoặc LLM bị prompt injection) ghép URL với userId khác
-//      vẫn không đọc được gì; ADMIN/WAREHOUSE_STAFF cũng không dùng được route này.
+//      vẫn không đọc được gì.
 //   4. Service luôn lọc WHERE user_id = userId và chỉ trả allow-list cột (không có PII giao hàng).
 @Controller('internal/orders')
 @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
-@Roles(UserRole.CUSTOMER)
+@Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
 export class InternalOrderController {
   constructor(private readonly internalOrders: InternalOrdersService) {}
 

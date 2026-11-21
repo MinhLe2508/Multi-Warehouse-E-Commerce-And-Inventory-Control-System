@@ -49,6 +49,15 @@ export interface CreateStaffInput {
   fullName: string;
   phone?: string;
 }
+export type BuyerRole =
+  | typeof UserRole.CUSTOMER
+  | typeof UserRole.WAREHOUSE_STAFF;
+
+export interface AccountRoleChangeResult {
+  userId: string;
+  role: BuyerRole;
+  activationEmail: 'NOT_REQUIRED' | 'SENT' | 'FAILED';
+}
 export interface CompleteActivationInput {
   token: string;
   password: string;
@@ -191,6 +200,103 @@ export class AuthService {
     return { user, invitationSent: true };
   }
 
+  async changeBuyerRole(
+    userId: string,
+    actorId: string,
+    role: BuyerRole,
+  ): Promise<AccountRoleChangeResult> {
+    const promoting = role === UserRole.WAREHOUSE_STAFF;
+    const fromRole = promoting ? UserRole.CUSTOMER : UserRole.WAREHOUSE_STAFF;
+    const purpose = promoting
+      ? AccountActionPurpose.STAFF_INVITATION
+      : AccountActionPurpose.EMAIL_VERIFICATION;
+
+    const { user, activation } = await this.prisma.$transaction(async (tx) => {
+      // Serialize with session issuance, activation and warehouse assignment.
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM users WHERE id = ${userId}::uuid FOR NO KEY UPDATE
+      `;
+      if (!rows.length) {
+        throw new NotFoundException('Không tìm thấy tài khoản.');
+      }
+      const current = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { role: true, isActive: true, emailVerifiedAt: true },
+      });
+      if (current.role === UserRole.ADMIN) {
+        throw new NotFoundException(
+          'Không tìm thấy tài khoản phù hợp để chuyển vai trò.',
+        );
+      }
+      if (current.role !== fromRole) {
+        throw new ConflictException(
+          'Vai trò tài khoản đã thay đổi. Vui lòng tải lại danh sách.',
+        );
+      }
+      if (promoting && !current.isActive) {
+        throw new ConflictException(
+          'Tài khoản khách hàng đang bị khóa và chưa thể chuyển thành nhân viên.',
+        );
+      }
+
+      if (!promoting) {
+        await tx.warehouseStaffAssignment.deleteMany({ where: { userId } });
+      }
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { role, isActive: true, sessionVersion: { increment: 1 } },
+        select: this.publicUserSelect(),
+      });
+      const now = new Date();
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await tx.accountActionToken.updateMany({
+        where: { userId, usedAt: null, invalidatedAt: null },
+        data: { invalidatedAt: now },
+      });
+      await tx.userRoleChange.create({
+        data: { userId, actorId, fromRole, toRole: role },
+      });
+      const activation = current.emailVerifiedAt === null
+        ? await this.accountActionTokenService.createToken(userId, purpose, tx)
+        : null;
+      return { user, activation };
+    });
+
+    let activationEmail: AccountRoleChangeResult['activationEmail'] = 'NOT_REQUIRED';
+    if (activation) {
+      try {
+        if (promoting) {
+          await this.mailService.sendStaffInvitation({
+            to: user.email,
+            fullName: user.fullName,
+            username: user.username,
+            setupUrl: this.buildFrontendActionUrl(
+              'staff-invitation',
+              activation.rawToken,
+            ),
+          });
+        } else {
+          await this.mailService.sendCustomerVerification({
+            to: user.email,
+            fullName: user.fullName,
+            verifyUrl: this.buildFrontendActionUrl(
+              'verify-email',
+              activation.rawToken,
+            ),
+          });
+        }
+        activationEmail = 'SENT';
+      } catch {
+        activationEmail = 'FAILED';
+        this.logger.warn(`Đã chuyển vai trò cho ${userId} nhưng chưa gửi được email kích hoạt.`);
+      }
+    }
+    return { userId, role, activationEmail };
+  }
+
   // =========================================================================
   // 3. HOÀN TẤT ONBOARDING — CUSTOMER / STAFF
   // =========================================================================
@@ -306,6 +412,7 @@ export class AuthService {
           passwordHash: true,
           isActive: true,
           emailVerifiedAt: true,
+          sessionVersion: true,
         },
       });
       // Nếu mật khẩu vừa bị thay đổi, không cấp phiên từ lần kiểm tra cũ.
@@ -318,7 +425,7 @@ export class AuthService {
           'Tài khoản không khả dụng hoặc thông tin đăng nhập đã thay đổi.',
         );
       }
-      const tokens = await this.issueTokenPair(user.id, tx);
+      const tokens = await this.issueTokenPair(user.id, user.sessionVersion, tx);
       return { tokens, user: this.toPublicUser(user) };
     });
   }
@@ -365,6 +472,7 @@ export class AuthService {
           ...this.publicUserSelect(),
           isActive: true,
           emailVerifiedAt: true,
+          sessionVersion: true,
         },
       });
       if (!user || !this.canAuthenticate(user)) {
@@ -386,7 +494,7 @@ export class AuthService {
       }
 
       // Bắt buộc tạo Refresh Token mới bằng CÙNG transaction.
-      const tokens = await this.issueTokenPair(user.id, tx);
+      const tokens = await this.issueTokenPair(user.id, user.sessionVersion, tx);
       return { tokens, user: this.toPublicUser(user) };
     });
   }
@@ -680,7 +788,7 @@ export class AuthService {
   // =========================================================================
   private async createPendingAccount(
     input: { email: string; fullName: string; phone: string | null },
-    role: typeof UserRole.CUSTOMER | typeof UserRole.WAREHOUSE_STAFF,
+    role: BuyerRole,
     purpose: AccountActionPurpose,
   ): Promise<PendingAccountResult> {
     const duplicatedEmail = await this.prisma.user.findUnique({
@@ -757,6 +865,7 @@ export class AuthService {
 
   private async issueTokenPair(
     userId: string,
+    sessionVersion: number,
     tx: Prisma.TransactionClient,
   ): Promise<AuthTokenPair> {
     const accessSeconds = this.parseExpiresInToSeconds(
@@ -771,6 +880,7 @@ export class AuthService {
     }
 
     const payload: JwtPayload = { sub: userId, type: 'access' };
+    if (sessionVersion > 0) payload.sessionVersion = sessionVersion;
     const accessToken = await this.jwtService.signAsync(payload, {
       secret,
       algorithm: 'HS256',

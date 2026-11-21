@@ -5,11 +5,16 @@ import {
   Max,
   IsBoolean,
   IsEnum,
+  IsIn,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { NotificationType } from '@prisma/client';
 
 export class NotificationQueryDto {
+  @IsOptional()
+  @IsIn(['shopping'])
+  scope?: 'shopping';
+
   @IsOptional()
   @IsEnum(NotificationType)
   type?: NotificationType;

@@ -72,6 +72,7 @@ interface GenerationResult {
 
 // Giới hạn số vòng tool-use mỗi câu hỏi để chống vòng lặp vô hạn / tốn token (CON-07)
 const MAX_TOOL_ROUNDS = 3;
+const SKU_REFERENCE = /\b(?:(?:SKU|DEMO)-[a-z0-9]+(?:-[a-z0-9]+)*|[a-z]{2,4}-[a-z0-9]+(?:-[a-z0-9]+)+|[a-z]{2,4}-(?=[a-z0-9]*\d)[a-z0-9]+)\b/i;
 
 interface PriceFilterResult {
   minPrice?: number;
@@ -922,8 +923,25 @@ export class ChatbotService {
     // 2. Kiểm tra ý định tra cứu sản phẩm theo Danh mục, Kho hàng hoặc Lọc theo Giá (browseCategory)
     const priceFilter = parsePriceRange(normalized);
     const warehouseFilter = parseWarehouseFilter(normalized);
+    const sku = normalized.match(SKU_REFERENCE)?.[0];
 
     const categoryKeywords = [
+      { key: 'Mạng & Wi-Fi', patterns: [/mạng\s*(?:&|và)\s*wi.?fi|router|bộ phát wi.?fi|mesh|cáp mạng/i] },
+      { key: 'Gaming', patterns: [/gaming|tay\s*cầm\s*(?:chơi|game)|bàn phím cơ/i] },
+      { key: 'Chụp ảnh & Quay phim', patterns: [/chụp ảnh|quay phim|chân máy|đèn vòng|webcam/i] },
+      { key: 'Điện gia dụng', patterns: [/điện gia dụng|nồi chiên|nồi cơm|máy xay|máy lọc không khí|ấm siêu tốc/i] },
+      { key: 'Bếp & Bàn ăn', patterns: [/bếp\s*(?:&|và)\s*bàn ăn|bếp từ|chảo|bát sứ|thớt|hộp thủy tinh/i] },
+      { key: 'Nhà cửa & Trang trí', patterns: [/trang trí nhà|nhà cửa|khung ảnh|gối tựa|hộp lưu trữ/i] },
+      { key: 'Bàn học & Văn phòng', patterns: [/bàn học|đèn học|sổ tay|hộp hồ sơ|máy in nhãn|giá đỡ laptop/i] },
+      { key: 'Thể thao & Dã ngoại', patterns: [/dã ngoại|thảm yoga|dây kháng lực|cắm trại|cầu lông/i] },
+      { key: 'Du lịch & Hành lý', patterns: [/hành lý|vali|túi chia đồ|gối cổ/i] },
+      { key: 'Chăm sóc cá nhân', patterns: [/chăm sóc cá nhân|bàn chải điện|máy sấy tóc|tông đơ/i] },
+      { key: 'Mẹ & Bé', patterns: [/mẹ\s*(?:&|và)\s*bé|khăn sữa|yếm ăn|sách vải/i] },
+      { key: 'Chăm sóc thú cưng', patterns: [/thú cưng|dây dắt|bát inox cho mèo|túi vận chuyển chó/i] },
+      { key: 'Xe & Phụ kiện', patterns: [/xe\s*(?:&|và)\s*phụ kiện|ô tô|camera hành trình|bơm lốp/i] },
+      { key: 'Dụng cụ & Sửa chữa', patterns: [/sửa chữa|tuốc nơ vít|đầu vít|thước cuộn|máy khoan/i] },
+      { key: 'Vệ sinh nhà cửa', patterns: [/vệ sinh nhà|cây lau|máy hút bụi cầm tay|chổi phủi bụi/i] },
+      { key: 'Thực phẩm & Đồ uống', patterns: [/thực phẩm|đồ uống|cà phê|yến mạch|granola|mật ong|hạt điều/i] },
       {
         key: 'Thiết bị đeo thông minh',
         patterns: [
@@ -1014,11 +1032,11 @@ export class ChatbotService {
       Boolean(warehouseFilter) ||
       (matchedCategory &&
         (isListingCategoryIntent ||
-          !normalized.match(/model\s*\d+|\bsku-\d+\b/i)));
+          (!retrievedDocs.length && !/model\s*\d+/i.test(normalized))));
 
     // Không xử lý browseCategory nếu người dùng đang hỏi đích danh 1 mã sản phẩm cụ thể (ví dụ SKU-00128, Model 128) mà không phải lọc theo giá
     const isSpecificProductQuery =
-      /\b(?:sku|demo)-[a-z0-9-]+\b/i.test(normalized) ||
+      Boolean(sku) ||
       (/\bmodel\s*\d+\b/i.test(normalized) && !priceFilter) ||
       /(giá bao nhiêu|bao nhiêu tiền|giá mấy|còn hàng không|còn không)/i.test(normalized);
 
@@ -1159,12 +1177,11 @@ export class ChatbotService {
 
     if (
       (isSpecificProductQuery || hasStockKeyword || matchedPrefix) &&
-      (retrievedDocs.length === 0 || hasStockKeyword)
+      (retrievedDocs.length === 0 || hasStockKeyword || sku)
     ) {
       const candidateKeywords: string[] = [];
-      const skuMatch = normalized.match(/\b((?:SKU|DEMO)-[a-z0-9-]+)\b/i);
-      if (skuMatch) {
-        candidateKeywords.push(skuMatch[1].toUpperCase());
+      if (sku) {
+        candidateKeywords.push(sku.toUpperCase());
       }
 
       const cleanedKeyword = normalized

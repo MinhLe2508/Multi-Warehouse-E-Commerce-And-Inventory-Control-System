@@ -2,18 +2,17 @@
 
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { Alert, Badge, Button, Card, Form, Modal, Spinner, Table, } from 'react-bootstrap';
-import { ChevronLeft, ChevronRight, Eye, LockKeyhole, Mail, Pencil, RefreshCw, Search, UnlockKeyhole, UserPlus, Users, } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, Mail, Pencil, RefreshCw, Search, UserMinus, UserPlus, Users, Warehouse } from 'lucide-react';
 import { useAdminStaff } from '@/hooks/useAdminStaff';
 import { StaffWarehousesDialog } from '@/components/admin/StaffWarehousesDialog';
-import { Warehouse } from 'lucide-react';
 import { AuthError } from '@/shared/lib/authApi';
-import type { CreateStaffInput, Staff, StaffStatus, StaffStatusFilter, UpdateStaffInput, } from '@/shared/types/staff';
+import type { CreateStaffInput, ExistingCustomer, Staff, StaffStatus, StaffStatusFilter, UpdateStaffInput } from '@/shared/types/staff';
 
 type Dialog =
   | { kind: 'create' }
   | { kind: 'detail'; id: string }
   | { kind: 'edit'; staff: Staff }
-  | { kind: 'status'; staff: Staff }
+  | { kind: 'demote'; staff: Staff }
   | { kind: 'resend'; staff: Staff }
   | null;
 
@@ -25,7 +24,6 @@ interface StaffForm {
 
 const EMPTY_STAFF_FORM: StaffForm = { fullName: '', email: '', phone: '' };
 const PHONE_PATTERN = /^(0\d{9}|\+84\d{9})$/;
-const MAX_STATUS_REASON = 500;
 
 const STATUS_TEXT: Record<StaffStatus, string> = {
   ACTIVE: 'Đang hoạt động',
@@ -60,7 +58,7 @@ function formatDate(date: string | null): string {
   }).format(parsed);
 }
 
-function errorMessage(cause: unknown, operation?: 'create' | 'resend'): string {
+function errorMessage(cause: unknown, operation?: 'create' | 'resend' | 'role'): string {
   const basic = cause instanceof Error
     ? cause.message
     : 'Không thực hiện được thao tác. Vui lòng thử lại.';
@@ -93,12 +91,12 @@ function validateStaffForm(form: StaffForm, isCreate: boolean): string | null {
 export default function AdminStaffPage() {
   const { items, total, page, pageSize, totalPages, search, statusFilter, loading, error, notice, mutation, selectedStaff, 
     detailLoading, detailError, canManage, setSearch, setStatusFilter, setPage, setPageSize, refresh, clearFeedback, clearSelectedStaff,
-    loadStaff, createStaff, updateStaff, setStaffStatus, resendStaffInvitation, } = useAdminStaff();
+    loadStaff, createStaff, updateStaff, changeStaffRole, resendStaffInvitation, } = useAdminStaff();
 
   const [dialog, setDialog] = useState<Dialog>(null);
   const [assigning, setAssigning] = useState<{ id: string; name: string } | null>(null);
   const [form, setForm] = useState<StaffForm>({ ...EMPTY_STAFF_FORM });
-  const [reason, setReason] = useState('');
+  const [existingCustomer, setExistingCustomer] = useState<ExistingCustomer | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const isBusy = mutation !== null;
@@ -111,7 +109,7 @@ export default function AdminStaffPage() {
   function resetDialogFeedback() {
     clearFeedback();
     setFormError(null);
-    setReason('');
+    setExistingCustomer(null);
   }
 
   function closeDialog() {
@@ -119,6 +117,7 @@ export default function AdminStaffPage() {
     if (isBusy) return;
     setDialog(null);
     setFormError(null);
+    setExistingCustomer(null);
     clearSelectedStaff();
   }
 
@@ -145,9 +144,9 @@ export default function AdminStaffPage() {
     setDialog({ kind: 'edit', staff });
   }
 
-  function openStatus(staff: Staff) {
+  function openDemotion(staff: Staff) {
     resetDialogFeedback();
-    setDialog({ kind: 'status', staff });
+    setDialog({ kind: 'demote', staff });
   }
 
   function openResend(staff: Staff) {
@@ -157,7 +156,7 @@ export default function AdminStaffPage() {
 
   async function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isBusy) return;
+    if (isBusy || existingCustomer) return;
     const issue = validateStaffForm(form, true);
     if (issue) { setFormError(issue); return; }
 
@@ -172,8 +171,9 @@ export default function AdminStaffPage() {
     try {
       // Kể cả invitationSent=false, tài khoản vẫn đã được tạo.
       // Hook sẽ hiển thị cảnh báo và làm mới danh sách; không thử tạo lại.
-      await createStaff(payload);
-      closeAfterMutation();
+      const result = await createStaff(payload);
+      if (result.kind === 'existing-customer') setExistingCustomer(result.customer);
+      else closeAfterMutation();
     } catch (cause: unknown) {
       setFormError(errorMessage(cause, 'create'));
     }
@@ -207,22 +207,25 @@ export default function AdminStaffPage() {
     }
   }
 
-  async function submitStatus() {
-    if (isBusy || dialog?.kind !== 'status') return;
-    const nextIsActive = !dialog.staff.isActive;
-    if (reason.trim().length > MAX_STATUS_REASON) {
-      setFormError(`Lý do không được vượt quá ${MAX_STATUS_REASON} ký tự.`);
-      return;
-    }
+  async function submitPromotion() {
+    if (isBusy || dialog?.kind !== 'create' || !existingCustomer?.isActive) return;
     setFormError(null);
     try {
-      await setStaffStatus(dialog.staff.id, {
-        isActive: nextIsActive,
-        ...(reason.trim() ? { reason: reason.trim() } : {}),
-      });
+      await changeStaffRole(existingCustomer.id, 'WAREHOUSE_STAFF');
       closeAfterMutation();
     } catch (cause: unknown) {
-      setFormError(errorMessage(cause));
+      setFormError(errorMessage(cause, 'role'));
+    }
+  }
+
+  async function submitDemotion() {
+    if (isBusy || dialog?.kind !== 'demote') return;
+    setFormError(null);
+    try {
+      await changeStaffRole(dialog.staff.id, 'CUSTOMER');
+      closeAfterMutation();
+    } catch (cause: unknown) {
+      setFormError(errorMessage(cause, 'role'));
     }
   }
 
@@ -243,6 +246,7 @@ export default function AdminStaffPage() {
     // Hook đã cập nhật notice/error và sẽ làm mới danh sách.
     setDialog(null);
     setFormError(null);
+    setExistingCustomer(null);
     clearSelectedStaff();
   }
 
@@ -443,14 +447,15 @@ export default function AdminStaffPage() {
                         <Button
                           type="button"
                           size="sm"
-                          variant={staff.isActive ? 'outline-danger' : 'outline-success'}
-                          title={staff.isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
-                          aria-label={`${staff.isActive ? 'Khóa' : 'Mở khóa'} ${staff.fullName}`}
+                          variant="outline-danger"
+                          title="Chuyển nhân viên xuống khách hàng"
+                          aria-label={`Chuyển ${staff.fullName} xuống khách hàng`}
+                          className="d-inline-flex align-items-center gap-1 text-nowrap"
                           disabled={isBusy}
-                          onClick={() => openStatus(staff)}
+                          onClick={() => openDemotion(staff)}
                         >
-                          {staff.isActive ? <LockKeyhole size={15} aria-hidden="true" /> :
-                            <UnlockKeyhole size={15} aria-hidden="true" />}
+                          <UserMinus size={15} aria-hidden="true" />
+                          <span className="d-none d-xl-inline">Chuyển xuống khách hàng</span>
                         </Button>
                         {staff.status === 'PENDING_ACTIVATION' && (
                           <Button
@@ -517,7 +522,7 @@ export default function AdminStaffPage() {
             {dialog?.kind === 'create' && 'Thêm nhân viên kho'}
             {dialog?.kind === 'detail' && 'Chi tiết nhân viên'}
             {dialog?.kind === 'edit' && 'Chỉnh sửa nhân viên'}
-            {dialog?.kind === 'status' && (dialog.staff.isActive ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản')}
+            {dialog?.kind === 'demote' && 'Chuyển nhân viên xuống khách hàng'}
             {dialog?.kind === 'resend' && 'Gửi lại thư mời kích hoạt'}
           </Modal.Title>
         </Modal.Header>
@@ -526,6 +531,20 @@ export default function AdminStaffPage() {
           <Form onSubmit={dialog.kind === 'create' ? submitCreate : submitEdit}>
             <Modal.Body>
               {formError && <Alert variant="danger" role="alert">{formError}</Alert>}
+              {existingCustomer && (
+                <Alert variant="warning" className="small" role="status">
+                  <strong className="d-block mb-1">Email này đã thuộc về một khách hàng</strong>
+                  <div className="text-break mb-2">{existingCustomer.fullName} · {existingCustomer.email}</div>
+                  {existingCustomer.isActive
+                    ? <>
+                        <div>Bấm «Chuyển thành nhân viên» để thêm quyền nhân viên cho tài khoản này. Hồ sơ và các đơn hàng vẫn thuộc về cùng tài khoản.</div>
+                        <div className="mt-2">{existingCustomer.emailVerifiedAt
+                          ? 'Người này sẽ đăng nhập lại bằng mật khẩu hiện tại. Bạn có thể phân công kho sau khi chuyển.'
+                          : 'Hệ thống sẽ gửi thư kích hoạt nhân viên mới tới Email này.'}</div>
+                      </>
+                    : 'Tài khoản đang bị khóa. Hãy kiểm tra hồ sơ khách hàng trước khi cấp quyền nhân viên.'}
+                </Alert>
+              )}
               <Form.Group controlId="staff-form-full-name" className="mb-3">
                 <Form.Label>Họ và tên <span className="text-danger">*</span></Form.Label>
                 <Form.Control
@@ -534,7 +553,7 @@ export default function AdminStaffPage() {
                   maxLength={150}
                   required
                   autoFocus
-                  disabled={isBusy}
+                  disabled={isBusy || !!existingCustomer}
                   placeholder="Lilith Litcht"
                 />
               </Form.Group>
@@ -543,7 +562,11 @@ export default function AdminStaffPage() {
                 <Form.Control
                   type="email"
                   value={form.email}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((previous) => ({ ...previous, email: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    setExistingCustomer(null);
+                    setFormError(null);
+                    setForm((previous) => ({ ...previous, email: event.target.value }));
+                  }}
                   maxLength={254}
                   required={dialog.kind === 'create'}
                   disabled={dialog.kind !== 'create' || isBusy}
@@ -560,7 +583,7 @@ export default function AdminStaffPage() {
                   value={form.phone}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((previous) => ({ ...previous, phone: event.target.value }))}
                   maxLength={20}
-                  disabled={isBusy}
+                  disabled={isBusy || !!existingCustomer}
                   placeholder="0912345678 hoặc +84912345678"
                 />
                 <Form.Text>
@@ -569,7 +592,7 @@ export default function AdminStaffPage() {
                     : 'Để trống nếu chưa có số điện thoại.'}
                 </Form.Text>
               </Form.Group>
-              {dialog.kind === 'create' && (
+              {dialog.kind === 'create' && !existingCustomer && (
                 <Alert variant="info" className="mt-3 mb-0 small">
                   Hệ thống tự tạo Username và gửi Link thiết lập mật khẩu qua email.
                   Không nhập mật khẩu hoặc phân quyền tại màn hình này.
@@ -578,10 +601,13 @@ export default function AdminStaffPage() {
             </Modal.Body>
             <Modal.Footer>
               <Button type="button" variant="outline-secondary" disabled={isBusy} onClick={closeDialog}>Hủy</Button>
-              <Button type="submit" variant="primary" disabled={isBusy}>
+              {existingCustomer ? <Button type="button" variant="primary" disabled={isBusy || !existingCustomer.isActive} onClick={() => void submitPromotion()}>
+                {isBusy && <Spinner animation="border" size="sm" className="me-2" />}
+                Chuyển thành nhân viên
+              </Button> : <Button type="submit" variant="primary" disabled={isBusy}>
                 {isBusy && <Spinner animation="border" size="sm" className="me-2" />}
                 {dialog.kind === 'create' ? 'Tạo nhân viên' : 'Lưu thay đổi'}
-              </Button>
+              </Button>}
             </Modal.Footer>
           </Form>
         )}
@@ -645,45 +671,29 @@ export default function AdminStaffPage() {
           </>
         )}
 
-        {dialog?.kind === 'status' && dialogStaff && (
+        {dialog?.kind === 'demote' && dialogStaff && (
           <>
             <Modal.Body>
               <p>
-                Bạn có chắc muốn <strong>{dialogStaff.isActive ? 'khóa' : 'mở khóa'}</strong> tài khoản
-                {' '}<strong>{dialogStaff.fullName}</strong> ({dialogStaff.username})?
+                Sau khi chuyển, <strong>{dialogStaff.fullName}</strong> ({dialogStaff.username}) có thể tiếp tục mua sắm bằng tài khoản MultiMart hiện tại.
               </p>
-              {dialogStaff.isActive ? (
-                <Alert variant="warning" className="small">
-                  Khóa tài khoản sẽ chặn đăng nhập, vô hiệu hóa refresh token và link kích hoạt chưa dùng.
-                </Alert>
-              ) : (
-                <Alert variant="info" className="small">
-                  Mở khóa không tự động kích hoạt tài khoản hoặc gửi thư mời mới.
-                  Nếu nhân viên vẫn chưa kích hoạt, hãy gửi lại thư mời sau khi mở khóa.
-                </Alert>
-              )}
-              <Form.Group controlId="staff-status-reason">
-                <Form.Label>Lý do (không bắt buộc)</Form.Label>
-                <Form.Control
-                  type="text"
-                  value={reason}
-                  maxLength={MAX_STATUS_REASON}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => setReason(event.target.value)}
-                  disabled={isBusy}
-                  placeholder="Ví dụ: Thay đổi nhân sự"
-                />
-              </Form.Group>
+              <Alert variant="warning" className="small mb-0">
+                Hệ thống sẽ thu hồi quyền nhân viên, bỏ phân công kho và kết thúc các phiên đăng nhập.
+                Đơn hàng và nhật ký kho vẫn được lưu.
+                {!dialogStaff.isActive && ' Tài khoản đang khóa sẽ được mở lại với quyền khách hàng.'}
+                {!dialogStaff.activatedAt && ' Người dùng sẽ nhận Email xác thực tài khoản khách hàng.'}
+              </Alert>
               {formError && <Alert variant="danger" className="mt-3 mb-0" role="alert">{formError}</Alert>}
             </Modal.Body>
             <Modal.Footer>
               <Button variant="outline-secondary" disabled={isBusy} onClick={closeDialog}>Hủy</Button>
               <Button
-                variant={dialogStaff.isActive ? 'danger' : 'success'}
+                variant="danger"
                 disabled={isBusy}
-                onClick={() => void submitStatus()}
+                onClick={() => void submitDemotion()}
               >
                 {isBusy && <Spinner animation="border" size="sm" className="me-2" />}
-                {dialogStaff.isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+                Chuyển xuống khách hàng
               </Button>
             </Modal.Footer>
           </>

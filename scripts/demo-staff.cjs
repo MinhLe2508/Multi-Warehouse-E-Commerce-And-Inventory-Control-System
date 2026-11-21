@@ -23,7 +23,7 @@ async function createDemo(origin) {
     const session = await request('/auth/login', {
       method: 'POST', body: { username, password: username },
     });
-    if (session.user.email !== `${username}@demo.example.test`) {
+    if (session.user.email !== `${username}@gmail.com`) {
       throw new Error('Lệnh này dùng tài khoản từ bộ seed demo của dự án.');
     }
     return session;
@@ -32,10 +32,11 @@ async function createDemo(origin) {
   const warehouses = await request('/warehouses', { session: staff });
   const warehouse = warehouses.find((row) => row.code === 'WH-HN01') ?? warehouses[0];
   if (!warehouse) throw new Error('Hãy phân ít nhất một kho cho tài khoản staff demo.');
-  const catalog = await request('/products?pageSize=50');
+  const catalog = await request('/products?search=ACC-GAN-65W');
   const product = catalog.items.find((row) =>
     row.stockByWarehouse.some((stock) => stock.warehouseId === warehouse.id && stock.quantity >= 6));
   if (!product) throw new Error('Kho được giao cần một sản phẩm có đủ tồn để tạo đơn mẫu.');
+  const { bankTransfer } = await request('/payments/methods');
 
   const orders = [];
   for (const [label, action, quantity] of [
@@ -43,10 +44,18 @@ async function createDemo(origin) {
     ['Đã bàn giao', 'SHIPPING', 1],
     ['Chờ thanh toán', 'PENDING_PAYMENT', 1],
   ]) {
+    if (action === 'PENDING_PAYMENT' && !bankTransfer) {
+      console.log('Bỏ qua đơn chờ thanh toán vì cửa hàng chưa bật VietQR.');
+      continue;
+    }
     const shippingRecipient = `Đơn mẫu MWH · ${label}`;
     const existing = await request('/admin/orders?' + new URLSearchParams({ q: shippingRecipient }), { session: staff });
-    let order = existing.items.find((row) => row.shippingRecipient === shippingRecipient &&
-      row.status !== 'CANCELLED' && (row.status !== 'PENDING_PAYMENT' || Date.parse(row.reservationExpiresAt) > Date.now()));
+    let order = existing.items.find((row) => {
+      if (row.shippingRecipient !== shippingRecipient || row.status === 'CANCELLED') return false;
+      return action === 'PENDING_PAYMENT'
+        ? row.status === 'PENDING_PAYMENT' && Date.parse(row.reservationExpiresAt) > Date.now()
+        : row.status !== 'PENDING_PAYMENT';
+    });
     if (!order) {
       order = await request('/orders', {
         method: 'POST', session: customer,
@@ -55,15 +64,9 @@ async function createDemo(origin) {
           shippingRecipient, shippingPhone: '0900000000',
           shippingAddress: 'Địa chỉ mô phỏng · ' + warehouse.name,
           shippingRegion: warehouse.region,
+          paymentMethod: action === 'PENDING_PAYMENT' ? 'BANK_TRANSFER' : 'COD',
         },
       });
-    }
-    if (action !== 'PENDING_PAYMENT' && order.status === 'PENDING_PAYMENT') {
-      await request('/payments/mock/' + order.id, {
-        method: 'POST', session: customer,
-        body: { transactionRef: 'DEMO-STAFF-' + order.id, method: 'MOCK_CARD', approved: true },
-      });
-      order = await request('/admin/orders/' + order.id, { session: staff });
     }
     if (action === 'SHIPPING' && order.status === 'CONFIRMED') {
       order = await request('/admin/orders/' + order.id + '/status', {

@@ -7,11 +7,13 @@ import { useAuthStore } from '@/store/useAuthStore';
 import type {
   CreateStaffInput,
   CreateStaffResponse,
+  ExistingCustomer,
   ResendStaffInvitationResponse,
   Staff,
   StaffStatusFilter,
   UpdateStaffInput,
-  UpdateStaffStatusInput,
+  StaffRoleChange,
+  StaffRoleChangeResponse,
 } from '@/shared/types/staff';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -20,7 +22,10 @@ const MAX_OFFSET = 100_000;
 const MAX_SEARCH_LENGTH = 100;
 const SEARCH_DEBOUNCE_MS = 350;
 
-type StaffMutation = 'create' | 'update' | 'status' | 'resend';
+type StaffMutation = 'create' | 'update' | 'role' | 'resend';
+type CreateStaffOutcome =
+  | { kind: 'created'; response: CreateStaffResponse }
+  | { kind: 'existing-customer'; customer: ExistingCustomer };
 
 // Kết quả luôn gắn với đúng bộ lọc và danh tính Admin đã yêu cầu.
 // Khi đổi bộ lọc/tài khoản, dữ liệu cũ tự ẩn ngay trong render,
@@ -69,17 +74,17 @@ export interface UseAdminStaffResult {
 
   createStaff: (
     input: CreateStaffInput,
-  ) => Promise<CreateStaffResponse>;
+  ) => Promise<CreateStaffOutcome>;
 
   updateStaff: (
     id: string,
     input: UpdateStaffInput,
   ) => Promise<Staff>;
 
-  setStaffStatus: (
+  changeStaffRole: (
     id: string,
-    input: UpdateStaffStatusInput,
-  ) => Promise<Staff>;
+    role: StaffRoleChange,
+  ) => Promise<StaffRoleChangeResponse>;
 
   resendStaffInvitation: (
     id: string,
@@ -650,7 +655,7 @@ export function useAdminStaff(): UseAdminStaffResult {
 
           const guidance =
             ambiguous &&
-            (kind === 'create' || kind === 'resend')
+            (kind === 'create' || kind === 'resend' || kind === 'role')
               ? ' Yêu cầu có thể đã được xử lý. Hãy kiểm tra danh sách/trạng thái trước khi thử lại.'
               : '';
 
@@ -686,10 +691,21 @@ export function useAdminStaff(): UseAdminStaffResult {
 
   const createStaff = useCallback(
     (input: CreateStaffInput) =>
-      runMutation(
+      runMutation<CreateStaffOutcome>(
         'create',
-        () => staffApi.create(input),
-        (result) => {
+        async () => {
+          try {
+            return { kind: 'created', response: await staffApi.create(input) };
+          } catch (error) {
+            if (!(error instanceof AuthError) || error.code !== 'CUSTOMER_EMAIL_EXISTS') throw error;
+            const customer = await staffApi.findCustomerByEmail(input.email);
+            if (!customer) throw new Error('Tài khoản vừa thay đổi. Vui lòng thử lại.');
+            return { kind: 'existing-customer', customer };
+          }
+        },
+        (outcome) => {
+          if (outcome.kind !== 'created') return;
+          const result = outcome.response;
           setSelectedStaff(result.staff);
 
           setNotice({
@@ -735,29 +751,29 @@ export function useAdminStaff(): UseAdminStaffResult {
   );
 
   // ---------------------------------------------------------------------------
-  // 23. PATCH /admin/staff/:id/status
-  // KHÓA / MỞ KHÓA TÀI KHOẢN
+  // 23. PATCH /admin/staff/:id/role
   // ---------------------------------------------------------------------------
 
-  const setStaffStatus = useCallback(
-    (id: string, input: UpdateStaffStatusInput) =>
+  const changeStaffRole = useCallback(
+    (id: string, role: StaffRoleChange) =>
       runMutation(
-        'status',
-        () => staffApi.setStatus(id, input),
+        'role',
+        () => staffApi.changeRole(id, role),
         (result) => {
-          setSelectedStaff((previous) =>
-            previous?.id === result.id
-              ? result
-              : previous,
-          );
-
+          const promoting = role === 'WAREHOUSE_STAFF';
+          const failed = result.activationEmail === 'FAILED';
+          const success = promoting
+            ? 'Đã chuyển tài khoản thành nhân viên. Bạn có thể phân công kho trong danh sách.'
+            : 'Đã chuyển nhân viên xuống khách hàng. Hồ sơ và đơn hàng vẫn gắn với tài khoản.';
+          const mail = failed
+            ? (promoting ? ' Chưa gửi được thư mời. Hãy dùng chức năng gửi lại.' : ' Chưa gửi được Email xác thực. Khách hàng có thể yêu cầu gửi lại tại trang đăng nhập.')
+            : result.activationEmail === 'SENT' ? ' Đã gửi Email kích hoạt mới.' : '';
           setNotice({
-            type: 'success',
-            message: input.isActive
-              ? 'Đã mở khóa tài khoản nhân viên.'
-              : 'Đã khóa tài khoản nhân viên.',
+            type: failed ? 'warning' : 'success',
+            message: success + mail,
           });
 
+          if (promoting) setCurrentPage(1);
           refresh();
         },
       ),
@@ -820,7 +836,7 @@ export function useAdminStaff(): UseAdminStaffResult {
       loadStaff,
       createStaff,
       updateStaff,
-      setStaffStatus,
+      changeStaffRole,
       resendStaffInvitation,
     }),
     [
@@ -852,7 +868,7 @@ export function useAdminStaff(): UseAdminStaffResult {
       loadStaff,
       createStaff,
       updateStaff,
-      setStaffStatus,
+      changeStaffRole,
       resendStaffInvitation,
     ],
   );

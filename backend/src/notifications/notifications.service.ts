@@ -14,16 +14,20 @@ export class NotificationsService {
   private visible(
     userId: string,
     role?: UserRole,
+    scope?: string,
   ): Prisma.NotificationWhereInput {
+    const personal: Prisma.NotificationWhereInput = {
+      type: { in: ['SYSTEM', 'ORDER_UPDATE'] }, warehouseId: null,
+    };
+    if (role === UserRole.CUSTOMER || scope === 'shopping') {
+      return { userId, ...personal };
+    }
     return {
       userId,
-      ...(role === UserRole.CUSTOMER
-        ? { type: { in: ['ORDER_UPDATE', 'SYSTEM'] } }
-        : {}),
       ...(role === UserRole.WAREHOUSE_STAFF
         ? {
             OR: [
-              { type: 'SYSTEM', warehouseId: null },
+              personal,
               { warehouse: staffWarehouseWhere(userId) },
             ],
           }
@@ -62,7 +66,7 @@ export class NotificationsService {
     query: NotificationQueryDto,
     role?: UserRole,
   ) {
-    const where = this.visible(userId, role);
+    const where = this.visible(userId, role, query.scope);
     if (query.type) where.AND = { type: query.type };
     if (query.unreadOnly) {
       where.isRead = false;
@@ -94,9 +98,9 @@ export class NotificationsService {
   /**
    * Đánh dấu tất cả thông báo của user là đã đọc.
    */
-  async markAllAsRead(userId: string, role?: UserRole) {
+  async markAllAsRead(userId: string, role?: UserRole, scope?: string) {
     return this.prisma.notification.updateMany({
-      where: { ...this.visible(userId, role), isRead: false },
+      where: { ...this.visible(userId, role, scope), isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
   }
@@ -104,9 +108,9 @@ export class NotificationsService {
   /**
    * Đếm số thông báo chưa đọc của user.
    */
-  async countUnread(userId: string, role?: UserRole): Promise<number> {
+  async countUnread(userId: string, role?: UserRole, scope?: string): Promise<number> {
     return this.prisma.notification.count({
-      where: { ...this.visible(userId, role), isRead: false },
+      where: { ...this.visible(userId, role, scope), isRead: false },
     });
   }
 }

@@ -128,6 +128,7 @@ model User {
   username String @unique @db.VarChar(100)
 
   mustChangePassword Boolean @default(true) @map("must_change_password")
+  sessionVersion Int @default(0) @map("session_version")
 
   // Null = Email chưa được xác thực.
   // Có giá trị = Thời điểm Email được xác thực thành công.
@@ -150,11 +151,29 @@ model User {
   chatSessions        ChatSession[] // Các phiên chat với AI Chatbot của User này
   notifications       Notification[] // Thông báo in-app của User
   warehouseAssignments WarehouseStaffAssignment[]
+  roleChangesReceived UserRoleChange[] @relation("RoleChangeSubject")
+  roleChangesPerformed UserRoleChange[] @relation("RoleChangeActor")
 
   // Index trên "role" giúp truy vấn nhanh "lấy hết ADMIN" hoặc "lấy hết WAREHOUSE_STAFF"
   // Ví dụ: Màn hình quản lý phân quyền của Admin
   @@index([role])
   @@map("users") // Tên bảng thực tế trong Postgres
+}
+
+model UserRoleChange {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  actorId   String   @map("actor_id") @db.Uuid
+  fromRole  UserRole @map("from_role")
+  toRole    UserRole @map("to_role")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user  User @relation("RoleChangeSubject", fields: [userId], references: [id], onDelete: Restrict)
+  actor User @relation("RoleChangeActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([actorId])
+  @@map("user_role_changes")
 }
 
 // Lưu các refresh token đã phát hành — Phục vụ cơ chế "làm mới" access token (JWT ngắn hạn) mà không cần người dùng đăng nhập lại liên tục

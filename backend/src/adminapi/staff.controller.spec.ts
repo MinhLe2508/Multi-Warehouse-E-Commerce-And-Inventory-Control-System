@@ -33,7 +33,9 @@ const routes = [
   ['get', '', undefined],
   ['get', `/${staffId}`, undefined],
   ['post', '', newStaff],
+  ['post', '/customer-by-email', { email: newStaff.email }],
   ['patch', `/${staffId}`, { phone: null }],
+  ['patch', `/${staffId}/role`, { role: UserRole.CUSTOMER }],
   ['patch', `/${staffId}/status`, { isActive: false }],
   ['post', `/${staffId}/resend-invitation`, undefined],
 ] as const;
@@ -41,10 +43,11 @@ const routes = [
 describe('StaffController HTTP contract', () => {
   let app: INestApplication;
   let mustChangePassword = false;
+  let customerSessionVersion = 0;
   const oldSecret = process.env.JWT_ACCESS_SECRET;
   const jwt = new JwtService({ secret });
-  const token = (sub: string) =>
-    jwt.sign({ sub, type: 'access' }, { expiresIn: '15m' });
+  const token = (sub: string, sessionVersion?: number) =>
+    jwt.sign({ sub, type: 'access', sessionVersion }, { expiresIn: '15m' });
   const bearer = { type: 'bearer' } as const;
   const users = new Map<string, UserRole>([
     [adminId, UserRole.ADMIN],
@@ -63,6 +66,8 @@ describe('StaffController HTTP contract', () => {
     findOne: jest.fn().mockResolvedValue(staff),
     create: jest.fn().mockResolvedValue(created),
     update: jest.fn().mockResolvedValue({ ...staff, phone: null }),
+    findCustomerByEmail: jest.fn().mockResolvedValue({ id: customerId }),
+    changeRole: jest.fn().mockResolvedValue({ userId: staffId, role: 'CUSTOMER', activationEmail: 'NOT_REQUIRED' }),
     setStatus: jest
       .fn()
       .mockResolvedValue({ ...staff, isActive: false, status: 'LOCKED' }),
@@ -92,6 +97,7 @@ describe('StaffController HTTP contract', () => {
                       isActive: true,
                       emailVerifiedAt: new Date(),
                       mustChangePassword,
+                      sessionVersion: where.id === customerId ? customerSessionVersion : 0,
                     }
                   : null;
               },
@@ -114,6 +120,7 @@ describe('StaffController HTTP contract', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mustChangePassword = false;
+    customerSessionVersion = 0;
   });
 
   it.each(routes)(
@@ -160,6 +167,30 @@ describe('StaffController HTTP contract', () => {
       limit: 5,
       offset: 10,
     });
+  });
+
+  it('normalizes the duplicate email lookup and requires an explicit buyer/staff role for a change', async () => {
+    await api().post(path + '/customer-by-email').auth(adminAuth(), bearer)
+      .send({ email: ' CUSTOMER@GMAIL.COM ' }).expect(200);
+    expect(service.findCustomerByEmail).toHaveBeenCalledWith('customer@gmail.com');
+    await api().patch(details + '/role').auth(adminAuth(), bearer)
+      .send({ role: UserRole.ADMIN }).expect(400);
+    expect(service.changeRole).not.toHaveBeenCalled();
+    await api().patch(details + '/role').auth(adminAuth(), bearer)
+      .send({ role: UserRole.CUSTOMER }).expect(200);
+    expect(service.changeRole).toHaveBeenCalledWith(staffId, UserRole.CUSTOMER, adminId);
+  });
+
+  it('rejects an access token issued before a role change', async () => {
+    const oldAccessToken = token(customerId);
+    customerSessionVersion = 1;
+    users.set(customerId, UserRole.WAREHOUSE_STAFF);
+    try {
+      await api().get(path).auth(oldAccessToken, bearer).expect(401);
+      await api().get(path).auth(token(customerId, 1), bearer).expect(403);
+    } finally {
+      users.set(customerId, UserRole.CUSTOMER);
+    }
   });
 
   it.each([

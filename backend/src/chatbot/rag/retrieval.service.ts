@@ -32,6 +32,10 @@ export interface RetrievalResult {
   scoreType?: RetrievalScoreType;
 }
 
+const normalizeKeywords = (text: string) => text.toLowerCase()
+  .normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd')
+  .replace(/[^a-z0-9]+/g, ' ').replace(/\bwi fi\b/g, 'wifi').trim();
+
 @Injectable()
 export class RetrievalService {
   private readonly logger = new Logger(RetrievalService.name);
@@ -192,7 +196,7 @@ export class RetrievalService {
       return [];
     }
 
-    const lower = query.toLowerCase();
+    const normalized = ' ' + normalizeKeywords(query) + ' ';
 
     // Danh mục chủ đề tri thức đặc trưng của hệ thống (dùng từ khóa/cụm từ cụ thể theo domain)
     const specificTopics = [
@@ -225,19 +229,44 @@ export class RetrievalService {
       'đánh giá sản phẩm',
       'địa chỉ giao hàng',
       'bảo mật',
+      'tên đăng nhập', 'đăng nhập bằng gmail', 'email xác thực', 'liên kết kích hoạt',
+      'thư mời', 'quên mật khẩu', 'đổi mật khẩu', 'đổi vai trò',
+      'nhân viên xuống khách hàng', 'chuyển tài khoản thành nhân viên',
+      'nhân viên kho mua hàng', 'hồ sơ', 'số điện thoại',
+      'mua ngay', 'giỏ hàng', 'thời hạn giữ hàng', 'hết hạn giữ hàng',
+      'chờ thanh toán', 'đơn đã xác nhận', 'đã giao', 'theo dõi kiện hàng',
+      'cod', 'vietqr', 'mã qr', 'chuyển khoản', 'nội dung chuyển khoản', 'mã giao dịch',
+      'sai số tiền', 'thiếu tiền', 'thừa tiền', 'sai nội dung', 'chuyển tiền sau',
+      'vẫn chờ xác nhận', 'chưa xác nhận', 'đối soát', 'đổi phương thức thanh toán',
+      'đổi địa chỉ nhận hàng', 'thông báo đơn mua hàng', 'mã sku', 'sku là gì',
+      'còn hàng', 'tồn khả dụng', 'kho khác', 'phân bổ kho', 'khoảng giá',
+      'so sánh sản phẩm', 'chưa có ảnh', 'điện thoại', 'máy tính bảng',
+      'laptop', 'tai nghe', 'micrô', 'đồng hồ thông minh', 'củ sạc', 'cáp sạc',
+      'pin dự phòng', 'camera wi-fi', 'màn hình', 'vesa', 'ssd', 'thẻ nhớ',
+      'router', 'wi-fi', 'mesh', 'gaming', 'tay cầm', 'chân máy',
+      'quay phim', 'điện gia dụng', 'bếp từ', 'nồi chảo', 'trang trí nhà',
+      'bàn học', 'văn phòng', 'thể thao', 'dã ngoại', 'vali', 'hành lý',
+      'chăm sóc cá nhân', 'mẹ và bé', 'thú cưng', 'phụ kiện ô tô',
+      'dụng cụ sửa chữa', 'đầu vít', 'vệ sinh nhà cửa', 'thực phẩm đóng gói', 'đồ uống',
     ];
 
     const matchedTopics = specificTopics.filter((topic) =>
-      lower.includes(topic),
+      normalized.includes(' ' + normalizeKeywords(topic) + ' '),
     );
     if (
-      /\b(hotline|cskh)\b/i.test(lower) &&
+      /\b(nhan vien|staff)(?: kho)? (?:co the |co duoc )?mua hang\b/.test(normalized) &&
+      !matchedTopics.includes('nhân viên kho mua hàng')
+    ) {
+      matchedTopics.push('nhân viên kho mua hàng');
+    }
+    if (
+      /\b(hotline|cskh)\b/.test(normalized) &&
       !matchedTopics.includes('chăm sóc khách hàng')
     ) {
       matchedTopics.push('chăm sóc khách hàng');
     }
     if (
-      lower.includes('hình thức thanh toán') &&
+      normalized.includes(' hinh thuc thanh toan ') &&
       !matchedTopics.includes('phương thức thanh toán')
     ) {
       matchedTopics.push('phương thức thanh toán');
@@ -245,7 +274,7 @@ export class RetrievalService {
     if (
       matchedTopics.includes('giao hàng') &&
       !matchedTopics.includes('thời gian giao hàng') &&
-      /mấy ngày|bao nhiêu ngày|bao lâu/.test(lower)
+      /may ngay|bao nhieu ngay|bao lau/.test(normalized)
     ) {
       matchedTopics.push('thời gian giao hàng');
     }
@@ -265,7 +294,7 @@ export class RetrievalService {
           ]),
         },
         orderBy: [{ title: 'asc' }, { id: 'asc' }],
-        take: 30,
+        take: 120,
       });
 
       if (rows.length === 0) {

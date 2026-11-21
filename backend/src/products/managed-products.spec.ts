@@ -86,6 +86,7 @@ describe('Managed products: real JWT, RBAC, DTO and service; database boundary m
         emailVerifiedAt: new Date(),
         role,
         mustChangePassword: false,
+        sessionVersion: 0,
       }),
     );
     prisma.category.findFirst.mockResolvedValue({ id: categoryId });
@@ -149,6 +150,7 @@ describe('Managed products: real JWT, RBAC, DTO and service; database boundary m
       isActive: true,
       emailVerifiedAt: new Date(),
       mustChangePassword: true,
+      sessionVersion: 0,
     });
     await client()
       .post('/admin/products')

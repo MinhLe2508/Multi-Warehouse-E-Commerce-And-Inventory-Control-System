@@ -45,6 +45,8 @@ import { RolesGuard } from '../core/guards/roles.guard';
 
 // IMPORT DẠNG GIÁ TRỊ: ValidationPipe cần class DTO tại runtime.
 import { CreateStaffDto } from '../auth/dto/create-staff.dto';
+import { EmailDto } from '../auth/dto/email.dto';
+import { ChangeStaffRoleDto } from './dto/change-staff-role.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { UpdateStaffStatusDto } from './dto/update-staff-status.dto';
@@ -79,6 +81,21 @@ export class StaffController {
   @Get()
   findAll(@Query() query: QueryStaffDto): Promise<PagedResult<StaffView>> {
     return this.staffService.findAll(query);
+  }
+
+  @Post('customer-by-email')
+  @HttpCode(HttpStatus.OK)
+  findCustomerByEmail(@Body() dto: EmailDto) {
+    return this.staffService.findCustomerByEmail(dto.email);
+  }
+
+  @Patch(':id/role')
+  changeRole(
+    @Param('id', staffIdPipe) id: string,
+    @Body() dto: ChangeStaffRoleDto,
+    @CurrentUser('userId') actorId: string,
+  ) {
+    return this.staffService.changeRole(id, dto.role, actorId);
   }
 
   // ==========================================================================

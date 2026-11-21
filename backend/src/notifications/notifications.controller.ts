@@ -43,8 +43,9 @@ export class NotificationsController {
   async countUnread(
     @CurrentUser('userId') userId: string,
     @CurrentUser('role') role?: UserRole,
+    @Query('scope') scope?: string,
   ) {
-    const count = await this.notificationsService.countUnread(userId, role);
+    const count = await this.notificationsService.countUnread(userId, role, scope);
     return { count };
   }
 
@@ -56,8 +57,9 @@ export class NotificationsController {
   async markAllAsRead(
     @CurrentUser('userId') userId: string,
     @CurrentUser('role') role?: UserRole,
+    @Query('scope') scope?: string,
   ) {
-    await this.notificationsService.markAllAsRead(userId, role);
+    await this.notificationsService.markAllAsRead(userId, role, scope);
     return { success: true };
   }
 

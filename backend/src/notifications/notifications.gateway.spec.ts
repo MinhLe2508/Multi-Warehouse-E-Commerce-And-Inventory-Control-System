@@ -4,7 +4,7 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 function build(user: object | null, verify: jest.Mock) {
   const prisma = {
-    user: { findUnique: jest.fn().mockResolvedValue(user) },
+    user: { findUnique: jest.fn().mockResolvedValue(user && { sessionVersion: 0, ...user }) },
     warehouseStaffAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const gateway = new NotificationsGateway(
@@ -85,6 +85,22 @@ describe('NotificationsGateway', () => {
     expect(client.disconnect).toHaveBeenCalledWith(true);
   });
 
+  it('từ chối phiên khách hàng cũ khi tài khoản đã thành nhân viên', async () => {
+    const { gateway, client } = build(
+      {
+        id: USER_ID,
+        role: 'WAREHOUSE_STAFF',
+        isActive: true,
+        emailVerifiedAt: new Date(),
+        sessionVersion: 1,
+      },
+      jest.fn().mockResolvedValue({ sub: USER_ID, type: 'access' }),
+    );
+    await gateway.handleConnection(client as never);
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(client.join).not.toHaveBeenCalled();
+  });
+
   it('CUSTOMER chỉ join room cá nhân userId, KHÔNG được join room quản trị (role:ADMIN / role:WAREHOUSE_STAFF)', async () => {
     const { gateway, client } = build(
       {
@@ -120,7 +136,7 @@ describe('NotificationsGateway', () => {
     const { gateway, emit, prisma } = build(null, jest.fn());
     const warehouseId = '22222222-2222-4222-8222-222222222222';
     prisma.warehouseStaffAssignment.findMany.mockResolvedValue([
-      { userId: USER_ID },
+      { userId: USER_ID, user: { sessionVersion: 2 } },
     ]);
     gateway.emitInventoryChanged({
       inventoryId: '10',
@@ -134,7 +150,7 @@ describe('NotificationsGateway', () => {
     const rooms = (
       (gateway.server.to as jest.Mock).mock.calls as string[][]
     ).map((c) => c[0]);
-    expect(rooms).toEqual(['role:ADMIN', [USER_ID]]);
+    expect(rooms).toEqual(['role:ADMIN', [`staff:${USER_ID}:2`]]);
     expect(rooms).not.toContain('role:CUSTOMER');
     expect(emit).toHaveBeenCalledWith('inventory.changed', {
       inventoryId: '10',
@@ -166,6 +182,7 @@ describe('NotificationsGateway', () => {
       isActive: true,
       emailVerifiedAt: new Date(),
       mustChangePassword: false,
+      sessionVersion: 0,
     });
 
     const ok = await gateway.reauthenticate(client as never, 'Bearer new-tok');

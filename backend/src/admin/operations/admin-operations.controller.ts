@@ -48,6 +48,11 @@ export class AdminOperationsController {
     return this.operations.listCustomers(query);
   }
 
+  @Get('customers/:id')
+  customer(@Param('id', ParseUUIDPipe) id: string) {
+    return this.operations.getCustomer(id);
+  }
+
   @Get('customers/:id/orders')
   customerOrders(
     @Param('id', ParseUUIDPipe) id: string,

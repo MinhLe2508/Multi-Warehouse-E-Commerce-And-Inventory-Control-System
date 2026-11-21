@@ -42,7 +42,7 @@ export class PaymentsController {
 
   @Get('bank-transfer/:orderId')
   @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
-  @Roles(UserRole.CUSTOMER)
+  @Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
   bankTransferInstructions(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,
@@ -81,7 +81,7 @@ export class PaymentsController {
 
   @Post('mock/:orderId')
   @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
-  @Roles(UserRole.CUSTOMER)
+  @Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
   process(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,

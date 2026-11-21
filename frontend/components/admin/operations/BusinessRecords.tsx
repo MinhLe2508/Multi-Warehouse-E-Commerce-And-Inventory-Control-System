@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import BankReconciliation, { TRANSFER_ISSUE } from './BankReconciliation';
 import { useAdminCtx } from '../AdminContext';
-import { formatVnd } from '../../../shared/lib/format';
+import { formatVnd, PAYMENT_METHOD_LABEL as PAYMENT_METHODS, PAYMENT_STATUS_LABEL as PAYMENT_STATES } from '../../../shared/lib/format';
 import {
   AdminCollection,
   OrderReference,
@@ -11,17 +11,6 @@ import {
   localDateTime,
 } from './AdminUi';
 
-const PAYMENT_STATES = {
-  PENDING: 'Đang chờ',
-  SUCCESS: 'Thành công',
-  FAILED: 'Thất bại',
-};
-const PAYMENT_METHODS = {
-  MOCK_CARD: 'Thẻ (trước đây)',
-  MOCK_EWALLET: 'Ví (trước đây)',
-  COD: 'Khi nhận hàng',
-  BANK_TRANSFER: 'Chuyển khoản VietQR',
-};
 const RESERVATION_STATES = {
   HOLDING: 'Đang giữ',
   COMMITTED: 'Đã trừ tồn',

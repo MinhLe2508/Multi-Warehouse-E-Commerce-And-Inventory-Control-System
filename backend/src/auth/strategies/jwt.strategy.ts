@@ -23,6 +23,7 @@ import { type AuthenticatedUser } from '../../core/decorators/current-user.decor
 export interface JwtPayload {
   sub: string;
   type: 'access';
+  sessionVersion?: number;
   iat?: number;
   exp?: number;
 }
@@ -95,6 +96,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         role: true,
         isActive: true,
         mustChangePassword: true,
+        sessionVersion: true,
       },
     });
 
@@ -103,6 +105,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user) {
       throw new UnauthorizedException(
         'Tài khoản không hợp lệ hoặc không tồn tại.',
+      );
+    }
+
+    if ((payload.sessionVersion ?? 0) !== user.sessionVersion) {
+      throw new UnauthorizedException(
+        'Quyền tài khoản đã thay đổi. Vui lòng đăng nhập lại.',
       );
     }
 

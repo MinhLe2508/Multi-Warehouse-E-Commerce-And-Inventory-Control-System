@@ -269,6 +269,16 @@ export class AdminOperationsService {
     };
   }
 
+  async getCustomer(id: string) {
+    const account = await this.prisma.user.findUnique({
+      where: { id, role: UserRole.CUSTOMER },
+      select: { ...customerSelect, address: true },
+    });
+    if (!account) throw new NotFoundException('Không tìm thấy khách hàng.');
+    const { _count, ...profile } = account;
+    return { ...profile, orderCount: _count.orders };
+  }
+
   async getCustomerOrders(id: string, query: AdminPageQuery) {
     const customer = await this.prisma.user.findFirst({
       where: { id, role: UserRole.CUSTOMER },

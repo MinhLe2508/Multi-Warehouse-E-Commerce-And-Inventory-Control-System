@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
+const buyerRoles = [UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF];
 
 class CustomerProfileDto {
   @Transform(trim)
@@ -41,7 +42,7 @@ class CustomerProfileDto {
 
 @Controller('customer/profile')
 @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
-@Roles(UserRole.CUSTOMER)
+@Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
 export class CustomerProfileController {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -60,7 +61,7 @@ export class CustomerProfileController {
       createdAt: true,
     } satisfies Prisma.UserSelect;
     const profile = await this.prisma.user.findFirst({
-      where: { id, role: 'CUSTOMER', isActive: true },
+      where: { id, role: { in: buyerRoles }, isActive: true },
       select,
     });
     if (!profile) throw new NotFoundException('Không tìm thấy tài khoản.');
@@ -73,7 +74,7 @@ export class CustomerProfileController {
     @Body() input: CustomerProfileDto,
   ) {
     const result = await this.prisma.user.updateMany({
-      where: { id, role: 'CUSTOMER', isActive: true },
+      where: { id, role: { in: buyerRoles }, isActive: true },
       data: {
         fullName: input.fullName,
         phone: input.phone || null,

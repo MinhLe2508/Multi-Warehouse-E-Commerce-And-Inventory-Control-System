@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Archive, Bell, ChevronDown, ClipboardList, History, LayoutDashboard, LogOut,
-  Menu, Package, PanelLeftClose, PanelLeftOpen, ShieldAlert, Truck, UserRound,
+  Menu, Package, PanelLeftClose, PanelLeftOpen, ShieldAlert, ShoppingBag, Truck, UserRound,
   Warehouse, X,
 } from 'lucide-react';
 import { RoleGate } from '@/components/admin/RoleGate';
@@ -42,6 +42,7 @@ const groups = [
   { name: 'Cá nhân', links: [
     { name: 'Thông báo', href: '/staff/notifications', icon: Bell },
     { name: 'Hồ sơ', href: '/staff/profile', icon: UserRound },
+    { name: 'Mua sắm tại MultiMart', href: '/', icon: ShoppingBag },
   ] },
 ];
 
