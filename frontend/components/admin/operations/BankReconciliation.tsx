@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent } from 'react';
-import { apiPost, extractErrorMessage } from '../../../shared/lib/apiClient';
+import { apiPost, AuthError, extractErrorMessage } from '../../../shared/lib/apiClient';
 import { formatVnd } from '../../../shared/lib/format';
 import { AdminDialog } from './AdminUi';
 
@@ -44,10 +44,17 @@ export default function BankReconciliation({ payment, onClose, onSaved }: {
         `/payments/bank-transfer/${payment.id}/reconcile`,
         { bankReference: value('bankReference'), transferCode: value('transferCode'), amount: Number(value('amount')), receivedAt: receivedAt.toISOString() },
       );
-      onSaved(result.applied ? 'Đã xác nhận khoản tiền và cập nhật đơn hàng.' :
-        result.duplicate ? 'Mã giao dịch này đã được ghi nhận. Kiểm tra lại sao kê.' :
-          `Đã ghi nhận khoản tiền cần đối soát thêm. ${TRANSFER_ISSUE[result.issue ?? ''] ?? ''}`);
+      if (result.applied) {
+        onSaved('Đã xác nhận thanh toán và cập nhật đơn hàng.');
+      } else {
+        setError(result.duplicate ? 'Mã giao dịch này đã được ghi nhận. Kiểm tra lại sao kê.' :
+          TRANSFER_ISSUE[result.issue ?? ''] ?? 'Chưa xác nhận được giao dịch.');
+      }
     } catch (cause) {
+      if (cause instanceof AuthError && cause.code === 'PAYMENT_SUPPORT_REQUIRED') {
+        onSaved('Yêu cầu đã thay đổi. Trạng thái đơn được tải lại.');
+        return;
+      }
       setError(extractErrorMessage(cause, 'Chưa thể đối soát khoản tiền này.'));
     } finally {
       pending.current = false;
@@ -55,12 +62,12 @@ export default function BankReconciliation({ payment, onClose, onSaved }: {
     }
   }
 
-  return <AdminDialog title="Đối soát chuyển khoản VietQR" onClose={() => { if (!pending.current) onClose(); }}>
+  return <AdminDialog title="Xác nhận chuyển trạng thái" onClose={() => { if (!pending.current) onClose(); }}>
     <p className="mb-2">Đơn <strong>{payment.orderCode}</strong> · Số tiền cần nhận <strong>{formatVnd(Number(payment.amount))}</strong></p>
     <p className="mb-3">Đối chiếu trong sao kê Vietcombank{payment.accountNumber ? <> của tài khoản <strong>{payment.accountNumber}</strong></> : null}. Mã chuyển khoản của đơn <strong className="font-monospace">{payment.transactionRef}</strong>.</p>
     {error && <p className="alert alert-danger" role="alert">{error}</p>}
     <form className="d-grid gap-3" onSubmit={(event) => void submit(event)}>
-      <label>Nội dung chuyển khoản trên sao kê
+      <label>Mã nội dung chuyển khoản trên sao kê
         <input name="transferCode" className="form-control" required maxLength={22} autoComplete="off" />
       </label>
       <label>Mã giao dịch ngân hàng
@@ -78,7 +85,7 @@ export default function BankReconciliation({ payment, onClose, onSaved }: {
       </label>
       <div className="d-flex gap-2 justify-content-end">
         <button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-        <button type="submit" className="btn btn-gradient-purple" disabled={busy}>{busy ? 'Đang đối soát…' : 'Ghi nhận sao kê'}</button>
+        <button type="submit" className="btn btn-gradient-purple" disabled={busy}>{busy ? 'Đang đối soát…' : 'Xác nhận đã thanh toán'}</button>
       </div>
     </form>
   </AdminDialog>;

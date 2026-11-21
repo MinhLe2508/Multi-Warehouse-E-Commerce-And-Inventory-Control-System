@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAdminCtx } from '../../../components/admin/AdminContext';
 import { OrderDrawer } from '../../../components/admin/OrderDrawer';
@@ -19,6 +20,7 @@ import {
   AdminPageFrame,
   AdminPager,
   RefreshButton,
+  RecordStatus,
   WarehouseScope,
 } from '../../../components/admin/operations/AdminUi';
 
@@ -138,6 +140,14 @@ export default function AdminOrdersPage() {
             className="form-control"
           />
         </label>
+        {!isStaff && <label>
+          <span>Đối soát VietQR</span>
+          <select className="form-select" value={filters.paymentSupport}
+            onChange={(event) => updateFilters({ paymentSupport: event.target.value === 'OPEN' ? 'OPEN' : 'ALL' })}>
+            <option value="ALL">Tất cả đơn</option>
+            <option value="OPEN">Có yêu cầu CSKH đang mở</option>
+          </select>
+        </label>}
         {!isStaff && <WarehouseScope />}
       </div>
 
@@ -179,7 +189,12 @@ export default function AdminOrdersPage() {
                 },
                 {
                   heading: 'Trạng thái',
-                  render: (order) => <OrderBadge status={order.status} />,
+                  render: (order) => <div className="d-flex flex-wrap gap-1">
+                    <OrderBadge status={order.status} />
+                    {order.paymentSupport?.status === 'OPEN' && <RecordStatus label="Cần đối soát" tone="warn" />}
+                    {!isStaff && order.paymentMethod === 'BANK_TRANSFER' && order.paymentStatus === 'SUCCESS' &&
+                      <RecordStatus label="Đã thanh toán" tone="good" />}
+                  </div>,
                 },
                 {
                   heading: 'Tạo lúc',
@@ -189,7 +204,10 @@ export default function AdminOrdersPage() {
                 {
                   heading: 'Thao tác',
                   className: 'text-end',
-                  render: (order) => (
+                  render: (order) => order.paymentSupport?.status === 'OPEN' ? (
+                    <Link className="btn btn-outline-primary btn-sm text-nowrap" href={`/admin/orders/${order.id}`}
+                      aria-label={`Xem chi tiết ${order.orderCode}`}>Chi tiết</Link>
+                  ) : (
                     <button
                       type="button"
                       onClick={() => setSelectedId(order.id)}

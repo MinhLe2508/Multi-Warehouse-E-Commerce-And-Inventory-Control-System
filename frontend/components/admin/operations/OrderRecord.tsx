@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { STATUS_LABEL, formatVnd } from '../../../shared/lib/format';
 import { type ApiAdminOrder, mapApiOrder } from '../../../hooks/useAdminOrders';
+import OrderPaymentReview from './OrderPaymentReview';
 import {
   AdminDataTable,
   AdminFeedback,
@@ -17,6 +19,7 @@ export function OrderRecord({ id }: { id: string }) {
     `/admin/orders/${encodeURIComponent(id)}`,
   );
   const data = order.data && mapApiOrder(order.data);
+  const [notice, setNotice] = useState('');
   return (
     <AdminPageFrame
       title={data ? `Đơn ${data.orderCode}` : 'Chi tiết đơn hàng'}
@@ -26,6 +29,7 @@ export function OrderRecord({ id }: { id: string }) {
         </Link>
       }
     >
+      {notice && <p className="alert alert-info mb-0" role="status">{notice}</p>}
       {data ? (
         <>
           <section className="admin-workspace-panel p-3 p-md-4 d-flex justify-content-between flex-wrap gap-3">
@@ -41,6 +45,10 @@ export function OrderRecord({ id }: { id: string }) {
               <p className="mb-0 mt-2">{formatVnd(data.grandTotal)}</p>
             </div>
           </section>
+          <OrderPaymentReview order={data} onUpdate={(message) => {
+            setNotice(message);
+            order.refresh();
+          }} />
           <section className="admin-workspace-panel overflow-hidden">
             <h2 className="h6 p-3 mb-0">Sản phẩm và kho xuất</h2>
             <AdminDataTable

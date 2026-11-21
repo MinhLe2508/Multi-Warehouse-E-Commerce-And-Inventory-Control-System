@@ -30,6 +30,10 @@ export class QueryAdminOrdersDto {
   reservation?: 'HOLDING' | 'EXPIRING' | 'EXPIRED';
 
   @IsOptional()
+  @IsIn(['OPEN'])
+  paymentSupport?: 'OPEN';
+
+  @IsOptional()
   @Matches(DATE_REGEX, { message: 'from phải có định dạng YYYY-MM-DD' })
   @IsDateString({ strict: true }, { message: 'from phải là ngày hợp lệ' })
   from?: string;

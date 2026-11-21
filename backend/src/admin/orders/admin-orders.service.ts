@@ -4,6 +4,7 @@ import {
 } from '../../staff/warehouse-scope';
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -14,6 +15,7 @@ import {
   OrdersService,
 } from '../../orders/orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { paymentSupportSelect } from '../../payments/payment-support-policy';
 import type { QueryAdminOrdersDto } from './dto/query-admin-orders.dto';
 import type { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
 
@@ -30,6 +32,7 @@ export class AdminOrdersQueryService {
   ) {}
 
   async findAll(query: QueryAdminOrdersDto, staffId?: string) {
+    if (staffId && query.paymentSupport) throw new ForbiddenException();
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
@@ -57,6 +60,9 @@ export class AdminOrdersQueryService {
     const search = query.q?.trim();
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
+      ...(query.paymentSupport && {
+        payments: { some: { method: 'BANK_TRANSFER', supportRequest: { is: { status: query.paymentSupport } } } },
+      }),
       ...staffOrderWhere(staffId, query.warehouseId),
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
       ...(search
@@ -123,6 +129,9 @@ export class AdminOrdersQueryService {
             transactionRef: true,
             processedAt: true,
             createdAt: true,
+            ...(!staffId && {
+              supportRequest: { select: paymentSupportSelect },
+            }),
           },
         },
         statusHistory: {
@@ -161,7 +170,7 @@ export class AdminOrdersQueryService {
     );
 
     return {
-      items: orders.map((order) => this.serializeOrder(order)),
+      items: orders.map((order) => this.serializeOrder(order, staffId)),
       total,
       page,
       limit,
@@ -219,6 +228,10 @@ export class AdminOrdersQueryService {
             failureReason: true,
             processedAt: true,
             createdAt: true,
+            ...(!staffId && {
+              gatewayResponse: true,
+              supportRequest: { select: paymentSupportSelect },
+            }),
           },
         },
         statusHistory: {
@@ -253,7 +266,7 @@ export class AdminOrdersQueryService {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
 
-    const detail = this.serializeOrder(order);
+    const detail = this.serializeOrder(order, staffId);
     if (!staffId) return detail;
     return {
       ...detail,
@@ -354,6 +367,8 @@ export class AdminOrdersQueryService {
       createdAt: Date;
       currency?: string;
       failureReason?: string | null;
+      gatewayResponse?: Prisma.JsonValue;
+      supportRequest?: Prisma.PaymentSupportRequestGetPayload<{ select: typeof paymentSupportSelect }> | null;
     }>;
     statusHistory: Array<{
       id: bigint;
@@ -369,7 +384,14 @@ export class AdminOrdersQueryService {
         role: string;
       } | null;
     }>;
-  }) {
+  }, staffId?: string) {
+    const supportedPayment = staffId ? undefined : order.payments.find(
+      (payment) => payment.method === 'BANK_TRANSFER' && payment.supportRequest,
+    );
+    const recipient = supportedPayment?.gatewayResponse;
+    const accountNumber = recipient && typeof recipient === 'object' && !Array.isArray(recipient) &&
+      typeof recipient.accountNumber === 'string' ? recipient.accountNumber : null;
+    const support = supportedPayment?.supportRequest;
     return {
       id: order.id,
       orderCode: order.orderCode,
@@ -390,6 +412,17 @@ export class AdminOrdersQueryService {
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       customer: order.user ?? null,
+      ...(!staffId && {
+        paymentSupport: support && supportedPayment ? {
+          ...support,
+          paymentId: supportedPayment.id,
+          amount: supportedPayment.amount.toFixed(2),
+          transactionRef: supportedPayment.transactionRef,
+          accountNumber,
+          canConfirm: support.status === 'OPEN' && supportedPayment.status === 'PENDING' &&
+            order.status === 'PENDING_PAYMENT' && (order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
+        } : null,
+      }),
       items: order.items.map((item) => ({
         id: item.id,
         productId: item.productId,

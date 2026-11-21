@@ -26,6 +26,10 @@ export class PrismaService
   constructor() {
     const adapter = new PrismaPg({
       connectionString: process.env.DATABASE_URL as string,
+      onConnect: async (client) => {
+        // Giữ tham số Date và dữ liệu timestamptz của Prisma trong cùng múi giờ.
+        await client.query("SET TIME ZONE 'UTC'");
+      },
     });
 
     super({

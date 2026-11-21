@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPatch, AuthError, extractErrorMessage } from '../shared/lib/apiClient';
 import { NEXT_STATUS } from '../shared/lib/format';
 import type { AdminOrder, OrderStatus, Warehouse } from '../shared/types/admin';
+import type { AdminPaymentSupport } from '../shared/types/paymentSupport';
 
 interface ApiAdminOrderItem {
   id: string;
@@ -33,8 +34,10 @@ export interface ApiAdminOrder {
   } | null;
   items: ApiAdminOrderItem[];
   payments: Array<{
-    method: 'MOCK_CARD' | 'MOCK_EWALLET' | 'COD';
+    method: AdminOrder['paymentMethod'];
+    status: NonNullable<AdminOrder['paymentStatus']>;
   }>;
+  paymentSupport?: AdminPaymentSupport | null;
   statusHistory: Array<{
     fromStatus: OrderStatus | null;
     toStatus: OrderStatus;
@@ -57,6 +60,7 @@ interface OrderFilters {
   from: string;
   to: string;
   q: string;
+  paymentSupport: 'ALL' | 'OPEN';
   page: number;
   limit: number;
 }
@@ -102,6 +106,8 @@ export function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
       address: raw.shippingAddress,
     },
     paymentMethod: raw.payments[0]?.method ?? 'MOCK_CARD',
+    paymentStatus: raw.payments[0]?.status ?? null,
+    paymentSupport: raw.paymentSupport ?? null,
     items,
     history: raw.statusHistory.map((h) => ({
       fromStatus: h.fromStatus,
@@ -119,6 +125,7 @@ export function useAdminOrders(warehouseId: string) {
     from: '',
     to: '',
     q: '',
+    paymentSupport: 'ALL',
     page: 1,
     limit: 20,
   });
@@ -149,6 +156,7 @@ export function useAdminOrders(warehouseId: string) {
       if (filters.from) params.set('from', filters.from);
       if (filters.to) params.set('to', filters.to);
       if (filters.q.trim()) params.set('q', filters.q.trim());
+      if (filters.paymentSupport === 'OPEN') params.set('paymentSupport', 'OPEN');
 
       try {
         const data = await apiGet<ApiAdminOrdersResponse>(`/admin/orders?${params.toString()}`);

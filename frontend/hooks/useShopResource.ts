@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { authRequest } from "@/shared/lib/authApi";
+import { AuthError, authRequest } from "@/shared/lib/authApi";
 import { authenticatedRequest } from "@/store/useAuthStore";
 
 export const SHOP_NOTIFICATIONS_CHANGED = "multimart:notifications";
 
 export function useShopResource<T>(
-  path: string | null, { identity = "", interval = 0, publicRead = false, event }: {
+  path: string | null, { identity = "", interval = 0, publicRead = false, event, keepOnNetworkError = false }: {
     identity?: string; interval?: number; publicRead?: boolean; event?: string;
+    keepOnNetworkError?: boolean;
   } = {},
 ) {
   const [revision, setRevision] = useState(0);
@@ -21,10 +22,14 @@ export function useShopResource<T>(
     const request = publicRead ? authRequest : authenticatedRequest;
     request<T>(path).then(
       (data) => { if (!cancelled) setState({ key, data }); },
-      (error: unknown) => { if (!cancelled) setState({ key, error }); },
+      (error: unknown) => {
+        if (cancelled) return;
+        const keep = keepOnNetworkError && error instanceof AuthError && (error.status === 0 || error.status >= 500);
+        setState((previous) => ({ key, error, data: keep && previous?.key === key ? previous.data : undefined }));
+      },
     );
     return () => { cancelled = true; };
-  }, [key, path, publicRead, revision]);
+  }, [keepOnNetworkError, key, path, publicRead, revision]);
 
   useEffect(() => {
     if (!path) return;

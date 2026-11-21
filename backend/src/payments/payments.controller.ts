@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -24,6 +25,10 @@ import { MockPaymentDto } from './dto/mock-payment.dto';
 import { PaymentsService } from './payments.service';
 import { BankTransferService } from './bank-transfer.service';
 import { ReconcileTransferDto } from './dto/reconcile-transfer.dto';
+import {
+  ClosePaymentSupportDto,
+  RequestPaymentSupportDto,
+} from './dto/payment-support.dto';
 import { authorizeSePay, readSePayTransfer } from './sepay-webhook';
 import { getVietQrRecipient } from './vietqr-config';
 
@@ -48,6 +53,33 @@ export class PaymentsController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ) {
     return this.bankTransfer.instructions(user.userId, orderId);
+  }
+
+  @Post('bank-transfer/:orderId/support')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
+  @HttpCode(200)
+  requestSupport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: RequestPaymentSupportDto,
+  ) {
+    return this.bankTransfer.requestSupport(
+      user.userId,
+      orderId,
+      dto.bankReference,
+    );
+  }
+
+  @Patch('bank-transfer/:paymentId/support')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  closeSupport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Body() dto: ClosePaymentSupportDto,
+  ) {
+    return this.bankTransfer.closeSupport(paymentId, user.userId, dto.note);
   }
 
   @Public()

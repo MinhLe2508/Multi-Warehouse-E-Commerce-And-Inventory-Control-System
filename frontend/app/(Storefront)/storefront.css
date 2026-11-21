@@ -257,6 +257,12 @@ textarea.mm-input { resize: vertical; }
 .mm-payment-hold { display: flex; align-items: center; gap: 8px; padding: 9px 0; color: #7b4b05; font-size: .91rem; }
 .mm-recipient { color: var(--mm-muted); line-height: 1.65; font-size: .91rem; }
 .mm-receipt-tools { margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+.mm-payment-support { display: grid; gap: 8px; padding: 14px; border: 1px solid #d9e3f1; border-radius: 11px; background: #f8fbff; }
+.mm-payment-support h3 { display: flex; align-items: center; gap: 8px; font-size: .98rem; }
+.mm-payment-support h3 svg { flex-shrink: 0; color: var(--mm-blue-strong); }
+.mm-payment-support p, .mm-payment-support small { color: var(--mm-muted); font-size: .86rem; overflow-wrap: anywhere; }
+.mm-payment-support label { display: grid; gap: 5px; font-size: .85rem; font-weight: 600; }
+.mm-payment-support > button { justify-self: start; }
 .mm-recipient { margin-top: 8px; display: block; }
 .mm-timeline { display: grid; gap: 13px; margin-top: 13px; }
 .mm-timeline li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; }

@@ -96,6 +96,7 @@ export class AdminOperationsService {
           createdAt: true,
           processedAt: true,
           gatewayResponse: true,
+          supportRequest: { select: { status: true } },
           order: { select: { ...orderIdentity, status: true, reservationExpiresAt: true } },
           bankReceipts: {
             take: 5,
@@ -108,14 +109,15 @@ export class AdminOperationsService {
     );
     return {
       ...page,
-      items: page.items.map(({ gatewayResponse, bankReceipts, ...row }) => ({
+      items: page.items.map(({ gatewayResponse, bankReceipts, supportRequest, ...row }) => ({
         ...row,
         amount: row.amount.toFixed(2),
         accountNumber: row.method === 'BANK_TRANSFER' && gatewayResponse &&
           typeof gatewayResponse === 'object' && !Array.isArray(gatewayResponse) &&
           typeof gatewayResponse.accountNumber === 'string' ? gatewayResponse.accountNumber : null,
         bankReceipts: bankReceipts.map((receipt) => ({ ...receipt, amount: receipt.amount.toFixed(0) })),
-        canReconcile: row.method === 'BANK_TRANSFER' && row.status === 'PENDING' &&
+        supportStatus: supportRequest?.status ?? null,
+        canReconcile: supportRequest?.status === 'OPEN' && row.method === 'BANK_TRANSFER' && row.status === 'PENDING' &&
           row.order.status === 'PENDING_PAYMENT' && (row.order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
       })),
     };

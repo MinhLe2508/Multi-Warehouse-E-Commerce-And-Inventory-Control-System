@@ -1,4 +1,5 @@
 import { authenticatedRequest } from "@/store/useAuthStore";
+import type { PaymentSupportRequest } from "@/shared/types/paymentSupport";
 
 export type CheckoutMethod = "COD" | "BANK_TRANSFER";
 export type OrderPaymentMethod = CheckoutMethod | "MOCK_CARD" | "MOCK_EWALLET";
@@ -24,7 +25,8 @@ export interface CustomerOrder {
   cancelledReason: string | null;
   items: OrderLine[];
   payment: { method: OrderPaymentMethod; status: "PENDING" | "SUCCESS" | "FAILED"; amount: string;
-    transactionRef: string; processedAt: string | null; reviewRequired: boolean } | null;
+    transactionRef: string; processedAt: string | null; reviewRequired: boolean;
+    supportAvailableAt: string | null; supportRequest: PaymentSupportRequest | null } | null;
 }
 export interface Receipt extends CustomerOrder {
   statusHistory: { id: string; fromStatus: OrderState | null; toStatus: OrderState; reason: string | null; createdAt: string }[];

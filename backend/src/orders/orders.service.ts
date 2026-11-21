@@ -15,6 +15,12 @@ import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.se
 import { mockPaymentsEnabled } from '../payments/payment-mode';
 import { transferCodeForOrder } from '../payments/vietqr';
 import { getVietQrRecipient } from '../payments/vietqr-config';
+import {
+  PAYMENT_SUPPORT_WAIT_MS,
+  paymentReservationStart,
+  paymentSupportSelect,
+  paymentWindowStartsAt,
+} from '../payments/payment-support-policy';
 import { recordCustomerOrderNotice } from './customer-order-notice';
 
 interface CheckoutSnapshotRow {
@@ -36,6 +42,7 @@ export const ORDER_STATUS_TRANSITIONS: Partial<
 };
 
 const customerOrderInclude = {
+  reservations: paymentReservationStart,
   items: {
     select: {
       id: true,
@@ -59,6 +66,7 @@ const customerOrderInclude = {
       transactionRef: true,
       processedAt: true,
       bankReceipts: { where: { issue: { not: null } }, take: 1, select: { id: true } },
+      supportRequest: { select: paymentSupportSelect },
     },
   },
 } satisfies Prisma.OrderInclude;
@@ -539,11 +547,14 @@ export class OrdersService {
 
   private serializeCustomerOrder(order: CustomerOrderRow) {
     const payment = order.payments[0];
+    const createdAt = payment?.method === 'BANK_TRANSFER'
+      ? paymentWindowStartsAt(order)
+      : order.createdAt;
     return {
       id: order.id,
       orderCode: order.orderCode,
       status: order.status,
-      createdAt: order.createdAt,
+      createdAt,
       reservationExpiresAt: order.reservationExpiresAt,
       cancelledReason: order.cancelledReason === 'EXPIRED' ? 'EXPIRED' : null,
       canCancel:
@@ -571,6 +582,10 @@ export class OrdersService {
         transactionRef: payment.transactionRef,
         processedAt: payment.processedAt,
         reviewRequired: payment.bankReceipts.length > 0,
+        supportAvailableAt: payment.method === 'BANK_TRANSFER' && payment.status === 'PENDING'
+          ? new Date(createdAt.getTime() + PAYMENT_SUPPORT_WAIT_MS)
+          : null,
+        supportRequest: payment.supportRequest,
       } : null,
     };
   }

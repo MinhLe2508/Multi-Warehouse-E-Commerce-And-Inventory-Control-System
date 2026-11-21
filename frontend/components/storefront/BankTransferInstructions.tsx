@@ -57,7 +57,7 @@ export default function BankTransferInstructions({ orderId, identity }: { orderI
       <Image src={qrImage} width={208} height={208} unoptimized alt={tx("Mã QR chuyển khoản cho đơn này", "Bank transfer QR for this order")} />
       <figcaption>{tx("Quét bằng ứng dụng ngân hàng", "Scan in your banking app")}</figcaption>
     </figure>
-    <p>{tx("Giữ đúng số tiền và nội dung khi chuyển. Nếu đã chuyển, chờ hệ thống đối soát hoặc mở lại đơn để kiểm tra trạng thái.",
-      "Keep the exact amount and memo. After transferring, wait for reconciliation or reopen this order to check its status.")}</p>
+    <p>{tx("Giữ đúng số tiền và nội dung khi chuyển. Trang này tự cập nhật khi hệ thống xác nhận đã nhận tiền.",
+      "Keep the exact amount and memo. This page updates when your transfer is verified.")}</p>
   </div>;
 }

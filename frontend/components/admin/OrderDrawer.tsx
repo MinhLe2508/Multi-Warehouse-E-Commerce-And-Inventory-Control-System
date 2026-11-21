@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Offcanvas } from 'react-bootstrap';
 import { NEXT_STATUS, STATUS_LABEL, formatTime, formatVnd } from '../../shared/lib/format';
 import type { AdminOrder } from '../../shared/types/admin';
@@ -102,6 +103,11 @@ export function OrderDrawer({ order, updating, onClose, onAdvance }: Props) {
             ))}
           </ol>
         </div>
+        {order.paymentSupport?.status === 'OPEN' && (
+          <Link className="btn btn-outline-primary" href={`/admin/orders/${order.id}`}>
+            Xem yêu cầu đối soát VietQR
+          </Link>
+        )}
 
         {/* Nút hành động */}
         <div className="mt-auto pt-3 border-top">

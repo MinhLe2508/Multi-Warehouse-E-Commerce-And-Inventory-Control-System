@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import BankReconciliation, { TRANSFER_ISSUE } from './BankReconciliation';
+import Link from 'next/link';
+import { TRANSFER_ISSUE } from './BankReconciliation';
 import { useAdminCtx } from '../AdminContext';
 import { formatVnd, PAYMENT_METHOD_LABEL as PAYMENT_METHODS, PAYMENT_STATUS_LABEL as PAYMENT_STATES } from '../../../shared/lib/format';
 import {
@@ -38,8 +38,7 @@ type PaymentRecord = {
   amount: string;
   currency: string;
   order: OrderIdentity & { status: string };
-  accountNumber: string | null;
-  canReconcile: boolean;
+  supportStatus: 'OPEN' | 'CONFIRMED' | 'CLOSED' | null;
   bankReceipts: { id: string; bankReference: string | null; amount: string; receivedAt: string; issue: string | null }[];
   method: keyof typeof PAYMENT_METHODS;
   status: keyof typeof PAYMENT_STATES;
@@ -83,13 +82,8 @@ function InventoryName({ inventory }: { inventory: InventoryIdentity }) {
 }
 
 export function PaymentsView() {
-  const [selected, setSelected] = useState<PaymentRecord | null>(null);
-  const [version, setVersion] = useState(0);
-  const [notice, setNotice] = useState('');
-  return (<>
+  return (
     <AdminCollection<PaymentRecord>
-      version={version}
-      beforeTable={() => notice ? <p role="status" className="alert alert-info mb-0">{notice}</p> : null}
       title="Thanh toán"
       description="Đối chiếu giao dịch theo mã đơn, phương thức và kết quả xử lý."
       endpoint="/admin/payments"
@@ -165,15 +159,14 @@ export function PaymentsView() {
                 </li>)}
               </ul>
             </details>}
-            {row.canReconcile && <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setSelected(row)}>Đối soát sao kê</button>}
+            {row.supportStatus === 'OPEN' && <Link href={`/admin/orders/${row.order.id}`} className="btn btn-outline-primary btn-sm">
+              Xem yêu cầu đối soát
+            </Link>}
           </>,
         },
       ]}
     />
-    {selected && <BankReconciliation payment={{ ...selected, orderCode: selected.order.orderCode }}
-      onClose={() => setSelected(null)}
-      onSaved={(message) => { setSelected(null); setNotice(message); setVersion(value => value + 1); }} />}
-  </>);
+  );
 }
 
 export function ReservationsView() {

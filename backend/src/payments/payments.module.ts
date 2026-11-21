@@ -5,10 +5,16 @@ import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { MockPaymentGatewayService } from './mock-payment-gateway.service';
 import { BankTransferService } from './bank-transfer.service';
+import { SePayReconciliationJob } from './sepay-reconciliation.job';
 @Module({
   imports: [StockReservationModule, InventoryEventsModule],
   controllers: [PaymentsController],
-  providers: [PaymentsService, MockPaymentGatewayService, BankTransferService],
+  providers: [
+    PaymentsService,
+    MockPaymentGatewayService,
+    BankTransferService,
+    SePayReconciliationJob,
+  ],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

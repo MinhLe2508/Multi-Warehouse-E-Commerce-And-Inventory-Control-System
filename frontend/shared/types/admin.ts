@@ -1,3 +1,5 @@
+import type { AdminPaymentSupport } from './paymentSupport';
+
 // Types khớp schema trong Documents/api/admin-api.openapi.yaml và ERD v1.0
 export type OrderStatus = 'PENDING_PAYMENT' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED';
 export type AlertLevel = 'WARNING' | 'CRITICAL';
@@ -26,6 +28,8 @@ export interface AdminOrder {
   warehouseCodes: string[]; createdAt: string; updatedAt: string;
   shipping: { recipient: string; phone: string; address: string };
   paymentMethod: 'MOCK_CARD' | 'MOCK_EWALLET' | 'COD' | 'BANK_TRANSFER';
+  paymentStatus: 'PENDING' | 'SUCCESS' | 'FAILED' | null;
+  paymentSupport: AdminPaymentSupport | null;
   items: AdminOrderItem[]; history: OrderHistoryItem[];
 }
 export interface RevenuePoint { date: string; revenue: number; orders: number }

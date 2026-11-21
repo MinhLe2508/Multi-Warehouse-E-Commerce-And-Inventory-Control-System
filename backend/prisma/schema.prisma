@@ -62,6 +62,12 @@ enum PaymentMethod {
   BANK_TRANSFER // VietQR theo đơn
 }
 
+enum PaymentSupportStatus {
+  OPEN
+  CONFIRMED
+  CLOSED
+}
+
 // Mức độ nghiêm trọng của cảnh báo tồn kho thấp
 enum AlertLevel {
   WARNING // Tồn kho dưới ngưỡng (threshold) nhưng vẫn còn hàng
@@ -563,10 +569,26 @@ model Payment {
   // onDelete: Restrict, lịch sử thanh toán không được xóa cùng Order
   order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   bankReceipts BankTransferReceipt[]
+  supportRequest PaymentSupportRequest?
 
   @@index([orderId])
   @@index([status])
   @@map("payments")
+}
+
+model PaymentSupportRequest {
+  paymentId      String               @id @map("payment_id") @db.Uuid
+  status         PaymentSupportStatus @default(OPEN)
+  bankReference  String?              @map("bank_reference") @db.VarChar(100)
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  resolvedAt     DateTime?            @map("resolved_at") @db.Timestamptz
+  resolvedById   String?              @map("resolved_by_id") @db.Uuid
+  resolutionNote String?              @map("resolution_note") @db.VarChar(300)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@map("payment_support_requests")
 }
 
 // Biên nhận tiền vào, kể cả tiền đến muộn hoặc sai số tiền của đơn.
@@ -575,7 +597,7 @@ model BankTransferReceipt {
   paymentId     String   @map("payment_id") @db.Uuid
   accountNumber String   @map("account_number") @db.VarChar(19)
   bankReference String?  @map("bank_reference") @db.VarChar(100)
-  providerId    String?  @unique @map("provider_id") @db.VarChar(32)
+  providerId    String?  @unique @map("provider_id") @db.VarChar(48)
   receivedAt    DateTime @map("received_at") @db.Timestamptz
   amount        Decimal  @db.Decimal(14, 2)
   issue         String?  @db.VarChar(32) // null nếu khoản tiền đã xác nhận đơn

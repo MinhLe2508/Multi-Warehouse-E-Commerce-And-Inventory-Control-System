@@ -4,15 +4,25 @@ import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Dropdown } from 'react-bootstrap';
-import { Bell, AlertTriangle } from 'lucide-react';
+import { Bell, AlertTriangle, Headset } from 'lucide-react';
 import { useAdminCtx } from './AdminContext';
 import { useStockAlerts } from '../../hooks/useStockAlerts';
+import { useShopResource } from '../../hooks/useShopResource';
 import {
   ADMIN_NAV_GROUPS,
   STAFF_NAV_GROUPS,
   activeAdminNavItem,
 } from '../../shared/config/adminNav';
 import { formatTime } from '../../shared/lib/format';
+import { apiPatch } from '../../shared/lib/apiClient';
+import { useAuthStore } from '../../store/useAuthStore';
+
+type PaymentNotice = {
+  id: string;
+  body: string;
+  referenceType: string | null;
+  referenceId: string | null;
+};
 
 export interface HeaderProps {
   variant?: 'admin' | 'staff';
@@ -29,6 +39,16 @@ export function Header({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const { alerts, total: openAlertsCount, loading: alertsLoading, error: alertsError } =
     useStockAlerts({ warehouseId, limit: 5 });
+  const adminId = useAuthStore(({ session }) =>
+    variant === 'admin' && session?.user.role === 'ADMIN' ? session.user.id : undefined);
+  const paymentNotices = useShopResource<{ items: PaymentNotice[]; total: number }>(
+    adminId ? '/notifications?type=ORDER_UPDATE&unreadOnly=true&limit=5' : null,
+    { identity: adminId, interval: 30_000, keepOnNetworkError: true },
+  );
+  const pendingNotices = paymentNotices.data?.items.filter(
+    (notice) => notice.referenceType === 'PaymentSupport' && notice.referenceId,
+  ) ?? [];
+  const unreadCount = openAlertsCount + (pendingNotices.length ? paymentNotices.data?.total ?? 0 : 0);
 
   // Lấy tiêu đề trang ngắn gọn theo pathname
   const getPageTitle = () => {
@@ -151,17 +171,17 @@ export function Header({
                   borderRadius: '6px',
                   cursor: 'pointer',
                 }}
-                aria-label="Thông báo cảnh báo tồn kho"
-                title="Cảnh báo tồn kho"
+                aria-label="Thông báo"
+                title="Thông báo"
               >
-                <Bell size={20} className={openAlertsCount > 0 ? 'bell-shake-once text-dark' : 'text-secondary'} />
+                <Bell size={20} className={unreadCount > 0 ? 'bell-shake-once text-dark' : 'text-secondary'} />
 
-                {openAlertsCount > 0 && (
+                {unreadCount > 0 && (
                   <span
                     className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
                     style={{ fontSize: '0.65rem' }}
                   >
-                    {openAlertsCount > 99 ? '99+' : openAlertsCount}
+                    {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
               </Dropdown.Toggle>
@@ -176,6 +196,19 @@ export function Header({
                   zIndex: 1055,
                 }}
               >
+                {pendingNotices.length > 0 && <div className="border-bottom">
+                  <div className="d-flex align-items-center gap-2 px-3 pt-3 pb-1 fw-semibold small">
+                    <Headset size={16} aria-hidden="true" /> Yêu cầu đối soát VietQR
+                  </div>
+                  {pendingNotices.map((notice) => (
+                    <Dropdown.Item as={Link} key={notice.id} href={`/admin/orders/${notice.referenceId}`}
+                      className="small py-2 text-wrap" onClick={() => {
+                        void apiPatch(`/notifications/${notice.id}/read`, {}).then(paymentNotices.refresh, () => undefined);
+                      }}>
+                      {notice.body}
+                    </Dropdown.Item>
+                  ))}
+                </div>}
                 <div className="p-3 bg-light border-bottom d-flex align-items-center justify-content-between">
                   <div className="d-flex align-items-center gap-2">
                     <AlertTriangle size={16} className="text-danger" />

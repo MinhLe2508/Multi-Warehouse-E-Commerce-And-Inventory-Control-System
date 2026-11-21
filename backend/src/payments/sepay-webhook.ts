@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import { MAX_VND_TRANSFER, TRANSFER_CODE_PATTERN } from './vietqr';
+import { MAX_VND_TRANSFER } from './vietqr';
 import { getSePaySecret, VIETCOMBANK } from './vietqr-config';
 
 export interface IncomingTransfer {
@@ -11,6 +11,53 @@ export interface IncomingTransfer {
   providerId?: string;
   accountNumber?: string;
   actorId?: string;
+}
+
+export function isVietcombank(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    ['VIETCOMBANK', 'VCB', VIETCOMBANK.bin].includes(value.trim().toUpperCase())
+  );
+}
+
+export function readTransferCode(...values: unknown[]): string | null {
+  const codes = new Set(
+    values.flatMap((value) =>
+      typeof value === 'string'
+        ? (value
+            .toUpperCase()
+            .match(/(?<![A-Z0-9])MM[A-F0-9]{20}(?![A-Z0-9])/g) ?? [])
+        : [],
+    ),
+  );
+  return codes.size === 1 ? [...codes][0] : null;
+}
+
+export function normalizeBankReference(value: string): string {
+  return value.replace(/\s+/g, '').toUpperCase();
+}
+
+export function readBankReference(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = normalizeBankReference(value);
+  return normalized.length > 0 && normalized.length <= 100
+    ? normalized
+    : undefined;
+}
+
+export function parseBankDateTime(value: unknown): Date | null {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)
+  )
+    return null;
+  const localTime = value.replace(' ', 'T');
+  const date = new Date(localTime + '+07:00');
+  if (!Number.isFinite(date.getTime())) return null;
+  const check = new Date(date.getTime() + 7 * 60 * 60_000)
+    .toISOString()
+    .slice(0, 19);
+  return check === localTime ? date : null;
 }
 
 export function authorizeSePay(
@@ -49,39 +96,16 @@ export function readSePayTransfer(payload: unknown): IncomingTransfer | null {
     transferType,
     content,
     code,
+    description,
     accountNumber,
     referenceCode,
     transactionDate,
     transferAmount,
   } = payload as Record<string, unknown>;
-  if (
-    transferType !== 'in' ||
-    typeof gateway !== 'string' ||
-    !['VIETCOMBANK', 'VCB', VIETCOMBANK.bin].includes(
-      gateway.toUpperCase().trim(),
-    )
-  ) {
-    return null;
-  }
-
-  const possibleCodes = new Set(
-    typeof content === 'string'
-      ? (content.toUpperCase().match(/\bMM[A-F0-9]{20}\b/g) ?? [])
-      : [],
-  );
-  if (
-    typeof code === 'string' &&
-    TRANSFER_CODE_PATTERN.test(code.trim().toUpperCase())
-  ) {
-    possibleCodes.add(code.trim().toUpperCase());
-  }
-  if (possibleCodes.size !== 1) return null;
-
-  const receivedAt =
-    typeof transactionDate === 'string' &&
-    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(transactionDate)
-      ? new Date(transactionDate.replace(' ', 'T') + '+07:00')
-      : new Date(NaN);
+  if (transferType !== 'in' || !isVietcombank(gateway)) return null;
+  const transferCode = readTransferCode(content, code, description);
+  if (!transferCode) return null;
+  const receivedAt = parseBankDateTime(transactionDate);
   if (
     typeof id !== 'number' ||
     !Number.isSafeInteger(id) ||
@@ -92,21 +116,17 @@ export function readSePayTransfer(payload: unknown): IncomingTransfer | null {
     !Number.isSafeInteger(transferAmount) ||
     transferAmount < 1 ||
     transferAmount > MAX_VND_TRANSFER ||
-    !Number.isFinite(receivedAt.getTime())
+    !receivedAt
   ) {
     throw new BadRequestException('Dữ liệu giao dịch không hợp lệ.');
   }
 
-  const bankReference =
-    typeof referenceCode === 'string'
-      ? referenceCode.trim().replace(/\s+/g, '').toUpperCase()
-      : '';
   return {
-    transferCode: [...possibleCodes][0],
+    transferCode,
     providerId: String(id),
     accountNumber,
     receivedAt,
     amount: transferAmount,
-    ...(bankReference && bankReference.length <= 100 && { bankReference }),
+    bankReference: readBankReference(referenceCode),
   };
 }
