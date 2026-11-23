@@ -1,9 +1,5 @@
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  ArrayUnique,
-  IsArray,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -11,32 +7,17 @@ import {
   IsUUID,
   Matches,
   MaxLength,
-  ValidateNested,
 } from 'class-validator';
 import { PaymentMethod } from '@prisma/client';
-import { CreateOrderItemDto } from './create-order-item.dto';
-
-// Cắt khoảng trắng đầu/cuối trước khi kiểm tra (chuỗi toàn khoảng trắng sẽ bị IsNotEmpty chặn).
-const trim = ({ value }: { value: unknown }): unknown =>
-  typeof value === 'string' ? value.trim() : value;
+import { CheckoutQuoteDto, trimCheckoutText as trim } from './checkout.dto';
 
 /**
   Body của POST /orders (docs/api/openapi.yaml - CreateOrderRequest).
 
-  Không nhận userId, giá, tổng tiền, warehouseId, inventoryId hay TTL từ khách.
+  Máy chủ xác nhận giá, tổng tiền, kho và tồn kho trước khi tạo đơn.
   ValidationPipe toàn cục dùng forbidNonWhitelisted nên field thừa bị từ chối (400).
  */
-export class CreateOrderDto {
-  @IsArray()
-  @ArrayMinSize(1, { message: 'Đơn hàng phải có ít nhất 1 sản phẩm.' })
-  @ArrayMaxSize(50, { message: 'Đơn hàng tối đa 50 sản phẩm khác nhau.' })
-  @ArrayUnique((item: CreateOrderItemDto) => item.productId, {
-    message: 'productId bị trùng trong đơn hàng.',
-  })
-  @ValidateNested({ each: true })
-  @Type(() => CreateOrderItemDto)
-  items: CreateOrderItemDto[];
-
+export class CreateOrderDto extends CheckoutQuoteDto {
   @Transform(trim)
   @IsString()
   @IsNotEmpty({ message: 'shippingRecipient không được để trống.' })
@@ -63,6 +44,14 @@ export class CreateOrderDto {
   @IsNotEmpty({ message: 'shippingRegion không được là chuỗi rỗng.' })
   @MaxLength(100)
   shippingRegion?: string;
+
+  @IsOptional()
+  @IsUUID()
+  shippingWarehouseId?: string;
+
+  @IsOptional()
+  @Matches(/^\d{1,12}\.\d{2}$/)
+  expectedTotal?: string;
 
   @IsOptional()
   @IsIn([

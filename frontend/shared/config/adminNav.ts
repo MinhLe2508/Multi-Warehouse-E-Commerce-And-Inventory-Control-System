@@ -45,6 +45,11 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: 'Thanh toán',
         roles: ['ADMIN'],
       },
+      {
+        href: '/admin/promotions',
+        label: 'Khuyến mãi',
+        roles: ['ADMIN'],
+      },
     ],
   },
   {

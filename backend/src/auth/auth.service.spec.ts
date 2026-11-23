@@ -356,6 +356,7 @@ describe('AuthService', () => {
       expect(message).toMatchObject({
         to: email,
         fullName: registration.fullName,
+        username: 'cnpmauth',
       });
       const url = new URL(message!.verifyUrl);
       expect(url.origin).toBe(fixtureEnv.FRONTEND_ORIGIN);

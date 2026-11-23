@@ -156,6 +156,8 @@ model User {
   resolvedAlerts      StockAlert[] // Các cảnh báo tồn kho được đóng nhờ thao tác của User này (thường là ADMIN nhập hàng)
   chatSessions        ChatSession[] // Các phiên chat với AI Chatbot của User này
   notifications       Notification[] // Thông báo in-app của User
+  favoriteAddresses   FavoriteAddress[]
+  promotionClaims     PromotionClaim[]
   warehouseAssignments WarehouseStaffAssignment[]
   roleChangesReceived UserRoleChange[] @relation("RoleChangeSubject")
   roleChangesPerformed UserRoleChange[] @relation("RoleChangeActor")
@@ -220,6 +222,7 @@ model Category {
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children Category[] @relation("CategoryTree")
   products Product[]
+  promotionCategories PromotionCategory[]
 
   @@index([parentId])
   @@map("categories")
@@ -277,6 +280,8 @@ model Warehouse {
 
   inventory  Inventory[]
   orderItems OrderItem[] // Lưu lại kho hàng đã xuất hàng cho từng đơn hàng (Truy vết)
+  requestedOrders Order[]
+  favoriteAddresses FavoriteAddress[]
   staffAssignments WarehouseStaffAssignment[]
   notifications Notification[]
 
@@ -411,6 +416,65 @@ model CartItem {
 // =============================================================================
 
 // Bảng đơn hàng — "snapshot" tại thời điểm đặt hàng
+model FavoriteAddress {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  label       String   @db.VarChar(80)
+  recipient   String   @db.VarChar(150)
+  phone       String   @db.VarChar(20)
+  address     String   @db.VarChar(500)
+  warehouseId String?  @map("warehouse_id") @db.Uuid
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("favorite_addresses")
+}
+
+model Promotion {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String    @unique @db.VarChar(5)
+  name      String    @db.VarChar(150)
+  percent   Int
+  allCategories Boolean @map("all_categories")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  categories PromotionCategory[]
+  claims     PromotionClaim[]
+  orders     Order[]
+
+  @@index([deletedAt, expiresAt])
+  @@map("promotions")
+}
+
+model PromotionCategory {
+  promotionId String @map("promotion_id") @db.Uuid
+  categoryId  String @map("category_id") @db.Uuid
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, categoryId])
+  @@index([categoryId])
+  @@map("promotion_categories")
+}
+
+model PromotionClaim {
+  userId      String   @map("user_id") @db.Uuid
+  promotionId String   @map("promotion_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, promotionId])
+  @@index([promotionId])
+  @@map("promotion_claims")
+}
+
 model Order {
   id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderCode String @unique @map("order_code") @db.VarChar(32) // Mã đơn hàng, để khách đọc và tra cứu
@@ -431,6 +495,10 @@ model Order {
   shippingPhone     String  @map("shipping_phone") @db.VarChar(20)
   shippingAddress   String  @map("shipping_address") @db.VarChar(500)
   shippingRegion    String? @map("shipping_region") @db.VarChar(100)
+  shippingWarehouseId String? @map("shipping_warehouse_id") @db.Uuid
+  promotionId          String? @map("promotion_id") @db.Uuid
+  promotionCode        String? @map("promotion_code") @db.VarChar(5)
+  promotionDiscountTotal Decimal @default(0) @map("promotion_discount_total") @db.Decimal(14, 2)
 
   // Thời điểm các StockReservation của đơn này sẽ hết hạn nếu chưa thanh tóan xong
   reservationExpiresAt DateTime? @map("reservation_expires_at") @db.Timestamptz
@@ -444,6 +512,8 @@ model Order {
 
   // onDelete: Restrict, không cho xóa User nếu còn Order liên quan (lịch sử đơn hàng phải được giữ lại vì lý do kế toán/kiểm toán)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  shippingWarehouse Warehouse? @relation(fields: [shippingWarehouseId], references: [id], onDelete: Restrict)
+  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: Restrict)
 
   items         OrderItem[]
   reservations  StockReservation[]
@@ -452,6 +522,8 @@ model Order {
 
   @@index([userId, createdAt]) // Lấy danh sách đơn của 1 khách, mới nhất trước
   @@index([status, createdAt]) // Báo cáo doanh thu, số đơn theo khoảng thời gian và trạng thái
+  @@index([shippingWarehouseId, createdAt])
+  @@index([promotionId])
   @@map("orders")
 }
 
@@ -761,6 +833,7 @@ enum NotificationType {
   LOW_STOCK        // Cảnh báo tồn kho thấp (từ StockAlert)
   ORDER_UPDATE     // Cập nhật trạng thái đơn hàng
   SYSTEM           // Thông báo hệ thống chung
+  PROMOTION        // Mã khuyến mãi trên cửa hàng
 }
 /// Thông báo in-app cho người dùng
 model Notification {

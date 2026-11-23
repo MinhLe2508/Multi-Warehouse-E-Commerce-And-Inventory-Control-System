@@ -34,8 +34,8 @@ export default function PaymentSupport({ request, wait, busy, onSend }: {
       <p><strong>{tx("CSKH đã phản hồi", "Support has responded")}</strong></p>
       {request.resolutionNote && <p>{request.resolutionNote}</p>}
     </div> : !request ? <>
-      <p>{tx("Nếu đã chuyển khoản và trạng thái chưa đổi sau khoảng 3 phút, hãy gửi yêu cầu để CSKH kiểm tra.",
-        "If the status stays the same for about 3 minutes after the transfer, ask support to check it.")}</p>
+      <p>{tx("Nếu đã chuyển khoản và trạng thái chưa cập nhật, hãy gửi yêu cầu để CSKH kiểm tra.",
+        "If you have transferred the money and the payment is still pending, ask support to check it.")}</p>
       {wait > 0 ? <small>{tx("Có thể gửi yêu cầu sau", "Request available in")} {Math.floor(wait / 60)}:{String(wait % 60).padStart(2, "0")}</small>
         : editing ? <form onSubmit={submit}>
           <label>

@@ -27,11 +27,12 @@ function OrdersList({ warehouseId, dispatch, initialStatus }: {
   const resource = useAdminResource<List<Order>>(query('/admin/orders', {
     ...filters, warehouseId: warehouseParam(warehouseId), page, limit: pageSize,
     status: dispatch ? 'CONFIRMED' : filters.status,
+    fulfillable: dispatch ? 'true' : undefined,
   }));
 
   return <>
     <PageTitle title={dispatch ? 'Xác nhận xuất kho' : 'Đơn hàng'}
-      description={dispatch ? 'Kiểm tra sản phẩm và người nhận trước khi bàn giao đơn đã xác nhận.' : undefined}
+      description={dispatch ? 'Kiểm tra sản phẩm và người nhận trước khi bàn giao đơn đã xác nhận.' : 'Xem đơn giao tự động và đơn khách chọn kho bạn phụ trách.'}
       actions={<Refresh onClick={resource.refresh} disabled={resource.loading} />}
     />
     <Filters onApply={(form) => {
@@ -58,7 +59,10 @@ function OrdersList({ warehouseId, dispatch, initialStatus }: {
         { title: 'Người nhận', render: (order) => <><strong>{order.shippingRecipient}</strong><div className="staff-muted staff-nowrap">{order.shippingPhone}</div></> },
         { title: 'Ngày đặt', render: (order) => <span className="staff-nowrap">{dateTime(order.createdAt)}</span> },
         { title: 'Số lượng', align: 'right', render: (order) => count(order.items.reduce((sum, item) => sum + item.quantity, 0)) },
-        { title: 'Kho xuất', render: (order) => [...new Set(order.items.map(({ warehouse }) => warehouse.code))].join(', ') },
+        { title: 'Kho xuất', render: (order) => <>
+          <strong>{[...new Set(order.items.map(({ warehouse }) => warehouse.code))].join(', ') || '—'}</strong>
+          <div className="staff-muted">{order.shippingWarehouse ? 'Khách chọn kho' : 'Giao tự động'}</div>
+        </> },
         { title: 'Trạng thái', render: (order) => <OrderBadge status={order.status} /> },
         ...(!dispatch ? [{ title: 'Giữ hàng đến', render: (order: Order) => <span className="staff-nowrap">{order.status === 'PENDING_PAYMENT' ? dateTime(order.reservationExpiresAt) : '—'}</span> }] : []),
         { title: 'Thao tác', render: (order) => <Link className="staff-button" href={`/staff/orders/${order.id}`}>Xem chi tiết <ArrowRight size={14} /></Link> },
@@ -105,10 +109,18 @@ export function StaffOrderDetail({ id }: { id: string }) {
             <dt>Ngày đặt</dt><dd>{dateTime(order.createdAt)}</dd>
             <dt>Giữ hàng đến</dt><dd>{order.status === 'PENDING_PAYMENT' ? dateTime(order.reservationExpiresAt) : '—'}</dd>
             <dt>Tổng tiền</dt><dd><strong>{formatVnd(Number(order.grandTotal))}</strong></dd>
+            <dt>Chọn kho giao</dt><dd>{order.shippingWarehouse?.name ?? 'MultiMart tự chọn'}</dd>
+            {order.promotionCode && <>
+              <dt>Khuyến mãi</dt><dd>{order.promotionCode} · −{formatVnd(Number(order.promotionDiscountTotal))}</dd>
+            </>}
           </dl>
         </section>
-        <section className="staff-panel padded"><h2>Người nhận</h2>
+        <section className="staff-panel padded"><h2>Khách hàng và người nhận</h2>
           <dl className="staff-details">
+            {order.customer && <>
+              <dt>Tài khoản đặt</dt><dd>{order.customer.fullName}</dd>
+              <dt>Email</dt><dd className="text-break">{order.customer.email}</dd>
+            </>}
             <dt>Họ tên</dt><dd>{order.shippingRecipient}</dd><dt>Điện thoại</dt><dd>{order.shippingPhone}</dd>
             <dt>Địa chỉ</dt><dd>{order.shippingAddress}</dd>
           </dl>
@@ -135,7 +147,7 @@ export function StaffOrderDetail({ id }: { id: string }) {
               <div><RecordStatus label={paymentStatus[payment.status]} tone={payment.status === 'SUCCESS' ? 'good' : payment.status === 'FAILED' ? 'bad' : 'neutral'} />
                 <small>{formatVnd(Number(payment.amount))}</small></div>
             </li>)}
-          </ul> : <AdminFeedback empty="Chưa có giao dịch thanh toán." />}
+          </ul> : <AdminFeedback empty={Number(order.grandTotal) === 0 ? 'Đơn hàng miễn phí.' : 'Chưa có giao dịch thanh toán.'} />}
         </section>
         <section className="staff-panel padded">
           <div className="staff-section-title"><h2>Lịch sử đơn hàng</h2></div>

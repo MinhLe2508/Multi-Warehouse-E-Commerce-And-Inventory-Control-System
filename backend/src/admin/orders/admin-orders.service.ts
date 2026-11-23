@@ -1,6 +1,7 @@
 import {
   assertAssignedWarehouses,
   staffOrderWhere,
+  staffReadableOrderWhere,
 } from '../../staff/warehouse-scope';
 import {
   ConflictException,
@@ -63,7 +64,7 @@ export class AdminOrdersQueryService {
       ...(query.paymentSupport && {
         payments: { some: { method: 'BANK_TRANSFER', supportRequest: { is: { status: query.paymentSupport } } } },
       }),
-      ...staffOrderWhere(staffId, query.warehouseId),
+      ...staffOrderWhere(undefined, query.warehouseId),
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
       ...(search
         ? {
@@ -75,10 +76,16 @@ export class AdminOrdersQueryService {
           }
         : {}),
     };
+    if (staffId) {
+      where.AND = [
+        staffReadableOrderWhere(staffId),
+        ...(query.fulfillable ? [staffOrderWhere(staffId)] : []),
+      ];
+    }
 
     if (query.reservation) {
       const now = new Date();
-      where.AND = {
+      const reservationScope: Prisma.OrderWhereInput = {
         status: 'PENDING_PAYMENT',
         reservationExpiresAt:
           query.reservation === 'EXPIRED'
@@ -90,6 +97,7 @@ export class AdminOrdersQueryService {
                   : {}),
               },
       };
+      where.AND = Array.isArray(where.AND) ? [...where.AND, reservationScope] : reservationScope;
     }
 
     const listQuery = {
@@ -98,6 +106,7 @@ export class AdminOrdersQueryService {
       skip,
       take: limit,
       include: {
+        shippingWarehouse: { select: { id: true, code: true, name: true } },
         user: {
           select: {
             id: true,
@@ -181,6 +190,7 @@ export class AdminOrdersQueryService {
   async findOne(id: string, staffId?: string) {
     const selection = {
       include: {
+        shippingWarehouse: { select: { id: true, code: true, name: true } },
         user: {
           select: {
             id: true,
@@ -257,7 +267,7 @@ export class AdminOrdersQueryService {
     } satisfies Pick<Prisma.OrderFindFirstArgs, 'include'>;
     const order = staffId
       ? await this.prisma.order.findFirst({
-          where: { id, ...staffOrderWhere(staffId) },
+          where: { id, ...staffReadableOrderWhere(staffId) },
           ...selection,
         })
       : await this.prisma.order.findUnique({ where: { id }, ...selection });
@@ -268,11 +278,15 @@ export class AdminOrdersQueryService {
 
     const detail = this.serializeOrder(order, staffId);
     if (!staffId) return detail;
+    const transitions = (ORDER_STATUS_TRANSITIONS[order.status] ?? []).filter(
+      (status) => ADMIN_ALLOWED_TARGETS.has(status),
+    );
+    const canFulfill = transitions.length > 0 && await this.prisma.order.count({
+      where: { id, ...staffOrderWhere(staffId) },
+    }) > 0;
     return {
       ...detail,
-      nextStatuses: (ORDER_STATUS_TRANSITIONS[order.status] ?? []).filter(
-        (status) => ADMIN_ALLOWED_TARGETS.has(status),
-      ),
+      nextStatuses: canFulfill ? transitions : [],
     };
   }
 
@@ -329,6 +343,8 @@ export class AdminOrdersQueryService {
     status: OrderStatus;
     subtotal: Prisma.Decimal;
     discountTotal: Prisma.Decimal;
+    promotionDiscountTotal?: Prisma.Decimal;
+    promotionCode?: string | null;
     shippingFee: Prisma.Decimal;
     grandTotal: Prisma.Decimal;
     currency: string;
@@ -336,6 +352,7 @@ export class AdminOrdersQueryService {
     shippingPhone: string;
     shippingAddress: string;
     shippingRegion: string | null;
+    shippingWarehouse?: { id: string; code: string; name: string } | null;
     confirmedAt: Date | null;
     cancelledAt: Date | null;
     reservationExpiresAt?: Date | null;
@@ -399,6 +416,8 @@ export class AdminOrdersQueryService {
       status: order.status,
       subtotal: order.subtotal.toFixed(2),
       discountTotal: order.discountTotal.toFixed(2),
+      promotionDiscountTotal: order.promotionDiscountTotal?.toFixed(2) ?? '0.00',
+      promotionCode: order.promotionCode ?? null,
       shippingFee: order.shippingFee.toFixed(2),
       grandTotal: order.grandTotal.toFixed(2),
       currency: order.currency,
@@ -406,6 +425,7 @@ export class AdminOrdersQueryService {
       shippingPhone: order.shippingPhone,
       shippingAddress: order.shippingAddress,
       shippingRegion: order.shippingRegion,
+      shippingWarehouse: order.shippingWarehouse ?? null,
       confirmedAt: order.confirmedAt,
       cancelledAt: order.cancelledAt,
       reservationExpiresAt: order.reservationExpiresAt,

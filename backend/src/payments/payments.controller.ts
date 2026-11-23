@@ -111,6 +111,17 @@ export class PaymentsController {
     );
   }
 
+  @Post('bank-transfer/:paymentId/confirm')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(200)
+  confirm(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+  ) {
+    return this.bankTransfer.confirmManually(paymentId, user.userId);
+  }
+
   @Post('mock/:orderId')
   @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
   @Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)

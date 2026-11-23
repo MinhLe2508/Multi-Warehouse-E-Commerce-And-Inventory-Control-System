@@ -34,6 +34,10 @@ export class QueryAdminOrdersDto {
   paymentSupport?: 'OPEN';
 
   @IsOptional()
+  @IsIn(['true'])
+  fulfillable?: 'true';
+
+  @IsOptional()
   @Matches(DATE_REGEX, { message: 'from phải có định dạng YYYY-MM-DD' })
   @IsDateString({ strict: true }, { message: 'from phải là ngày hợp lệ' })
   from?: string;

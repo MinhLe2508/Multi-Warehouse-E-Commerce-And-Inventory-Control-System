@@ -22,6 +22,15 @@ export function staffOrderWhere(
   };
 }
 
+export function staffReadableOrderWhere(userId: string): Prisma.OrderWhereInput {
+  return {
+    OR: [
+      { shippingWarehouseId: null },
+      { shippingWarehouse: { is: staffWarehouseWhere(userId) } },
+    ],
+  };
+}
+
 // The calling queries alias the warehouse as w.
 export function staffWarehouseSql(userId?: string): Prisma.Sql {
   if (!userId) return Prisma.empty;

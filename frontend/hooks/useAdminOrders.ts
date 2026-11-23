@@ -22,6 +22,9 @@ export interface ApiAdminOrder {
   orderCode: string;
   status: OrderStatus;
   grandTotal: string;
+  promotionCode?: string | null;
+  promotionDiscountTotal?: string;
+  shippingWarehouse?: Pick<Warehouse, 'id' | 'name' | 'code'> | null;
   shippingRecipient: string;
   shippingPhone: string;
   shippingAddress: string;

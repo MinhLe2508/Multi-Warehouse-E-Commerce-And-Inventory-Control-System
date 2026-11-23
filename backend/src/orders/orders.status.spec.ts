@@ -23,6 +23,7 @@ describe('OrdersService status history - week 4', () => {
     {} as never,
     stock as never,
     changes as never,
+    {} as never,
   );
 
   beforeEach(() => {

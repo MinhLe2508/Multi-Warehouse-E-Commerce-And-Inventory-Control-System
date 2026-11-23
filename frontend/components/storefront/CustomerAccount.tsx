@@ -3,21 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Bell, KeyRound, Package, UserRound } from "lucide-react";
+import { Bell, KeyRound, MapPin, Package, Tag, UserRound } from "lucide-react";
 import ProductImage from "@/components/products/ProductImage";
 import { useShopResource, SHOP_NOTIFICATIONS_CHANGED } from "@/hooks/useShopResource";
 import { AuthError } from "@/shared/lib/authApi";
 import type { CustomerOrder, CustomerProfile, OrderState } from "@/shared/lib/liveOrders";
+import type { BuyerPromotion } from "@/shared/types/checkout";
 import { formatVND } from "@/shared/lib/utils";
 import { authenticatedRequest, useAuthStore } from "@/store/useAuthStore";
 import { OrderStatus, orderDate, orderLabels } from "./OrderStatus";
 import { PaymentName } from "./PaymentOptions";
+import FavoriteAddressBook from "./FavoriteAddressBook";
 import { BuyerGate, ShopEmpty, ShopError, ShopHeading, ShopLoading, ShopPager, useShopCopy } from "./ShopUi";
 
 type OrderPage = { items: CustomerOrder[]; total: number; limit: number };
 type Notification = {
   id: string; title: string; body: string; createdAt: string; isRead: boolean;
-  type: "ORDER_UPDATE" | "SYSTEM"; referenceType: string | null; referenceId: string | null;
+  type: "ORDER_UPDATE" | "SYSTEM" | "PROMOTION"; referenceType: string | null; referenceId: string | null;
 };
 const states = Object.keys(orderLabels) as OrderState[];
 
@@ -31,6 +33,9 @@ function AccountFrame({ title, path, children }: { title: string; path: string; 
         <Link href="/orders" aria-current={current === "/orders" ? "page" : undefined}><Package size={17} /> {tx("Đơn hàng của tôi", "My orders")}</Link>
         <Link href="/notifications" aria-current={current === "/notifications" ? "page" : undefined}><Bell size={17} /> {tx("Thông báo", "Notifications")}</Link>
         <Link href="/account" aria-current={current === "/account" ? "page" : undefined}><UserRound size={17} /> {tx("Hồ sơ cá nhân", "Profile")}</Link>
+        <Link href="/account/addresses" aria-current={current === "/account/addresses" ? "page" : undefined}>
+          <MapPin size={17} /> {tx("Địa chỉ yêu thích", "Favorite addresses")}
+        </Link>
       </nav>
       {children}
     </div>
@@ -92,6 +97,9 @@ function CustomerNoticeList() {
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [claimedNotice, setClaimedNotice] = useState("");
+  const offers = useShopResource<BuyerPromotion[]>("/promotions", { identity, interval: 30_000 });
+  const offersById = new Map(offers.data?.map((offer) => [offer.id, offer]));
   const limit = 12;
   const resource = useShopResource<{ items: Notification[]; total: number }>("/notifications?" + new URLSearchParams({
     scope: "shopping", limit: String(limit), offset: String((page - 1) * limit), ...(unreadOnly && { unreadOnly: "true" }),
@@ -110,23 +118,49 @@ function CustomerNoticeList() {
     } finally { setBusy(false); }
   }
 
+  async function claim(offer: BuyerPromotion) {
+    if (busy) return;
+    setBusy(true); setMessage(""); setClaimedNotice("");
+    try {
+      await authenticatedRequest("/promotions/" + offer.id + "/claim", {});
+      offers.refresh();
+      setClaimedNotice(tx("Đã nhận mã", "Claimed code") + " " + offer.code);
+    } catch (cause) {
+      setMessage(cause instanceof AuthError ? cause.message : tx("Chưa nhận được mã khuyến mãi.", "Could not claim the promotion."));
+      offers.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <div className="mm-account-content">
     <div className="mm-orders-toolbar">
       <label><input type="checkbox" checked={unreadOnly} onChange={(event) => { setPage(1); setUnreadOnly(event.target.checked); }} />{tx("Chỉ chưa đọc", "Unread only")}</label>
       <button className="mm-button" type="button" disabled={busy} onClick={() => void mark()}>{tx("Đánh dấu tất cả đã đọc", "Mark all as read")}</button>
     </div>
     {message && <ShopError message={message} />}
+    {claimedNotice && <p className="mm-feedback success" role="status">{claimedNotice}</p>}
     {resource.loading && <ShopLoading />}
     {Boolean(resource.error) && <ShopError retry={resource.refresh} />}
     {resource.data?.items.length ? <ul className="mm-panel mm-notice-list">
-      {resource.data.items.map((notice) => <li className={notice.isRead ? "" : "unread"} key={notice.id}>
-        <span className="mm-notice-icon">{notice.type === "ORDER_UPDATE" ? <Package size={20} /> : <Bell size={20} />}</span>
+      {resource.data.items.map((notice) => {
+        const promotion = notice.type === "PROMOTION";
+        const offer = promotion && notice.referenceId ? offersById.get(notice.referenceId) : undefined;
+        return <li className={notice.isRead ? "" : "unread"} key={notice.id}>
+        <span className="mm-notice-icon">{promotion ? <Tag size={20} /> : notice.type === "ORDER_UPDATE" ? <Package size={20} /> : <Bell size={20} />}</span>
         <div><strong>{notice.title}</strong><p>{notice.body}</p><small>{orderDate(notice.createdAt)}</small></div>
         <div className="mm-notice-actions">
+          {offer && (offer.claimed ? <span className="mm-pill success">{tx("Đã nhận", "Claimed")} · {offer.code}</span>
+            : <button type="button" className="mm-button" disabled={busy} onClick={() => void claim(offer)}>
+              {tx("Nhận mã khuyến mãi", "Claim offer")}
+            </button>)}
+          {promotion && !offer && offers.data && <span className="mm-pill neutral">{tx("Hết hiệu lực", "Unavailable")}</span>}
+          {promotion && Boolean(offers.error) && <button type="button" className="mm-link" onClick={offers.refresh}>{tx("Tải lại mã", "Reload offer")}</button>}
           {notice.referenceType?.toLowerCase() === "order" && notice.referenceId && <Link className="mm-link" href={"/orders/" + encodeURIComponent(notice.referenceId)}>{tx("Xem đơn", "View order")}</Link>}
           {!notice.isRead && <button type="button" className="mm-link" disabled={busy} onClick={() => void mark(notice.id)}>{tx("Đã đọc", "Mark read")}</button>}
         </div>
-      </li>)}
+      </li>;
+      })}
     </ul> : resource.data && <ShopEmpty icon={Bell} title={tx("Chưa có thông báo phù hợp", "No matching notifications")} />}
     {resource.data && <ShopPager page={page} pages={Math.ceil(resource.data.total / limit)} onPage={setPage} />}
   </div>;
@@ -135,6 +169,14 @@ function CustomerNoticeList() {
 export function CustomerNotifications() {
   const tx = useShopCopy();
   return <AccountFrame title={tx("Thông báo", "Notifications")} path="/notifications"><CustomerNoticeList /></AccountFrame>;
+}
+
+export function CustomerAddresses() {
+  const tx = useShopCopy();
+  const identity = useAuthStore((state) => state.session?.user.id);
+  return <AccountFrame title={tx("Địa chỉ yêu thích", "Favorite addresses")} path="/account/addresses">
+    <FavoriteAddressBook key={identity} />
+  </AccountFrame>;
 }
 
 function CustomerProfileForm({ profile }: { profile: CustomerProfile }) {

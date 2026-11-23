@@ -146,6 +146,7 @@ export class AuthService {
       await this.mailService.sendCustomerVerification({
         to: user.email,
         fullName: user.fullName,
+        username: user.username,
         verifyUrl: this.buildFrontendActionUrl(
           'verify-email',
           actionToken.rawToken,
@@ -282,6 +283,7 @@ export class AuthService {
           await this.mailService.sendCustomerVerification({
             to: user.email,
             fullName: user.fullName,
+            username: user.username,
             verifyUrl: this.buildFrontendActionUrl(
               'verify-email',
               activation.rawToken,
@@ -690,6 +692,7 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        username: true,
         fullName: true,
         role: true,
         isActive: true,
@@ -713,6 +716,7 @@ export class AuthService {
       await this.mailService.sendCustomerVerification({
         to: user.email,
         fullName: user.fullName,
+        username: user.username,
         verifyUrl: this.buildFrontendActionUrl('verify-email', action.rawToken),
       });
     } catch {

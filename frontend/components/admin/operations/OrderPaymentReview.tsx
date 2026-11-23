@@ -2,7 +2,7 @@
 
 import { useRef, useState, type FormEvent } from 'react';
 import { Banknote, Headset } from 'lucide-react';
-import { apiPatch, extractErrorMessage } from '../../../shared/lib/apiClient';
+import { apiPatch, apiPost, extractErrorMessage } from '../../../shared/lib/apiClient';
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL } from '../../../shared/lib/format';
 import type { AdminOrder } from '../../../shared/types/admin';
 import { AdminDialog, localDateTime, RecordStatus } from './AdminUi';
@@ -12,14 +12,16 @@ export default function OrderPaymentReview({ order, onUpdate }: {
   order: AdminOrder;
   onUpdate: (message: string) => void;
 }) {
-  const [dialog, setDialog] = useState<'confirm' | 'close' | null>(null);
+  const [closing, setClosing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pending = useRef(false);
   const request = order.paymentSupport;
   const paymentStatus = order.paymentStatus;
   const expired = order.status === 'CANCELLED';
-  if (!paymentStatus) return null;
+  if (!paymentStatus) return order.grandTotal === 0 ? <section className="admin-workspace-panel p-3 p-md-4">
+    <h2 className="h6 mb-0">Đơn hàng miễn phí</h2>
+  </section> : null;
   const paid = paymentStatus === 'SUCCESS';
 
   async function closeRequest(event: FormEvent<HTMLFormElement>) {
@@ -31,10 +33,26 @@ export default function OrderPaymentReview({ order, onUpdate }: {
     setError('');
     try {
       await apiPatch(`/payments/bank-transfer/${request.paymentId}/support`, { note });
-      setDialog(null);
+      setClosing(false);
       onUpdate('Đã gửi phản hồi đối soát cho khách hàng.');
     } catch (cause) {
       setError(extractErrorMessage(cause, 'Chưa thể đóng yêu cầu.'));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function confirmPayment() {
+    if (!request?.canConfirm || pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await apiPost(`/payments/bank-transfer/${request.paymentId}/confirm`, {});
+      onUpdate('Đã xác nhận thanh toán. Khách hàng đã được cập nhật.');
+    } catch (cause) {
+      setError(extractErrorMessage(cause, 'Chưa xác nhận được thanh toán.'));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -67,26 +85,23 @@ export default function OrderPaymentReview({ order, onUpdate }: {
       {request.resolutionNote && <p className="mb-1 text-break">{request.resolutionNote}</p>}
       {request.status === 'OPEN' && <>
         <p className="small my-2">{request.canConfirm
-          ? 'Kiểm tra tiền thực nhận, mã nội dung và thời điểm giao dịch trên sao kê Vietcombank.'
+          ? 'Kiểm tra tiền vào trên sao kê Vietcombank trước khi xác nhận.'
           : 'Hạn giữ hàng đã hết hoặc đơn đã đóng. Đối chiếu khoản tiền và phản hồi hướng xử lý cho khách.'}</p>
+        {request.canConfirm && <BankReconciliation payment={request} />}
+        {error && !closing && <p className="alert alert-danger my-2" role="alert">{error}</p>}
         <div className="d-flex flex-wrap gap-2">
-          {request.canConfirm && <button type="button" className="btn btn-gradient-purple btn-sm" onClick={() => setDialog('confirm')}>
-            Xác nhận đơn hàng đã thanh toán
+          {request.canConfirm && <button type="button" className="btn btn-gradient-purple btn-sm" disabled={busy} onClick={() => void confirmPayment()}>
+            {busy && !closing ? 'Đang xác nhận…' : 'Xác nhận đã thanh toán'}
           </button>}
-          <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => {
+          <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy} onClick={() => {
             setError('');
-            setDialog('close');
+            setClosing(true);
           }}>Phản hồi và đóng yêu cầu</button>
         </div>
       </>}
     </div>}
-    {dialog === 'confirm' && request?.canConfirm && <BankReconciliation
-      payment={{ ...request, id: request.paymentId, orderCode: order.orderCode }}
-      onClose={() => setDialog(null)}
-      onSaved={(message) => { setDialog(null); onUpdate(message); }}
-    />}
-    {dialog === 'close' && request?.status === 'OPEN' && <AdminDialog title="Phản hồi yêu cầu đối soát" onClose={() => {
-      if (!pending.current) setDialog(null);
+    {closing && request?.status === 'OPEN' && <AdminDialog title="Phản hồi yêu cầu đối soát" onClose={() => {
+      if (!pending.current) setClosing(false);
     }}>
       <p className="mb-3">Phản hồi sẽ hiển thị trong chi tiết đơn của khách. Trạng thái thanh toán được giữ nguyên.</p>
       {error && <p className="alert alert-danger" role="alert">{error}</p>}
@@ -95,7 +110,7 @@ export default function OrderPaymentReview({ order, onUpdate }: {
           <textarea className="form-control" name="note" rows={3} required minLength={3} maxLength={300} />
         </label>
         <div className="d-flex justify-content-end gap-2">
-          <button className="btn btn-outline-secondary" type="button" disabled={busy} onClick={() => setDialog(null)}>Hủy</button>
+          <button className="btn btn-outline-secondary" type="button" disabled={busy} onClick={() => setClosing(false)}>Hủy</button>
           <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi phản hồi'}</button>
         </div>
       </form>

@@ -42,6 +42,7 @@ export interface PricingLineInput {
   unitPrice: MoneyInput;
   // Phần trăm giảm giá 0..100 (cột products.discount_percent).
   discountPercent?: MoneyInput;
+  promotionPercent?: MoneyInput;
   // Số nguyên >= 1.
   quantity: number;
 }
@@ -52,6 +53,7 @@ export interface PricedLine {
   // unitPrice * quantity, trước giảm giá.
   grossTotal: Prisma.Decimal;
   discountAmount: Prisma.Decimal;
+  promotionDiscountAmount: Prisma.Decimal;
   // grossTotal - discountAmount.
   lineTotal: Prisma.Decimal;
 }
@@ -60,6 +62,7 @@ export interface PricedOrder {
   lines: PricedLine[];
   subtotal: Prisma.Decimal;
   discountTotal: Prisma.Decimal;
+  promotionDiscountTotal: Prisma.Decimal;
   shippingFee: Prisma.Decimal;
   grandTotal: Prisma.Decimal;
 }
@@ -84,13 +87,32 @@ export class PricingService {
     // Chặn sớm để các phép nhân bên dưới luôn nằm trong độ chính xác của Decimal.
     this.assertWithinLimit(grossTotal, 'Thành tiền của dòng hàng');
 
-    const discountAmount = grossTotal
+    const productDiscount = grossTotal
       .mul(percent)
       .div(HUNDRED)
       .toDecimalPlaces(MONEY_SCALE, ROUND_HALF_UP);
+    const sellingTotal = grossTotal.minus(productDiscount);
+    const promotionPercent = this.toPercent(input.promotionPercent);
+    const promotionDiscountAmount = promotionPercent.eq(HUNDRED)
+      ? sellingTotal
+      : Prisma.Decimal.min(
+          sellingTotal,
+          sellingTotal
+            .mul(promotionPercent)
+            .div(HUNDRED)
+            .toDecimalPlaces(0, ROUND_HALF_UP),
+        );
+    const discountAmount = productDiscount.plus(promotionDiscountAmount);
     const lineTotal = grossTotal.minus(discountAmount);
 
-    return { quantity, unitPrice, grossTotal, discountAmount, lineTotal };
+    return {
+      quantity,
+      unitPrice,
+      grossTotal,
+      discountAmount,
+      promotionDiscountAmount,
+      lineTotal,
+    };
   }
 
   /**
@@ -118,10 +140,21 @@ export class PricingService {
       ZERO,
     );
     const grandTotal = subtotal.minus(discountTotal).plus(fee);
+    const promotionDiscountTotal = lines.reduce(
+      (sum, line) => sum.plus(line.promotionDiscountAmount),
+      ZERO,
+    );
     this.assertWithinLimit(subtotal, 'subtotal');
     this.assertWithinLimit(grandTotal, 'grandTotal');
 
-    return { lines, subtotal, discountTotal, shippingFee: fee, grandTotal };
+    return {
+      lines,
+      subtotal,
+      discountTotal,
+      promotionDiscountTotal,
+      shippingFee: fee,
+      grandTotal,
+    };
   }
 
   // Chuỗi tiền chuẩn 2 chữ số thập phân để trả ra API, ví dụ '285000.00'.

@@ -19,6 +19,7 @@ import { renderAccountEmail } from './account-email.template';
 export interface CustomerVerificationParams {
   to: string;
   fullName: string;
+  username: string;
   verifyUrl: string;
 }
 
@@ -239,6 +240,7 @@ export class MailService {
         intro:
           'Mở liên kết để xác thực Gmail và thiết lập mật khẩu cho tài khoản mới.',
         actionLabel: 'Xác thực Email',
+        username: params.username,
         url: this.validateFrontendUrl(params.verifyUrl),
         ttl: formatTtl(this.customerVerificationTtlSeconds),
         recovery:

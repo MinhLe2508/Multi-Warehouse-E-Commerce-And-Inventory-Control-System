@@ -20,7 +20,7 @@ export class NotificationsService {
       type: { in: ['SYSTEM', 'ORDER_UPDATE'] }, warehouseId: null,
     };
     if (role === UserRole.CUSTOMER || scope === 'shopping') {
-      return { userId, ...personal };
+      return { userId, warehouseId: null, type: { in: ['SYSTEM', 'ORDER_UPDATE', 'PROMOTION'] } };
     }
     return {
       userId,
@@ -90,7 +90,11 @@ export class NotificationsService {
    */
   async markAsRead(notificationId: bigint, userId: string, role?: UserRole) {
     return this.prisma.notification.updateMany({
-      where: { id: notificationId, ...this.visible(userId, role) },
+      where: {
+        id: notificationId,
+        userId,
+        OR: [this.visible(userId, role), this.visible(userId, role, 'shopping')],
+      },
       data: { isRead: true, readAt: new Date() },
     });
   }

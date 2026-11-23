@@ -8,7 +8,10 @@ export type VietQrInstructions = {
 };
 export type OrderState = "PENDING_PAYMENT" | "CONFIRMED" | "SHIPPING" | "DELIVERED" | "CANCELLED";
 export type Line = { productId: string; quantity: number };
-export type Destination = { shippingRecipient: string; shippingPhone: string; shippingAddress: string; shippingRegion: string };
+export type Destination = {
+  shippingRecipient: string; shippingPhone: string; shippingAddress: string;
+  shippingRegion?: string; shippingWarehouseId?: string | null;
+};
 export type CustomerProfile = {
   id: string; fullName: string; username: string; email: string; phone: string | null; address: string | null;
   avatarUrl: string | null; emailVerifiedAt: string | null; isActive: boolean; createdAt: string;
@@ -21,6 +24,9 @@ export interface CustomerOrder {
   id: string; orderCode: string; createdAt: string; subtotal: string; discountTotal: string;
   shippingFee: string; grandTotal: string; status: OrderState; canCancel: boolean;
   shippingRecipient: string; shippingPhone: string; shippingAddress: string; shippingRegion: string | null;
+  shippingWarehouse?: { id: string; name: string; code: string } | null;
+  promotionCode?: string | null;
+  promotionDiscountTotal?: string;
   reservationExpiresAt: string | null;
   cancelledReason: string | null;
   items: OrderLine[];
@@ -32,13 +38,20 @@ export interface Receipt extends CustomerOrder {
   statusHistory: { id: string; fromStatus: OrderState | null; toStatus: OrderState; reason: string | null; createdAt: string }[];
 }
 
-export function createOrder(items: Line[], shipping: Destination, checkout?: { method: CheckoutMethod; id: string }) {
+export function createOrder(items: Line[], shipping: Destination, checkout?: {
+  method: CheckoutMethod; id: string; promotionId?: string; expectedTotal?: string;
+}) {
   return authenticatedRequest<{ id: string }>("/orders", {
     items: items.map(({ productId, quantity }) => ({ productId, quantity })),
     shippingRecipient: shipping.shippingRecipient.trim(), shippingAddress: shipping.shippingAddress.trim(),
     shippingPhone: shipping.shippingPhone.trim(),
-    ...(shipping.shippingRegion.trim() && { shippingRegion: shipping.shippingRegion.trim() }),
-    ...(checkout && { paymentMethod: checkout.method, checkoutId: checkout.id }),
+    ...(shipping.shippingRegion?.trim() && { shippingRegion: shipping.shippingRegion.trim() }),
+    ...(shipping.shippingWarehouseId && { shippingWarehouseId: shipping.shippingWarehouseId }),
+    ...(checkout && {
+      paymentMethod: checkout.method, checkoutId: checkout.id,
+      ...(checkout.promotionId && { promotionId: checkout.promotionId }),
+      ...(checkout.expectedTotal && { expectedTotal: checkout.expectedTotal }),
+    }),
   });
 }
 

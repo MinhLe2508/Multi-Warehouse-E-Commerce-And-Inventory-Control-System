@@ -28,6 +28,10 @@ export type Order = {
   id: string; orderCode: string; status: OrderStatus; shippingRecipient: string;
   nextStatuses?: Array<'SHIPPING' | 'DELIVERED'>;
   shippingPhone: string; shippingAddress: string; reservationExpiresAt: string | null;
+  shippingWarehouse?: Warehouse | null;
+  customer?: { id: string; fullName: string; email: string; username: string } | null;
+  promotionCode?: string | null;
+  promotionDiscountTotal?: string;
   createdAt: string; grandTotal: string;
   items: Array<{
     id: string; productName: string; sku: string; quantity: number;

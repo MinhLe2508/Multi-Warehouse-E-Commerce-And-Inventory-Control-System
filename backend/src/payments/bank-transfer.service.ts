@@ -115,7 +115,7 @@ export class BankTransferService {
       ) {
         throw new ConflictException({
           code: 'PAYMENT_SUPPORT_TOO_SOON',
-          message: 'Bạn có thể gửi yêu cầu sau 3 phút kể từ khi tạo đơn.',
+          message: 'Bạn có thể gửi yêu cầu sau 30 giây kể từ khi tạo đơn.',
         });
       }
       const request = await tx.paymentSupportRequest.create({
@@ -178,6 +178,73 @@ export class BankTransferService {
       });
       return { closed: true };
     });
+  }
+
+  async confirmManually(paymentId: string, actorId: string) {
+    const reference = await this.prisma.payment.findUnique({
+      where: { id: paymentId, method: 'BANK_TRANSFER' },
+      select: { orderId: true },
+    });
+    if (!reference)
+      throw new NotFoundException('Không tìm thấy giao dịch VietQR.');
+    const changed = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM orders WHERE id = ${reference.orderId}::uuid FOR UPDATE`;
+        const payment = await tx.payment.findUniqueOrThrow({
+          where: { id: paymentId },
+          include: {
+            order: true,
+            supportRequest: { select: { status: true } },
+          },
+        });
+        const requestStatus = payment.supportRequest?.status;
+        if (requestStatus === 'CONFIRMED' && payment.status === 'SUCCESS')
+          return false;
+        if (requestStatus !== 'OPEN') {
+          throw new ConflictException({
+            code: 'PAYMENT_SUPPORT_REQUIRED',
+            message: 'Chỉ xác nhận thủ công khi có yêu cầu đối soát đang mở.',
+          });
+        }
+        const [clock] = await tx.$queryRaw<
+          Array<{ now: Date }>
+        >`SELECT clock_timestamp() AS now`;
+        if (
+          payment.order.status !== 'PENDING_PAYMENT' ||
+          payment.status !== 'PENDING' ||
+          (payment.order.reservationExpiresAt?.getTime() ?? 0) <=
+            clock.now.getTime()
+        ) {
+          throw new ConflictException({
+            code: 'ORDER_CLOSED',
+            message:
+              'Đơn đã đóng hoặc hết thời gian giữ hàng. Hãy phản hồi khách về khoản chuyển.',
+          });
+        }
+        if (
+          payment.currency !== 'VND' ||
+          payment.order.currency !== 'VND' ||
+          payment.amount.lte(0) ||
+          !payment.amount.eq(payment.order.grandTotal) ||
+          !readRecipient(payment.gatewayResponse)
+        ) {
+          throw new ConflictException(
+            'Thông tin giao dịch VietQR của đơn không khớp.',
+          );
+        }
+        await this.confirmOrder(
+          tx,
+          payment,
+          clock.now,
+          actorId,
+          'Admin xác nhận đã nhận tiền qua VietQR',
+        );
+        return true;
+      },
+      { timeout: 12_000 },
+    );
+    if (changed) await this.changes.publishOrder(reference.orderId);
+    return { confirmed: true };
   }
 
   async record(transfer: IncomingTransfer, expectedPaymentId?: string) {
@@ -286,43 +353,21 @@ export class BankTransferService {
           if (!saved.count)
             return { applied: false, duplicate: true, issue: null };
 
-          await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              callbackCount: { increment: transfer.providerId ? 1 : 0 },
-              ...(!issue && { status: 'SUCCESS', processedAt: now }),
-            },
-          });
+          if (transfer.providerId)
+            await tx.payment.update({
+              where: { id: payment.id },
+              data: { callbackCount: { increment: 1 } },
+            });
           if (issue) return { applied: false, duplicate: false, issue };
-          await this.stock.commitForOrder(
+          await this.confirmOrder(
             tx,
-            order.id,
-            transfer.actorId ?? null,
+            payment,
+            now,
+            transfer.actorId,
+            expectedPaymentId
+              ? 'Admin đã đối chiếu sao kê VietQR theo yêu cầu của khách'
+              : 'Đã xác nhận chuyển khoản VietQR từ giao dịch ngân hàng',
           );
-          await tx.order.update({
-            where: { id: order.id },
-            data: { status: 'CONFIRMED', confirmedAt: now },
-          });
-          await tx.orderStatusHistory.create({
-            data: {
-              orderId: order.id,
-              fromStatus: 'PENDING_PAYMENT',
-              toStatus: 'CONFIRMED',
-              actorId: transfer.actorId,
-              reason: expectedPaymentId
-                ? 'Admin đã đối chiếu sao kê VietQR theo yêu cầu của khách'
-                : 'Đã xác nhận chuyển khoản VietQR từ giao dịch ngân hàng',
-            },
-          });
-          await tx.paymentSupportRequest.updateMany({
-            where: { paymentId: payment.id, status: 'OPEN' },
-            data: {
-              status: 'CONFIRMED',
-              resolvedAt: now,
-              resolvedById: transfer.actorId,
-            },
-          });
-          await recordCustomerOrderNotice(tx, order, 'CONFIRMED');
           return { applied: true, duplicate: false, issue: null };
         },
         { timeout: 12_000 },
@@ -335,5 +380,40 @@ export class BankTransferService {
     });
     if (result.applied) await this.changes.publishOrder(reference.orderId);
     return result;
+  }
+
+  private async confirmOrder(
+    tx: Prisma.TransactionClient,
+    {
+      id: paymentId,
+      order,
+    }: { id: string; order: { id: string; userId: string; orderCode: string } },
+    now: Date,
+    actorId: string | undefined,
+    reason: string,
+  ) {
+    await this.stock.commitForOrder(tx, order.id, actorId ?? null);
+    await tx.payment.update({
+      where: { id: paymentId },
+      data: { status: 'SUCCESS', processedAt: now },
+    });
+    await tx.order.update({
+      where: { id: order.id },
+      data: { status: 'CONFIRMED', confirmedAt: now },
+    });
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        fromStatus: 'PENDING_PAYMENT',
+        toStatus: 'CONFIRMED',
+        actorId,
+        reason,
+      },
+    });
+    await tx.paymentSupportRequest.updateMany({
+      where: { paymentId, status: 'OPEN' },
+      data: { status: 'CONFIRMED', resolvedAt: now, resolvedById: actorId },
+    });
+    await recordCustomerOrderNotice(tx, order, 'CONFIRMED');
   }
 }

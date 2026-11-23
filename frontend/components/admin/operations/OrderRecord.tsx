@@ -39,10 +39,14 @@ export function OrderRecord({ id }: { id: string }) {
               <div className="admin-record-meta">
                 {data.shipping.phone} · {data.shipping.address}
               </div>
+              <div className="admin-record-meta">Kho giao hàng · {order.data?.shippingWarehouse?.name ?? 'MultiMart tự chọn'}</div>
             </div>
             <div>
               <RecordStatus label={STATUS_LABEL[data.status]} tone="accent" />
               <p className="mb-0 mt-2">{formatVnd(data.grandTotal)}</p>
+              {order.data?.promotionCode && <p className="admin-record-meta mb-0 mt-1">
+                Mã {order.data.promotionCode} · Giảm {formatVnd(Number(order.data.promotionDiscountTotal))}
+              </p>}
             </div>
           </section>
           <OrderPaymentReview order={data} onUpdate={(message) => {

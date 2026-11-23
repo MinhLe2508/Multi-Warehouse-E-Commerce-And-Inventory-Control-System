@@ -6,10 +6,12 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { OrderStatus, Prisma } from '@prisma/client';
-import { PricingService } from '../pricing/pricing.service';
+import { MONEY_SCALE, PricingService, type PricedLine } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import type { CheckoutQuoteDto } from './dto/checkout.dto';
+import { PromotionsService } from '../promotions/promotions.service';
 import { CustomerOrdersQueryDto } from './dto/customer-orders-query.dto';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 import { mockPaymentsEnabled } from '../payments/payment-mode';
@@ -23,12 +25,16 @@ import {
 } from '../payments/payment-support-policy';
 import { recordCustomerOrderNotice } from './customer-order-notice';
 
-interface CheckoutSnapshotRow {
+interface CheckoutProduct {
   id: string;
-  sku: string;
-  name: string;
   basePrice: Prisma.Decimal;
   discountPercent: Prisma.Decimal;
+  categoryId: string | null;
+}
+
+interface CheckoutSnapshotRow extends CheckoutProduct {
+  sku: string;
+  name: string;
   inventoryId: bigint | null;
   availableStock: number | null;
 }
@@ -43,6 +49,7 @@ export const ORDER_STATUS_TRANSITIONS: Partial<
 
 const customerOrderInclude = {
   reservations: paymentReservationStart,
+  shippingWarehouse: { select: { id: true, name: true, code: true } },
   items: {
     select: {
       id: true,
@@ -82,7 +89,49 @@ export class OrdersService {
     private readonly pricing: PricingService,
     private readonly stockReservation: StockReservationService,
     private readonly changes: InventoryChangeEmitter,
+    private readonly promotions: PromotionsService,
   ) {}
+
+  async quote(userId: string, dto: CheckoutQuoteDto) {
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: dto.items.map(({ productId }) => productId) }, isActive: true },
+      select: { id: true, basePrice: true, discountPercent: true, categoryId: true },
+    });
+    const promo = dto.promotionId
+      ? await this.promotions.checkoutScope(this.prisma, userId, dto.promotionId)
+      : null;
+    const price = this.priceBasket(dto, new Map(products.map((product) => [product.id, product])), promo);
+    return {
+      subtotal: price.subtotal.toFixed(2),
+      discountTotal: price.discountTotal.toFixed(2),
+      promotionDiscountTotal: price.promotionDiscountTotal.toFixed(2),
+      shippingFee: price.shippingFee.toFixed(2),
+      grandTotal: price.grandTotal.toFixed(2),
+      lines: dto.items.map(({ productId }, index) => ({
+        productId,
+        lineTotal: price.lines[index].lineTotal.toFixed(2),
+        promotionDiscountAmount: price.lines[index].promotionDiscountAmount.toFixed(2),
+      })),
+    };
+  }
+
+  private priceBasket(
+    dto: CheckoutQuoteDto,
+    products: Map<string, CheckoutProduct>,
+    promo: Awaited<ReturnType<PromotionsService['checkoutScope']>> | null,
+  ) {
+    return this.pricing.calculateOrder(dto.items.map(({ productId, quantity }) => {
+      const product = products.get(productId);
+      if (!product) throw new BadRequestException('Sản phẩm không tồn tại hoặc đã ngừng bán.');
+      const applies = promo && (
+        !promo.eligibleCategories || (product.categoryId && promo.eligibleCategories.has(product.categoryId))
+      );
+      return {
+        quantity, unitPrice: product.basePrice, discountPercent: product.discountPercent,
+        promotionPercent: applies ? String(promo.percent) : undefined,
+      };
+    }));
+  }
 
   async create(userId: string, dto: CreateOrderDto) {
     const cod = dto.paymentMethod === 'COD';
@@ -96,7 +145,10 @@ export class OrdersService {
           .digest('hex')
       : randomUUID().replace(/-/g, '');
     const orderCode = `ORD-${codeToken.slice(0, 20).toUpperCase()}`;
-    const initialStatus = cod ? 'CONFIRMED' : 'PENDING_PAYMENT';
+    const stockError = dto.shippingWarehouseId ? {
+      code: 'INSUFFICIENT_WAREHOUSE_STOCK',
+      message: 'Kho đã chọn không đủ hàng. Hãy chọn kho khác hoặc để MultiMart tự chọn kho.',
+    } : 'INSUFFICIENT_STOCK';
     const { order, inventoryEvents } = await this.prisma.$transaction(
       async (tx) => {
         if (dto.checkoutId) {
@@ -121,12 +173,16 @@ export class OrdersService {
             }
             if (
               previous.userId !== userId ||
-              (previous.payments[0]?.method ?? null) !==
-                (cod ? 'COD' : transfer ? 'BANK_TRANSFER' : null) ||
+              (!previous.grandTotal.isZero() &&
+                (previous.payments[0]?.method ?? null) !==
+                  (cod ? 'COD' : transfer ? 'BANK_TRANSFER' : null)) ||
               previous.shippingRecipient !== dto.shippingRecipient ||
               previous.shippingPhone !== dto.shippingPhone ||
               previous.shippingAddress !== dto.shippingAddress ||
               previous.shippingRegion !== (dto.shippingRegion ?? null) ||
+              previous.shippingWarehouseId !== (dto.shippingWarehouseId ?? null) ||
+              previous.promotionId !== (dto.promotionId ?? null) ||
+              (dto.expectedTotal !== undefined && !previous.grandTotal.eq(dto.expectedTotal)) ||
               quantities.size !== dto.items.length ||
               dto.items.some(
                 (item) => quantities.get(item.productId) !== item.quantity,
@@ -140,20 +196,24 @@ export class OrdersService {
             return { order: this.serialize(replayed), inventoryEvents: [] };
           }
         }
-        const recipient = transfer ? getVietQrRecipient() : null;
-        if (transfer && !recipient) {
-          throw new ConflictException('Chuyển khoản VietQR đang tạm dừng. Bạn có thể chọn COD.');
+        if (dto.shippingWarehouseId) {
+          const [warehouse] = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM warehouses WHERE id = ${dto.shippingWarehouseId}::uuid AND is_active FOR SHARE
+          `;
+          if (!warehouse) throw new ConflictException('Kho giao hàng không còn hoạt động. Hãy chọn kho khác.');
         }
         const productIds = dto.items.map(({ productId }) => productId);
         const snapshot = await tx.$queryRaw<CheckoutSnapshotRow[]>`
           SELECT p.id, p.sku, p.name, p.base_price AS "basePrice",
                  p.discount_percent AS "discountPercent",
+                 p.category_id AS "categoryId",
                  candidate.id AS "inventoryId", candidate.available_stock AS "availableStock"
             FROM products p
             LEFT JOIN (
               SELECT i.id, i.product_id, i.available_stock
                 FROM inventory i
                 JOIN warehouses w ON w.id = i.warehouse_id AND w.is_active
+                ${dto.shippingWarehouseId ? Prisma.sql`AND w.id = ${dto.shippingWarehouseId}::uuid` : Prisma.empty}
             ) candidate ON candidate.product_id = p.id
            WHERE p.id = ANY(${productIds}::uuid[]) AND p.is_active
         `;
@@ -180,7 +240,7 @@ export class OrdersService {
               (availableByProduct.get(productId) ?? 0) < quantity,
           )
         ) {
-          throw new ConflictException('INSUFFICIENT_STOCK');
+          throw new ConflictException(stockError);
         }
 
         // Khóa TẤT CẢ candidate theo inventory.id tăng dần trước khi tạo order_items.
@@ -236,16 +296,28 @@ export class OrdersService {
             if (remaining === 0) break;
           }
           if (remaining !== 0)
-            throw new ConflictException('INSUFFICIENT_STOCK');
+            throw new ConflictException(stockError);
         }
-        const price = this.pricing.calculateOrder(
-          lines.map((l) => ({
-            quantity: l.quantity,
-            unitPrice: byId.get(l.productId)!.basePrice,
-            discountPercent: byId.get(l.productId)!.discountPercent,
-          })),
-        );
-        if (recipient && (!price.grandTotal.isInteger() || price.grandTotal.lte(0))) {
+        const promo = dto.promotionId
+          ? await this.promotions.checkoutScope(tx, userId, dto.promotionId, true)
+          : null;
+        const price = this.priceBasket(dto, byId, promo);
+        if (promo && price.promotionDiscountTotal.isZero()) {
+          throw new ConflictException({
+            code: 'PROMOTION_NOT_APPLICABLE',
+            message: 'Mã này không giảm giá cho các sản phẩm trong đơn.',
+          });
+        }
+        if (dto.expectedTotal !== undefined && !price.grandTotal.eq(dto.expectedTotal)) {
+          throw new ConflictException({ code: 'CHECKOUT_TOTAL_CHANGED', message: 'Tổng tiền đã thay đổi. Hãy kiểm tra lại trước khi đặt hàng.' });
+        }
+        const free = price.grandTotal.isZero();
+        const initialStatus = free || cod ? 'CONFIRMED' : 'PENDING_PAYMENT';
+        const recipient = transfer && !free ? getVietQrRecipient() : null;
+        if (transfer && !free && !recipient) {
+          throw new ConflictException('Chuyển khoản VietQR đang tạm dừng. Bạn có thể chọn COD.');
+        }
+        if (recipient && !price.grandTotal.isInteger()) {
           throw new BadRequestException('Đơn VietQR cần tổng tiền là số nguyên dương VND. Vui lòng chọn COD.');
         }
         const order = await tx.order.create({
@@ -257,10 +329,14 @@ export class OrdersService {
             discountTotal: price.discountTotal,
             shippingFee: price.shippingFee,
             grandTotal: price.grandTotal,
+            promotionId: promo?.id,
+            promotionCode: promo?.code,
+            promotionDiscountTotal: price.promotionDiscountTotal,
             shippingRecipient: dto.shippingRecipient,
             shippingPhone: dto.shippingPhone,
             shippingAddress: dto.shippingAddress,
             shippingRegion: dto.shippingRegion,
+            shippingWarehouseId: dto.shippingWarehouseId,
           },
         });
         const allocations: Array<{
@@ -268,10 +344,15 @@ export class OrdersService {
           inventoryId: bigint;
           quantity: number;
         }> = [];
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
+        const pricedProducts = new Map(dto.items.map(({ productId }, index) => [productId, price.lines[index]]));
+        const allocatedQuantity = new Map<string, number>();
+        for (const line of lines) {
           const p = byId.get(line.productId)!;
-          const amount = price.lines[i];
+          const amount = pricedProducts.get(line.productId)!;
+          const before = allocatedQuantity.get(line.productId) ?? 0;
+          const after = before + line.quantity;
+          allocatedQuantity.set(line.productId, after);
+          const discountAmount = this.allocationDiscount(amount, before, after);
           const item = await tx.orderItem.create({
             data: {
               orderId: order.id,
@@ -281,9 +362,9 @@ export class OrdersService {
               productName: p.name,
               sku: p.sku,
               unitPrice: amount.unitPrice,
-              discountAmount: amount.discountAmount,
+              discountAmount,
               quantity: line.quantity,
-              lineTotal: amount.lineTotal,
+              lineTotal: amount.unitPrice.mul(line.quantity).minus(discountAmount),
             },
           });
           allocations.push({
@@ -298,9 +379,9 @@ export class OrdersService {
           allocations,
           userId,
         );
-        if (cod) {
+        if (free || cod) {
           await this.stockReservation.commitForOrder(tx, order.id, userId);
-          await tx.payment.create({
+          if (!free) await tx.payment.create({
             data: {
               orderId: order.id,
               transactionRef: `COD-${order.id}`,
@@ -337,7 +418,7 @@ export class OrdersService {
             fromStatus: null,
             toStatus: initialStatus,
             actorId: userId,
-            reason: cod ? 'Đã nhận đơn COD' : 'Tạo đơn và giữ chỗ tồn kho',
+            reason: free ? 'Đơn không cần thanh toán' : cod ? 'Đã nhận đơn COD' : 'Tạo đơn và giữ chỗ tồn kho',
           },
         });
         await recordCustomerOrderNotice(tx, order, initialStatus);
@@ -361,6 +442,12 @@ export class OrdersService {
     );
     await this.changes.publishSnapshots(inventoryEvents);
     return order;
+  }
+
+  private allocationDiscount(line: PricedLine, before: number, after: number) {
+    // Chia phần giảm đã tính theo sản phẩm cho các kho, giữ tổng đúng như báo giá.
+    const through = (qty: number) => line.discountAmount.mul(qty).div(line.quantity).toDecimalPlaces(MONEY_SCALE);
+    return through(after).minus(through(before));
   }
 
   /** All status changes and their audit rows share the caller's DB transaction. */
@@ -451,6 +538,7 @@ export class OrdersService {
       }>;
       subtotal: Prisma.Decimal;
       discountTotal: Prisma.Decimal;
+      promotionDiscountTotal: Prisma.Decimal;
       shippingFee: Prisma.Decimal;
       grandTotal: Prisma.Decimal;
     },
@@ -459,6 +547,7 @@ export class OrdersService {
       ...order,
       subtotal: order.subtotal.toFixed(2),
       discountTotal: order.discountTotal.toFixed(2),
+      promotionDiscountTotal: order.promotionDiscountTotal.toFixed(2),
       shippingFee: order.shippingFee.toFixed(2),
       grandTotal: order.grandTotal.toFixed(2),
       items: order.items.map(({ inventoryId, ...item }) => ({
@@ -564,6 +653,9 @@ export class OrdersService {
       shippingPhone: order.shippingPhone,
       shippingAddress: order.shippingAddress,
       shippingRegion: order.shippingRegion,
+      shippingWarehouse: order.shippingWarehouse,
+      promotionCode: order.promotionCode,
+      promotionDiscountTotal: order.promotionDiscountTotal.toFixed(2),
       subtotal: order.subtotal.toFixed(2),
       discountTotal: order.discountTotal.toFixed(2),
       shippingFee: order.shippingFee.toFixed(2),

@@ -123,6 +123,35 @@ describe('PricingService', () => {
   });
 
   describe('calculateOrder', () => {
+    it('giảm đúng các dòng được áp dụng mã khuyến mãi', () => {
+      const gaming = { unitPrice: '50000', quantity: 2, promotionPercent: '5' };
+      const phone = { unitPrice: '10000000', quantity: 1 };
+      const scoped = service.calculateOrder([gaming, phone]);
+      const all = service.calculateOrder([
+        gaming,
+        { ...phone, promotionPercent: '5' },
+      ]);
+      expect(scoped.lines.map((line) => line.lineTotal.toFixed(2))).toEqual([
+        '95000.00',
+        '10000000.00',
+      ]);
+      expect(scoped.grandTotal.toFixed(2)).toBe('10095000.00');
+      expect(all.grandTotal.toFixed(2)).toBe('9595000.00');
+    });
+
+    it('mã 100% giảm hết giá sau chiết khấu sản phẩm, kể cả phần lẻ', () => {
+      const price = service.calculateOrder([
+        {
+          unitPrice: '1200.49',
+          quantity: 1,
+          discountPercent: '10',
+          promotionPercent: '100',
+        },
+      ]);
+      expect(price.promotionDiscountTotal.toFixed(2)).toBe('1080.44');
+      expect(price.grandTotal.toFixed(2)).toBe('0.00');
+    });
+
     it('cộng đúng subtotal, discountTotal, grandTotal và phí giao hàng mặc định 0', () => {
       const order = service.calculateOrder([
         { unitPrice: '150000.00', discountPercent: '5', quantity: 2 },

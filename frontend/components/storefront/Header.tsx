@@ -23,6 +23,7 @@ export default function Header() {
   const hydrated = useHydrated();
   const cartCount = useCartStore(selectTotalItems);
   const user = useAuthStore((state) => state.session?.user);
+  const ready = useAuthStore((state) => state.ready);
   const signOut = useAuthStore((state) => state.logout);
   const buyer = user && isBuyerRole(user.role) && !user.mustChangePassword ? user : undefined;
   const unread = useShopResource<{ count: number }>(buyer ? "/notifications/unread-count?scope=shopping" : null,
@@ -86,16 +87,31 @@ export default function Header() {
               <Bell size={20} />
               {Boolean(unread.data?.count) && <sup>{Math.min(unread.data?.count ?? 0, 99)}</sup>}
             </Link>}
-            {buyer ? <details className="mm-account" ref={account}>
-              <summary className="mm-icon-button" aria-label={tx("Tài khoản", "Account")}><UserRound size={20} /><ChevronDown size={13} className="mm-account-chevron" /></summary>
+            {user ? <details className="mm-account" ref={account}>
+              <summary className="mm-account-trigger">
+                <span className="mm-session-avatar" aria-hidden="true">{(user.fullName || user.username).trim().slice(0, 1).toUpperCase()}</span>
+                <span className="mm-session-text">
+                  <strong>{user.fullName || user.username}</strong>
+                  <small>{tx("Đã đăng nhập", "Signed in")}</small>
+                </span>
+                <ChevronDown size={13} className="mm-account-chevron" aria-hidden="true" />
+              </summary>
               <div className="mm-account-menu">
-                <strong>{buyer.username}</strong>
-                <Link href="/account" onClick={() => account.current?.removeAttribute("open")}>{tx("Hồ sơ cá nhân", "Profile")}</Link>
-                <Link href="/orders" onClick={() => account.current?.removeAttribute("open")}>{tx("Đơn hàng của tôi", "My orders")}</Link>
-                {buyer.role === "WAREHOUSE_STAFF" && <Link href="/staff/dashboard" onClick={() => account.current?.removeAttribute("open")}>{tx("Khu vực nhân viên", "Staff portal")}</Link>}
+                <strong>{user.fullName || user.username}<small>@{user.username}</small></strong>
+                {buyer && <>
+                  <Link href="/account" onClick={() => account.current?.removeAttribute("open")}>{tx("Hồ sơ cá nhân", "Profile")}</Link>
+                  <Link href="/account/addresses" onClick={() => account.current?.removeAttribute("open")}>{tx("Địa chỉ yêu thích", "Favorite addresses")}</Link>
+                  <Link href="/orders" onClick={() => account.current?.removeAttribute("open")}>{tx("Đơn hàng của tôi", "My orders")}</Link>
+                </>}
+                {user.role === "WAREHOUSE_STAFF" && <Link href="/staff/dashboard" onClick={() => account.current?.removeAttribute("open")}>{tx("Khu vực nhân viên", "Staff portal")}</Link>}
+                {user.role === "ADMIN" && <Link href="/admin/dashboard" onClick={() => account.current?.removeAttribute("open")}>{tx("Khu vực quản trị", "Admin portal")}</Link>}
                 <button type="button" onClick={() => { account.current?.removeAttribute("open"); void signOut().finally(() => router.replace("/")); }}>{tx("Đăng xuất", "Sign out")}</button>
               </div>
-            </details> : <Link href="/login" className="mm-icon-button" aria-label={tx("Đăng nhập", "Sign in")}><UserRound size={20} /></Link>}
+            </details> : ready ? <Link href="/login" className="mm-account-trigger mm-sign-in">
+              <UserRound size={17} aria-hidden="true" />{tx("Đăng nhập", "Sign in")}
+            </Link> : <span className="mm-account-trigger mm-session-loading" aria-busy="true">
+              {tx("Đang tải", "Loading")}
+            </span>}
             <Link className="mm-icon-button mm-cart-link mm-counter" href="/cart" aria-label={tx("Giỏ hàng", "Cart") + (hydrated && cartCount ? " · " + cartCount : "")}>
               <ShoppingBag size={20} />{hydrated && cartCount > 0 && <sup>{Math.min(cartCount, 99)}</sup>}
             </Link>

@@ -1,4 +1,4 @@
-export const PAYMENT_SUPPORT_WAIT_MS = 3 * 60_000;
+export const PAYMENT_SUPPORT_WAIT_MS = 30_000;
 
 // Dùng mốc giữ hàng do PostgreSQL tạo, kể cả với đơn cũ từ phiên DB khác múi giờ.
 export const paymentReservationStart = {

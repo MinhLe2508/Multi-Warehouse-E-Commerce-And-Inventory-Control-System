@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { PasswordChangedGuard } from '../core/guards/password-changed.guard';
 import { RolesGuard } from '../core/guards/roles.guard';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CheckoutQuoteDto } from './dto/checkout.dto';
 import { CustomerOrdersQueryDto } from './dto/customer-orders-query.dto';
 import { OrdersService } from './orders.service';
 
@@ -54,6 +55,12 @@ export class OrdersController {
   @HttpCode(201)
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateOrderDto) {
     return this.orders.create(user.userId, dto);
+  }
+
+  @Post('quote')
+  @HttpCode(200)
+  quote(@CurrentUser('userId') userId: string, @Body() dto: CheckoutQuoteDto) {
+    return this.orders.quote(userId, dto);
   }
 
   @Patch(':id/cancel')

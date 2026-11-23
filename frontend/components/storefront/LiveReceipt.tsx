@@ -51,6 +51,7 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
   const codUnpaid = isCod && order?.payment?.status === "PENDING";
   const paid = order?.payment?.status === "SUCCESS";
   const isTransfer = defaultMethod === "BANK_TRANSFER";
+  const free = !order?.payment && order?.grandTotal === "0.00" && !pending;
   const needsReview = isTransfer && !paid && order?.payment?.reviewRequired;
   const request = order?.payment?.supportRequest ?? submitted;
   const reviewing = !paid && request?.status === "OPEN";
@@ -114,9 +115,10 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
     : order.status === "CANCELLED" ? tx("Đơn hàng đã hủy", "Order cancelled")
       : codUnpaid ? tx("Đã ghi nhận đơn COD", "COD order placed")
         : paid ? (isCod ? tx("Đã giao hàng và thu tiền", "Delivered and paid") : tx("Đã thanh toán", "Payment received"))
+          : free ? tx("Đơn hàng miễn phí đã được ghi nhận", "Free order placed")
           : pending ? (reviewing ? tx("Đang đối soát thanh toán", "Payment under review") : tx("Đơn hàng đang chờ thanh toán", "Order awaiting payment"))
             : tx("Đơn hàng đã được ghi nhận", "Order received");
-  const StateIcon = expired || order.status === "CANCELLED" ? XCircle : paid ? CircleCheck : isCod ? PackageCheck : Clock3;
+  const StateIcon = expired || order.status === "CANCELLED" ? XCircle : paid ? CircleCheck : isCod || free ? PackageCheck : Clock3;
   return <div className="mm-container mm-page">
     <ShopHeading title={fromCheckout ? tx("Xác nhận đơn hàng", "Order confirmation") : tx("Chi tiết đơn hàng", "Order details")}
       back={{ href: "/orders", label: tx("Đơn hàng của tôi", "My orders") }} />
@@ -130,6 +132,7 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
       <div className="mm-checkout-form">
         <section className="mm-panel mm-checkout-panel">
           <div className="mm-block-heading"><span><CreditCard size={21} /></span><div><h2>{tx("Thanh toán", "Payment")}</h2></div></div>
+          {free && <p className="mm-feedback success">{tx("Đơn này không cần thanh toán.", "This order requires no payment.")}</p>}
           {isCod && <p className="mm-receipt-payment"><PaymentName method="COD" />
             {codUnpaid && <strong>{tx("Cần trả khi nhận hàng", "Due on delivery")} · {formatVND(order.grandTotal)}</strong>}</p>}
           {paid && <p className="mm-feedback success" role="status">{tx("Đã thanh toán", "Paid")} · {formatVND(order.grandTotal)}</p>}
@@ -171,6 +174,7 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
           <h2>{tx("Thông tin nhận hàng", "Delivery information")}</h2>
           <p className="mm-recipient"><strong>{order.shippingRecipient}</strong><br />{order.shippingPhone}<br />
             {[order.shippingAddress, order.shippingRegion].filter(Boolean).join(", ")}</p>
+          {order.shippingWarehouse && <p className="mm-muted">{tx("Kho giao hàng", "Fulfilment warehouse")} · {order.shippingWarehouse.name}</p>}
         </section>
         <section className="mm-panel mm-checkout-panel">
           <h2>{tx("Lịch sử đơn hàng", "Order timeline")}</h2>
@@ -183,6 +187,7 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
         </section>
       </div>
       <OrderSummary subtotal={order.subtotal} discount={order.discountTotal} shipping={order.shippingFee} total={order.grandTotal}
+        promotion={order.promotionCode && order.promotionDiscountTotal ? { code: order.promotionCode, amount: order.promotionDiscountTotal } : undefined}
         lines={order.items.map((item) => ({ id: item.id, name: item.productName, image: item.imageUrl, quantity: item.quantity, total: item.lineTotal }))}>
         <Link className="mm-button full" href="/products">{tx("Tiếp tục mua sắm", "Continue shopping")}</Link>
       </OrderSummary>
