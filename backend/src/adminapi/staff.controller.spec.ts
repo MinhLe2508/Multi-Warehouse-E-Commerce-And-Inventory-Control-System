@@ -67,7 +67,11 @@ describe('StaffController HTTP contract', () => {
     create: jest.fn().mockResolvedValue(created),
     update: jest.fn().mockResolvedValue({ ...staff, phone: null }),
     findCustomerByEmail: jest.fn().mockResolvedValue({ id: customerId }),
-    changeRole: jest.fn().mockResolvedValue({ userId: staffId, role: 'CUSTOMER', activationEmail: 'NOT_REQUIRED' }),
+    changeRole: jest.fn().mockResolvedValue({
+      userId: staffId,
+      role: 'CUSTOMER',
+      activationEmail: 'NOT_REQUIRED',
+    }),
     setStatus: jest
       .fn()
       .mockResolvedValue({ ...staff, isActive: false, status: 'LOCKED' }),
@@ -97,7 +101,8 @@ describe('StaffController HTTP contract', () => {
                       isActive: true,
                       emailVerifiedAt: new Date(),
                       mustChangePassword,
-                      sessionVersion: where.id === customerId ? customerSessionVersion : 0,
+                      sessionVersion:
+                        where.id === customerId ? customerSessionVersion : 0,
                     }
                   : null;
               },
@@ -170,15 +175,30 @@ describe('StaffController HTTP contract', () => {
   });
 
   it('normalizes the duplicate email lookup and requires an explicit buyer/staff role for a change', async () => {
-    await api().post(path + '/customer-by-email').auth(adminAuth(), bearer)
-      .send({ email: ' CUSTOMER@GMAIL.COM ' }).expect(200);
-    expect(service.findCustomerByEmail).toHaveBeenCalledWith('customer@gmail.com');
-    await api().patch(details + '/role').auth(adminAuth(), bearer)
-      .send({ role: UserRole.ADMIN }).expect(400);
+    await api()
+      .post(path + '/customer-by-email')
+      .auth(adminAuth(), bearer)
+      .send({ email: ' CUSTOMER@GMAIL.COM ' })
+      .expect(200);
+    expect(service.findCustomerByEmail).toHaveBeenCalledWith(
+      'customer@gmail.com',
+    );
+    await api()
+      .patch(details + '/role')
+      .auth(adminAuth(), bearer)
+      .send({ role: UserRole.ADMIN })
+      .expect(400);
     expect(service.changeRole).not.toHaveBeenCalled();
-    await api().patch(details + '/role').auth(adminAuth(), bearer)
-      .send({ role: UserRole.CUSTOMER }).expect(200);
-    expect(service.changeRole).toHaveBeenCalledWith(staffId, UserRole.CUSTOMER, adminId);
+    await api()
+      .patch(details + '/role')
+      .auth(adminAuth(), bearer)
+      .send({ role: UserRole.CUSTOMER })
+      .expect(200);
+    expect(service.changeRole).toHaveBeenCalledWith(
+      staffId,
+      UserRole.CUSTOMER,
+      adminId,
+    );
   });
 
   it('rejects an access token issued before a role change', async () => {

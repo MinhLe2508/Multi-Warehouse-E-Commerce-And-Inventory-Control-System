@@ -252,9 +252,11 @@ describe('LowStockNotifierService', () => {
       productCostPrice: '100000.00',
     });
 
-    expect((sanitized as Record<string, unknown>).costPrice).toBeUndefined();
     expect(
-      (sanitized as Record<string, unknown>).productCostPrice,
+      (sanitized as unknown as Record<string, unknown>).costPrice,
+    ).toBeUndefined();
+    expect(
+      (sanitized as unknown as Record<string, unknown>).productCostPrice,
     ).toBeUndefined();
     // A fresh event ID also distinguishes threshold-only changes at the same stock version.
     expect(sanitized.eventId).toEqual(expect.any(String));

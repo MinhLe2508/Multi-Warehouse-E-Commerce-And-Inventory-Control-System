@@ -32,9 +32,15 @@ export interface RetrievalResult {
   scoreType?: RetrievalScoreType;
 }
 
-const normalizeKeywords = (text: string) => text.toLowerCase()
-  .normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd')
-  .replace(/[^a-z0-9]+/g, ' ').replace(/\bwi fi\b/g, 'wifi').trim();
+const normalizeKeywords = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\bwi fi\b/g, 'wifi')
+    .trim();
 
 @Injectable()
 export class RetrievalService {
@@ -139,8 +145,18 @@ export class RetrievalService {
       }));
 
       const topSimilarity = allDocs[0]?.similarity;
-      // Lọc các document đạt ngưỡng tối thiểu
-      const documents = allDocs.filter((d) => d.similarity >= minSimilarity);
+      const asksInstallment = /\b(tra gop|lai suat)\b/.test(
+        normalizeKeywords(trimmedQuery),
+      );
+      // Lọc các document đạt ngưỡng tối thiểu và không khớp giả các chủ đề ngoài phạm vi (như trả góp)
+      const documents = allDocs.filter(
+        (d) =>
+          d.similarity >= minSimilarity &&
+          (!asksInstallment ||
+            /\b(tra gop|lai suat)\b/.test(
+              normalizeKeywords(`${d.title} ${d.content}`),
+            )),
+      );
 
       const hasHighConfidence = documents.some(
         (d) => d.similarity >= this.HIGH_CONFIDENCE_THRESHOLD,
@@ -229,32 +245,102 @@ export class RetrievalService {
       'đánh giá sản phẩm',
       'địa chỉ giao hàng',
       'bảo mật',
-      'tên đăng nhập', 'đăng nhập bằng gmail', 'email xác thực', 'liên kết kích hoạt',
-      'thư mời', 'quên mật khẩu', 'đổi mật khẩu', 'đổi vai trò',
-      'nhân viên xuống khách hàng', 'chuyển tài khoản thành nhân viên',
-      'nhân viên kho mua hàng', 'hồ sơ', 'số điện thoại',
-      'mua ngay', 'giỏ hàng', 'thời hạn giữ hàng', 'hết hạn giữ hàng',
-      'chờ thanh toán', 'đơn đã xác nhận', 'đã giao', 'theo dõi kiện hàng',
-      'cod', 'vietqr', 'mã qr', 'chuyển khoản', 'nội dung chuyển khoản', 'mã giao dịch',
-      'sai số tiền', 'thiếu tiền', 'thừa tiền', 'sai nội dung', 'chuyển tiền sau',
-      'vẫn chờ xác nhận', 'chưa xác nhận', 'đối soát', 'đổi phương thức thanh toán',
-      'đổi địa chỉ nhận hàng', 'thông báo đơn mua hàng', 'mã sku', 'sku là gì',
-      'còn hàng', 'tồn khả dụng', 'kho khác', 'phân bổ kho', 'khoảng giá',
-      'so sánh sản phẩm', 'chưa có ảnh', 'điện thoại', 'máy tính bảng',
-      'laptop', 'tai nghe', 'micrô', 'đồng hồ thông minh', 'củ sạc', 'cáp sạc',
-      'pin dự phòng', 'camera wi-fi', 'màn hình', 'vesa', 'ssd', 'thẻ nhớ',
-      'router', 'wi-fi', 'mesh', 'gaming', 'tay cầm', 'chân máy',
-      'quay phim', 'điện gia dụng', 'bếp từ', 'nồi chảo', 'trang trí nhà',
-      'bàn học', 'văn phòng', 'thể thao', 'dã ngoại', 'vali', 'hành lý',
-      'chăm sóc cá nhân', 'mẹ và bé', 'thú cưng', 'phụ kiện ô tô',
-      'dụng cụ sửa chữa', 'đầu vít', 'vệ sinh nhà cửa', 'thực phẩm đóng gói', 'đồ uống',
+      'tên đăng nhập',
+      'đăng nhập bằng gmail',
+      'email xác thực',
+      'liên kết kích hoạt',
+      'thư mời',
+      'quên mật khẩu',
+      'đổi mật khẩu',
+      'đổi vai trò',
+      'nhân viên xuống khách hàng',
+      'chuyển tài khoản thành nhân viên',
+      'nhân viên kho mua hàng',
+      'hồ sơ',
+      'số điện thoại',
+      'mua ngay',
+      'giỏ hàng',
+      'thời hạn giữ hàng',
+      'hết hạn giữ hàng',
+      'chờ thanh toán',
+      'đơn đã xác nhận',
+      'đã giao',
+      'theo dõi kiện hàng',
+      'cod',
+      'vietqr',
+      'mã qr',
+      'chuyển khoản',
+      'nội dung chuyển khoản',
+      'mã giao dịch',
+      'sai số tiền',
+      'thiếu tiền',
+      'thừa tiền',
+      'sai nội dung',
+      'chuyển tiền sau',
+      'vẫn chờ xác nhận',
+      'chưa xác nhận',
+      'đối soát',
+      'đổi phương thức thanh toán',
+      'đổi địa chỉ nhận hàng',
+      'thông báo đơn mua hàng',
+      'mã sku',
+      'sku là gì',
+      'còn hàng',
+      'tồn khả dụng',
+      'kho khác',
+      'phân bổ kho',
+      'khoảng giá',
+      'so sánh sản phẩm',
+      'chưa có ảnh',
+      'điện thoại',
+      'máy tính bảng',
+      'laptop',
+      'tai nghe',
+      'micrô',
+      'đồng hồ thông minh',
+      'củ sạc',
+      'cáp sạc',
+      'pin dự phòng',
+      'camera wi-fi',
+      'màn hình',
+      'vesa',
+      'ssd',
+      'thẻ nhớ',
+      'router',
+      'wi-fi',
+      'mesh',
+      'gaming',
+      'tay cầm',
+      'chân máy',
+      'quay phim',
+      'điện gia dụng',
+      'bếp từ',
+      'nồi chảo',
+      'trang trí nhà',
+      'bàn học',
+      'văn phòng',
+      'thể thao',
+      'dã ngoại',
+      'vali',
+      'hành lý',
+      'chăm sóc cá nhân',
+      'mẹ và bé',
+      'thú cưng',
+      'phụ kiện ô tô',
+      'dụng cụ sửa chữa',
+      'đầu vít',
+      'vệ sinh nhà cửa',
+      'thực phẩm đóng gói',
+      'đồ uống',
     ];
 
     const matchedTopics = specificTopics.filter((topic) =>
       normalized.includes(' ' + normalizeKeywords(topic) + ' '),
     );
     if (
-      /\b(nhan vien|staff)(?: kho)? (?:co the |co duoc )?mua hang\b/.test(normalized) &&
+      /\b(nhan vien|staff)(?: kho)? (?:co the |co duoc )?mua hang\b/.test(
+        normalized,
+      ) &&
       !matchedTopics.includes('nhân viên kho mua hàng')
     ) {
       matchedTopics.push('nhân viên kho mua hàng');

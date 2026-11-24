@@ -14,8 +14,8 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="vi" data-scroll-behavior="smooth">
-      <body><AuthProvider>{children}</AuthProvider></body>
+    <html lang="vi" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <body suppressHydrationWarning><AuthProvider>{children}</AuthProvider></body>
     </html>
   );
 }

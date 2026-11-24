@@ -196,11 +196,14 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
       inventoryId: record.inventoryId,
       status: record.status,
       alertLevel: record.availableAtTrigger <= 0 ? 'CRITICAL' : 'WARNING',
+      stockAtTrigger: record.availableAtTrigger,
       availableAtTrigger: record.availableAtTrigger,
       thresholdAtTrigger: record.thresholdAtTrigger,
       triggeredAt: record.triggeredAt,
       resolvedAt: record.resolvedAt,
       resolvedBy: record.resolvedBy,
+      currentStock: record.availableAtTrigger,
+      currentAvailable: record.availableAtTrigger,
       product: record.product,
       warehouse: record.warehouse,
     };
@@ -346,8 +349,7 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
       return [{ locked: true }];
     }),
     $transaction: jest.fn(
-      async <T>(cb: (tx: typeof prismaMock) => Promise<T>): Promise<T> =>
-        cb(prismaMock),
+      async <T>(cb: (tx: unknown) => Promise<T>): Promise<T> => cb(prismaMock),
     ),
   };
 
@@ -410,7 +412,7 @@ describe('Inventory Alerts & LowStockNotifier E2E (F121)', () => {
       controllers: [AdminAlertsController],
       providers: [
         LowStockNotifierService,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
         { provide: PrismaService, useValue: prismaMock },
         { provide: InventoryService, useValue: inventoryServiceMock },
         { provide: InventoryChangeEmitter, useValue: changes },

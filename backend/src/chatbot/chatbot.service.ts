@@ -72,7 +72,8 @@ interface GenerationResult {
 
 // Giới hạn số vòng tool-use mỗi câu hỏi để chống vòng lặp vô hạn / tốn token (CON-07)
 const MAX_TOOL_ROUNDS = 3;
-const SKU_REFERENCE = /\b(?:(?:SKU|DEMO)-[a-z0-9]+(?:-[a-z0-9]+)*|[a-z]{2,4}-[a-z0-9]+(?:-[a-z0-9]+)+|[a-z]{2,4}-(?=[a-z0-9]*\d)[a-z0-9]+)\b/i;
+const SKU_REFERENCE =
+  /\b(?:(?:SKU|DEMO)-[a-z0-9]+(?:-[a-z0-9]+)*|[a-z]{2,4}-[a-z0-9]+(?:-[a-z0-9]+)+|[a-z]{2,4}-(?=[a-z0-9]*\d)[a-z0-9]+)\b/i;
 
 interface PriceFilterResult {
   minPrice?: number;
@@ -254,8 +255,10 @@ export class ChatbotService {
     )?.trim();
 
     const claudeModel = process.env.ANTHROPIC_MODEL?.trim();
-    this.defaultModel = !claudeModel || claudeModel === 'claude-3-5-haiku-20241022'
-      ? 'claude-haiku-4-5-20251001' : claudeModel;
+    this.defaultModel =
+      !claudeModel || claudeModel === 'claude-3-5-haiku-20241022'
+        ? 'claude-haiku-4-5-20251001'
+        : claudeModel;
     this.defaultGeminiModel = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
     if (
@@ -263,7 +266,11 @@ export class ChatbotService {
       anthropicKey.startsWith('sk-ant-') &&
       !anthropicKey.startsWith('mock_')
     ) {
-      this.anthropicClient = new Anthropic({ apiKey: anthropicKey, timeout: 9000, maxRetries: 0 });
+      this.anthropicClient = new Anthropic({
+        apiKey: anthropicKey,
+        timeout: 9000,
+        maxRetries: 0,
+      });
       this.logger.log(
         `Khởi tạo Anthropic Claude SDK thành công (Model: ${this.defaultModel})`,
       );
@@ -274,7 +281,10 @@ export class ChatbotService {
       geminiKey.startsWith('AIza') &&
       !geminiKey.startsWith('mock_')
     ) {
-      this.geminiClient = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { timeout: 9000 } });
+      this.geminiClient = new GoogleGenAI({
+        apiKey: geminiKey,
+        httpOptions: { timeout: 9000 },
+      });
       this.logger.log(
         `Khởi tạo Google Gemini SDK thành công (Model: ${this.defaultGeminiModel})`,
       );
@@ -354,7 +364,8 @@ export class ChatbotService {
     const wantsHuman = checkHumanEscalationIntent(userMessage);
     const quickReply = wantsHuman ? null : getStoreHelpReply(userMessage);
     if (wantsHuman || quickReply) {
-      const reply = quickReply ??
+      const reply =
+        quickReply ??
         'Mình đã ghi nhận yêu cầu. Nhân viên có thể xem phiên chat này để hỗ trợ bạn khi có mặt.';
 
       await this.prisma.chatSession.update({
@@ -528,7 +539,12 @@ export class ChatbotService {
     if (isFallback || !replyText.trim()) {
       // Một model có thể không nhận ra tiếng Việt có dấu hoặc tên sản phẩm.
       if (generationSource !== 'LOCAL') {
-        const local = await this.generateSmartLocalResponse(userMessage, retrievedDocs, toolCtx, priorHistory);
+        const local = await this.generateSmartLocalResponse(
+          userMessage,
+          retrievedDocs,
+          toolCtx,
+          priorHistory,
+        );
         replyText = local.replyText;
         isFallback = local.isFallback;
         toolCalls = local.toolCalls;
@@ -815,12 +831,13 @@ export class ChatbotService {
       );
     const isPersonalOrderLookup =
       /(tra\s*cứu.*đơn|kiểm\s*tra.*đơn|xem.*đơn|đơn\s*(?:hàng)?\s*của\s*(?:tôi|mình|em|bạn)|đơn\s*(?:hàng)?\s*(?:gần\s*đây|mới\s*nhất|vừa\s*đặt)|lịch\s*sử\s*mua|tình\s*trạng\s*đơn)/i.test(
-          normalized,
-        ) &&
+        normalized,
+      ) &&
       !/(làm\s*sao|cách\s*(?:nào|để)|hướng\s*dẫn|chính\s*sách|quy\s*định|bao\s*nhiêu|miễn\s*phí|điều\s*kiện)/i.test(
         normalized,
       );
-    const isOrderQuery = hasOrderCode || isPronounOrderRef || isPersonalOrderLookup;
+    const isOrderQuery =
+      hasOrderCode || isPronounOrderRef || isPersonalOrderLookup;
 
     if (isOrderQuery) {
       const codeMatch = normalized.match(/\b(ORD-[A-Z0-9]{4,28})\b/i);
@@ -926,22 +943,80 @@ export class ChatbotService {
     const sku = normalized.match(SKU_REFERENCE)?.[0];
 
     const categoryKeywords = [
-      { key: 'Mạng & Wi-Fi', patterns: [/mạng\s*(?:&|và)\s*wi.?fi|router|bộ phát wi.?fi|mesh|cáp mạng/i] },
-      { key: 'Gaming', patterns: [/gaming|tay\s*cầm\s*(?:chơi|game)|bàn phím cơ/i] },
-      { key: 'Chụp ảnh & Quay phim', patterns: [/chụp ảnh|quay phim|chân máy|đèn vòng|webcam/i] },
-      { key: 'Điện gia dụng', patterns: [/điện gia dụng|nồi chiên|nồi cơm|máy xay|máy lọc không khí|ấm siêu tốc/i] },
-      { key: 'Bếp & Bàn ăn', patterns: [/bếp\s*(?:&|và)\s*bàn ăn|bếp từ|chảo|bát sứ|thớt|hộp thủy tinh/i] },
-      { key: 'Nhà cửa & Trang trí', patterns: [/trang trí nhà|nhà cửa|khung ảnh|gối tựa|hộp lưu trữ/i] },
-      { key: 'Bàn học & Văn phòng', patterns: [/bàn học|đèn học|sổ tay|hộp hồ sơ|máy in nhãn|giá đỡ laptop/i] },
-      { key: 'Thể thao & Dã ngoại', patterns: [/dã ngoại|thảm yoga|dây kháng lực|cắm trại|cầu lông/i] },
-      { key: 'Du lịch & Hành lý', patterns: [/hành lý|vali|túi chia đồ|gối cổ/i] },
-      { key: 'Chăm sóc cá nhân', patterns: [/chăm sóc cá nhân|bàn chải điện|máy sấy tóc|tông đơ/i] },
-      { key: 'Mẹ & Bé', patterns: [/mẹ\s*(?:&|và)\s*bé|khăn sữa|yếm ăn|sách vải/i] },
-      { key: 'Chăm sóc thú cưng', patterns: [/thú cưng|dây dắt|bát inox cho mèo|túi vận chuyển chó/i] },
-      { key: 'Xe & Phụ kiện', patterns: [/xe\s*(?:&|và)\s*phụ kiện|ô tô|camera hành trình|bơm lốp/i] },
-      { key: 'Dụng cụ & Sửa chữa', patterns: [/sửa chữa|tuốc nơ vít|đầu vít|thước cuộn|máy khoan/i] },
-      { key: 'Vệ sinh nhà cửa', patterns: [/vệ sinh nhà|cây lau|máy hút bụi cầm tay|chổi phủi bụi/i] },
-      { key: 'Thực phẩm & Đồ uống', patterns: [/thực phẩm|đồ uống|cà phê|yến mạch|granola|mật ong|hạt điều/i] },
+      {
+        key: 'Mạng & Wi-Fi',
+        patterns: [
+          /mạng\s*(?:&|và)\s*wi.?fi|router|bộ phát wi.?fi|mesh|cáp mạng/i,
+        ],
+      },
+      {
+        key: 'Gaming',
+        patterns: [/gaming|tay\s*cầm\s*(?:chơi|game)|bàn phím cơ/i],
+      },
+      {
+        key: 'Chụp ảnh & Quay phim',
+        patterns: [/chụp ảnh|quay phim|chân máy|đèn vòng|webcam/i],
+      },
+      {
+        key: 'Điện gia dụng',
+        patterns: [
+          /điện gia dụng|nồi chiên|nồi cơm|máy xay|máy lọc không khí|ấm siêu tốc/i,
+        ],
+      },
+      {
+        key: 'Bếp & Bàn ăn',
+        patterns: [
+          /bếp\s*(?:&|và)\s*bàn ăn|bếp từ|chảo|bát sứ|thớt|hộp thủy tinh/i,
+        ],
+      },
+      {
+        key: 'Nhà cửa & Trang trí',
+        patterns: [/trang trí nhà|nhà cửa|khung ảnh|gối tựa|hộp lưu trữ/i],
+      },
+      {
+        key: 'Bàn học & Văn phòng',
+        patterns: [
+          /bàn học|đèn học|sổ tay|hộp hồ sơ|máy in nhãn|giá đỡ laptop/i,
+        ],
+      },
+      {
+        key: 'Thể thao & Dã ngoại',
+        patterns: [/dã ngoại|thảm yoga|dây kháng lực|cắm trại|cầu lông/i],
+      },
+      {
+        key: 'Du lịch & Hành lý',
+        patterns: [/hành lý|vali|túi chia đồ|gối cổ/i],
+      },
+      {
+        key: 'Chăm sóc cá nhân',
+        patterns: [/chăm sóc cá nhân|bàn chải điện|máy sấy tóc|tông đơ/i],
+      },
+      {
+        key: 'Mẹ & Bé',
+        patterns: [/mẹ\s*(?:&|và)\s*bé|khăn sữa|yếm ăn|sách vải/i],
+      },
+      {
+        key: 'Chăm sóc thú cưng',
+        patterns: [/thú cưng|dây dắt|bát inox cho mèo|túi vận chuyển chó/i],
+      },
+      {
+        key: 'Xe & Phụ kiện',
+        patterns: [/xe\s*(?:&|và)\s*phụ kiện|ô tô|camera hành trình|bơm lốp/i],
+      },
+      {
+        key: 'Dụng cụ & Sửa chữa',
+        patterns: [/sửa chữa|tuốc nơ vít|đầu vít|thước cuộn|máy khoan/i],
+      },
+      {
+        key: 'Vệ sinh nhà cửa',
+        patterns: [/vệ sinh nhà|cây lau|máy hút bụi cầm tay|chổi phủi bụi/i],
+      },
+      {
+        key: 'Thực phẩm & Đồ uống',
+        patterns: [
+          /thực phẩm|đồ uống|cà phê|yến mạch|granola|mật ong|hạt điều/i,
+        ],
+      },
       {
         key: 'Thiết bị đeo thông minh',
         patterns: [
@@ -1038,7 +1113,9 @@ export class ChatbotService {
     const isSpecificProductQuery =
       Boolean(sku) ||
       (/\bmodel\s*\d+\b/i.test(normalized) && !priceFilter) ||
-      /(giá bao nhiêu|bao nhiêu tiền|giá mấy|còn hàng không|còn không)/i.test(normalized);
+      /(giá bao nhiêu|bao nhiêu tiền|giá mấy|còn hàng không|còn không)/i.test(
+        normalized,
+      );
 
     if (isCatalogOrFilterQuery && !isSpecificProductQuery) {
       const browseInput: Record<string, unknown> = {
@@ -1185,7 +1262,10 @@ export class ChatbotService {
       }
 
       const cleanedKeyword = normalized
-        .replace(/(?:^|\s)(?:giá bao nhiêu|bao nhiêu tiền|giá mấy|hiện giờ|shop có|cho hỏi)(?=\s|[!?.]|$)/gi, ' ')
+        .replace(
+          /(?:^|\s)(?:giá bao nhiêu|bao nhiêu tiền|giá mấy|hiện giờ|shop có|cho hỏi)(?=\s|[!?.]|$)/gi,
+          ' ',
+        )
         .replace(
           /(cho\s*(tôi|mình|em)\s*hỏi|shop\s*ơi|kiểm\s*tra\s*tồn\s*kho|tình\s*trạng\s*tồn\s*kho|tồn\s*kho|còn\s*hàng\s*không|có\s*hàng\s*không|còn\s*hàng|hết\s*hàng|còn\s*không|sản\s*phẩm|trong\s*kho|ở\s*kho|(?:^|\s)(?:ạ|nhé)(?=[?!.\s]|$)|\?|!|\.$)/gi,
           ' ',
@@ -1196,7 +1276,11 @@ export class ChatbotService {
       if (cleanedKeyword && cleanedKeyword.length >= 2) {
         candidateKeywords.push(cleanedKeyword);
       }
-      if (matchedPrefix && !isSpecificProductQuery && !candidateKeywords.includes(matchedPrefix)) {
+      if (
+        matchedPrefix &&
+        !isSpecificProductQuery &&
+        !candidateKeywords.includes(matchedPrefix)
+      ) {
         candidateKeywords.push(matchedPrefix);
       }
 
@@ -1256,7 +1340,9 @@ export class ChatbotService {
           return {
             replyText:
               `Dạ, thông tin tồn kho thực tế của sản phẩm **${invData.name}** (Mã SKU: \`${invData.sku}\`) trên hệ thống:\n` +
-              (invData.salePrice ? `• Giá bán hiện tại: **${invData.salePrice}**\n` : '') +
+              (invData.salePrice
+                ? `• Giá bán hiện tại: **${invData.salePrice}**\n`
+                : '') +
               `• Trạng thái chung: **${statusVi}** (Tổng số lượng khả dụng: **${invData.totalAvailable}** sản phẩm)` +
               details,
             isFallback: false,
@@ -1284,8 +1370,7 @@ export class ChatbotService {
 
     // 4. Không có dữ liệu tin cậy -> Phản hồi dự phòng chống ảo giác (NFR-04.4 & FR-BOT-04)
     return {
-      replyText:
-        NEED_MORE_CONTEXT,
+      replyText: NEED_MORE_CONTEXT,
       isFallback: true,
       toolCalls,
     };

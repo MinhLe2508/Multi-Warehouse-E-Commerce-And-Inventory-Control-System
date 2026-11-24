@@ -196,7 +196,9 @@ describe('AuthService', () => {
       await expect(
         service.login({ username: user.username, password }),
       ).rejects.toMatchObject(rejection);
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
       await expect(
         service.login({ username: 'unknown-fixture-user', password }),
       ).rejects.toMatchObject(rejection);

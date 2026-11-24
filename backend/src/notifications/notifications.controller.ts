@@ -45,7 +45,11 @@ export class NotificationsController {
     @CurrentUser('role') role?: UserRole,
     @Query('scope') scope?: string,
   ) {
-    const count = await this.notificationsService.countUnread(userId, role, scope);
+    const count = await this.notificationsService.countUnread(
+      userId,
+      role,
+      scope,
+    );
     return { count };
   }
 

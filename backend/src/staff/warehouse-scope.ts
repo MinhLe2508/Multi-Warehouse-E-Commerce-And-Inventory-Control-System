@@ -22,7 +22,9 @@ export function staffOrderWhere(
   };
 }
 
-export function staffReadableOrderWhere(userId: string): Prisma.OrderWhereInput {
+export function staffReadableOrderWhere(
+  userId: string,
+): Prisma.OrderWhereInput {
   return {
     OR: [
       { shippingWarehouseId: null },

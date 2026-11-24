@@ -50,8 +50,7 @@ export interface CreateStaffInput {
   phone?: string;
 }
 export type BuyerRole =
-  | typeof UserRole.CUSTOMER
-  | typeof UserRole.WAREHOUSE_STAFF;
+  typeof UserRole.CUSTOMER | typeof UserRole.WAREHOUSE_STAFF;
 
 export interface AccountRoleChangeResult {
   userId: string;
@@ -260,13 +259,19 @@ export class AuthService {
       await tx.userRoleChange.create({
         data: { userId, actorId, fromRole, toRole: role },
       });
-      const activation = current.emailVerifiedAt === null
-        ? await this.accountActionTokenService.createToken(userId, purpose, tx)
-        : null;
+      const activation =
+        current.emailVerifiedAt === null
+          ? await this.accountActionTokenService.createToken(
+              userId,
+              purpose,
+              tx,
+            )
+          : null;
       return { user, activation };
     });
 
-    let activationEmail: AccountRoleChangeResult['activationEmail'] = 'NOT_REQUIRED';
+    let activationEmail: AccountRoleChangeResult['activationEmail'] =
+      'NOT_REQUIRED';
     if (activation) {
       try {
         if (promoting) {
@@ -293,7 +298,9 @@ export class AuthService {
         activationEmail = 'SENT';
       } catch {
         activationEmail = 'FAILED';
-        this.logger.warn(`Đã chuyển vai trò cho ${userId} nhưng chưa gửi được email kích hoạt.`);
+        this.logger.warn(
+          `Đã chuyển vai trò cho ${userId} nhưng chưa gửi được email kích hoạt.`,
+        );
       }
     }
     return { userId, role, activationEmail };
@@ -390,8 +397,9 @@ export class AuthService {
       select: loginSelect,
     });
     // Tên đăng nhập đã lưu được ưu tiên nếu trùng với phần trước @gmail.com của tài khoản khác.
-    const existing = direct ??
-      (!emailLogin && /^[a-z0-9._+\-]{1,92}$/i.test(identifier)
+    const existing =
+      direct ??
+      (!emailLogin && /^[a-z0-9._+-]{1,92}$/i.test(identifier)
         ? await this.prisma.user.findUnique({
             where: { email: identifier.toLowerCase() + '@gmail.com' },
             select: loginSelect,
@@ -427,7 +435,11 @@ export class AuthService {
           'Tài khoản không khả dụng hoặc thông tin đăng nhập đã thay đổi.',
         );
       }
-      const tokens = await this.issueTokenPair(user.id, user.sessionVersion, tx);
+      const tokens = await this.issueTokenPair(
+        user.id,
+        user.sessionVersion,
+        tx,
+      );
       return { tokens, user: this.toPublicUser(user) };
     });
   }
@@ -496,7 +508,11 @@ export class AuthService {
       }
 
       // Bắt buộc tạo Refresh Token mới bằng CÙNG transaction.
-      const tokens = await this.issueTokenPair(user.id, user.sessionVersion, tx);
+      const tokens = await this.issueTokenPair(
+        user.id,
+        user.sessionVersion,
+        tx,
+      );
       return { tokens, user: this.toPublicUser(user) };
     });
   }
@@ -961,7 +977,7 @@ export class AuthService {
     const localPart = email.split('@')[0] ?? '';
     const base =
       localPart
-        .replace(/[^a-z0-9._+\-]/gi, '')
+        .replace(/[^a-z0-9._+-]/gi, '')
         .toLowerCase()
         .slice(0, 92) || 'user';
     return attempt === 0 ? base : `${base}${randomBytes(4).toString('hex')}`;

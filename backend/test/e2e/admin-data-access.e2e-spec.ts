@@ -495,12 +495,16 @@ describeDb('Admin data access with PostgreSQL', () => {
           id: fixture.orders.a.id,
           items: expect.arrayContaining([
             expect.objectContaining({
-              warehouse: expect.objectContaining(fixture.warehouses.a),
+              warehouse: expect.objectContaining(
+                fixture.warehouses.a,
+              ) as unknown,
             }),
             expect.objectContaining({
-              warehouse: expect.objectContaining(fixture.warehouses.b),
+              warehouse: expect.objectContaining(
+                fixture.warehouses.b,
+              ) as unknown,
             }),
-          ]),
+          ]) as unknown,
         },
       ],
     });

@@ -38,7 +38,9 @@ export function getStoreHelpReply(message: string): string | null {
     /\b(thanh toan|payment|chuyen khoan|vietqr|quet (?:ma )?qr|cod|tra tien|tra khi nhan|vi dien tu|momo|zalopay|the (?:tin dung|ngan hang))\b/.test(
       text,
     ) &&
-    !/\b(sai so tien|thieu tien|thua tien|sai noi dung|noi dung chuyen khoan|ma giao dich|doi phuong thuc|het han|khong quet duoc|khong hien thi|hoan tien)\b/.test(text) &&
+    !/\b(tra gop|lai suat|sai so tien|thieu tien|thua tien|sai noi dung|noi dung chuyen khoan|ma giao dich|doi phuong thuc|het han|khong quet duoc|khong hien thi|hoan tien)\b/.test(
+      text,
+    ) &&
     !/\bord-[a-z0-9]+\b/i.test(message)
   ) {
     if (

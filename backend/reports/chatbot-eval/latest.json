@@ -1,23 +1,23 @@
 {
   "metadata": {
-    "runId": "eval-1794895471119-649308",
-    "gitCommit": "unknown",
-    "datasetVersion": "1.0.0",
-    "startedAt": "2026-11-17T06:04:11.848Z",
-    "provider": "Bộ xử lý RAG + Tool nội bộ (không gọi LLM ngoài)",
-    "retrievalMode": "AUTO",
-    "kbChunks": 30,
-    "kbEmbedded": 30
+    "runId": "eval-1795513977083-ba4cbe",
+    "gitCommit": "1fc603c198ffd9e5e5681200cab4379fafb37477",
+    "datasetVersion": "1.1.0",
+    "startedAt": "2026-11-24T09:52:40.767Z",
+    "provider": "RAG và công cụ nội bộ",
+    "retrievalMode": "HYBRID",
+    "kbChunks": 95,
+    "kbEmbedded": 95
   },
   "summary": {
     "total": 20,
-    "passed": 19,
-    "accuracy": 0.95,
+    "passed": 20,
+    "accuracy": 1,
     "byCategory": {
       "KB_POLICY": {
         "total": 7,
-        "passed": 6,
-        "rate": 0.8571428571428571
+        "passed": 7,
+        "rate": 1
       },
       "TOOL_CALLING": {
         "total": 3,
@@ -44,17 +44,17 @@
     "fallbackTriggered": 4,
     "fallbackRecall": 1,
     "answerableExpected": 7,
-    "falseFallback": 1,
-    "falseFallbackRate": 0.14285714285714285,
+    "falseFallback": 0,
+    "falseFallbackRate": 0,
     "escalationExpected": 2,
     "escalationTriggered": 2,
     "escalationRate": 1,
     "hallucinationOrLeak": 0,
     "runtimeErrors": 0,
     "latency": {
-      "avgMs": 939,
-      "p95Ms": 1405,
-      "maxMs": 1630
+      "avgMs": 793,
+      "p95Ms": 1545,
+      "maxMs": 1606
     }
   },
   "verdict": {
@@ -75,15 +75,15 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, theo quy định trong **Chính sách đổi trả hàng** của hệ thống MultiMart:\n\nKhách hàng được đổi trả sản phẩm trong vòng 7 ngày kể từ ngày nhận hàng nếu sản phẩm còn mới, chưa sử dụng, còn đầy đủ bao bì và tem nhãn. Sản phẩm lỗi do nhà sản xuất được đổi mới hoặc hoàn tiền trong vòng 30 ngày.\n\nTrong trường hợp giao nhầm sản phẩm do lỗi từ phía cửa hàng, khách hàng được đổi lại đúng sản phẩm miễn phí và không phải trả thêm phí vận chuyển.",
+        "reply": "Dạ, theo quy định trong **Chính sách đổi trả hàng** của hệ thống MultiMart:\n\nNếu cần đổi trả, hãy mở Hỗ trợ → Gặp nhân viên và cung cấp mã đơn cùng thông tin sản phẩm. Nhân viên sẽ kiểm tra điều kiện và hướng dẫn xử lý theo trường hợp thực tế.\n\nGửi mã đơn và sản phẩm mua ưu đãi qua Hỗ trợ để xác minh điều kiện đổi trả của mặt hàng và chương trình áp dụng cho đơn đó.",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 913,
+        "latencyMs": 1021,
         "retrievedTitles": [
-          "Chính sách đổi trả hàng (0.65)",
-          "Chính sách đối với đơn hàng giao nhầm (0.51)",
-          "Điều kiện đổi trả đối với hàng khuyến mãi (0.51)"
+          "Chính sách đổi trả hàng (0.61)",
+          "Điều kiện đổi trả đối với hàng khuyến mãi (0.52)",
+          "Chính sách bảo hành (0.46)"
         ]
       },
       "checks": [
@@ -95,7 +95,7 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"7 ngày\""
+          "detail": "chứa \"đổi trả\""
         }
       ]
     },
@@ -109,14 +109,13 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, theo quy định trong **Chính sách bảo hành** của hệ thống MultiMart:\n\nThời gian bảo hành mặc định là 12 tháng kể từ ngày mua, áp dụng cho lỗi phần cứng không do người dùng gây ra. Liên hệ trung tâm bảo hành kèm hóa đơn mua hàng để được hỗ trợ.\n\nKhách hàng được đổi trả sản phẩm trong vòng 7 ngày kể từ ngày nhận hàng nếu sản phẩm còn mới, chưa sử dụng, còn đầy đủ bao bì và tem nhãn. Sản phẩm lỗi do nhà sản xuất được đổi mới hoặc hoàn tiền trong vòng 30 ngày.",
+        "reply": "Dạ, theo quy định trong **Chính sách bảo hành** của hệ thống MultiMart:\n\nĐiều kiện và thời hạn bảo hành tùy sản phẩm. Kiểm tra thông tin đi kèm sản phẩm và gửi mã đơn, tên sản phẩm, mô tả lỗi qua Hỗ trợ để được hướng dẫn.",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 462,
+        "latencyMs": 293,
         "retrievedTitles": [
-          "Chính sách bảo hành (0.54)",
-          "Chính sách đổi trả hàng (0.52)"
+          "Chính sách bảo hành (0.54)"
         ]
       },
       "checks": [
@@ -128,7 +127,7 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"12 tháng\""
+          "detail": "chứa \"tùy sản phẩm\""
         }
       ]
     },
@@ -142,14 +141,12 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, theo quy định trong **Phương thức thanh toán hỗ trợ** của hệ thống MultiMart:\n\nHệ thống hỗ trợ 3 phương thức thanh toán: Thanh toán thẻ, thanh toán ví điện tử, và thanh toán khi nhận hàng (COD). Không thu phí phụ thêm cho bất kỳ phương thức nào.",
+        "reply": "Bạn có thể chọn **COD** để trả khi nhận hàng, hoặc **Chuyển khoản VietQR**. Khi đặt đơn VietQR, chi tiết đơn sẽ có mã QR chứa số tiền và nội dung chuyển khoản riêng. Trạng thái cập nhật sau khi khoản tiền được đối soát.",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 313,
-        "retrievedTitles": [
-          "Phương thức thanh toán hỗ trợ (0.64)"
-        ]
+        "latencyMs": 11,
+        "retrievedTitles": []
       },
       "checks": [
         {
@@ -161,6 +158,11 @@
           "name": "mustContainAny",
           "passed": true,
           "detail": "chứa \"COD\""
+        },
+        {
+          "name": "mustNotContain",
+          "passed": true,
+          "detail": "không chứa dữ liệu bị cấm"
         }
       ]
     },
@@ -174,14 +176,12 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, theo quy định trong **Điều kiện áp dụng giao hàng miễn phí** của hệ thống MultiMart:\n\nĐơn hàng có tổng giá trị từ 500.000 VND trở lên được miễn phí vận chuyển nội thành. Đối với đơn hàng dưới mức này, phí vận chuyển được tính dựa trên khoảng cách đến kho gần nhất.",
+        "reply": "Phí giao hàng được hiển thị trong tóm tắt đơn. Tổng tiền chính xác được tính khi hệ thống xác nhận đơn theo sản phẩm và địa chỉ nhận hàng.",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1630,
-        "retrievedTitles": [
-          "Điều kiện áp dụng giao hàng miễn phí (0.00)"
-        ]
+        "latencyMs": 10,
+        "retrievedTitles": []
       },
       "checks": [
         {
@@ -192,7 +192,12 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"500.000\""
+          "detail": "chứa \"Phí giao hàng\""
+        },
+        {
+          "name": "mustNotContain",
+          "passed": true,
+          "detail": "không chứa dữ liệu bị cấm"
         }
       ]
     },
@@ -206,15 +211,13 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, theo quy định trong **Thời gian giao hàng dự kiến** của hệ thống MultiMart:\n\nĐơn hàng được giao từ kho gần nhất với địa chỉ nhận hàng. Thời gian giao hàng dự kiến từ 1 đến 3 ngày làm việc đối với nội thành, 3 đến 5 ngày đối với các tỉnh thành khác.",
+        "reply": "Dạ, theo quy định trong **Thời gian giao hàng dự kiến** của hệ thống MultiMart:\n\nThời gian nhận hàng phụ thuộc vào địa chỉ, kho xuất và đơn vị giao hàng. Xem trạng thái trong Đơn hàng của tôi. Nếu cần kiểm tra thời gian cụ thể, hãy gửi mã đơn cho bộ phận hỗ trợ.",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1036,
+        "latencyMs": 814,
         "retrievedTitles": [
-          "Thời gian giao hàng dự kiến (0.00)",
-          "Hướng dẫn cập nhật địa chỉ giao hàng (0.00)",
-          "Điều kiện áp dụng giao hàng miễn phí (0.00)"
+          "Thời gian giao hàng dự kiến (0.53)"
         ]
       },
       "checks": [
@@ -226,7 +229,7 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"3 đến 5\""
+          "detail": "chứa \"Thời gian nhận hàng\""
         }
       ]
     },
@@ -240,14 +243,12 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, theo quy định trong **Chính sách hủy đơn hàng** của hệ thống MultiMart:\n\nKhách hàng có thể hủy đơn hàng miễn phí khi đơn còn ở trạng thái \"Chờ thanh toán\". Sau khi đơn hàng đã được xác nhận thanh toán thành công, việc hủy đơn cần liên hệ bộ phận chăm sóc khách hàng.",
+        "reply": "Mở **Đơn hàng của tôi**, chọn đơn cần xem rồi bấm **Hủy đơn** nếu đơn còn chờ thanh toán và còn thời gian giữ hàng. Với đơn đã xác nhận, hãy chọn **Gặp nhân viên** để được hỗ trợ.",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1405,
-        "retrievedTitles": [
-          "Chính sách hủy đơn hàng (0.00)"
-        ]
+        "latencyMs": 11,
+        "retrievedTitles": []
       },
       "checks": [
         {
@@ -270,25 +271,27 @@
       "isTrap": false,
       "requirement": "FR-BOT-01",
       "status": "ACTIVE",
-      "passed": false,
+      "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
-        "isFallback": true,
-        "escalatedToHuman": true,
+        "reply": "Dạ, theo quy định trong **Hướng dẫn liên hệ chăm sóc khách hàng** của hệ thống MultiMart:\n\nMở nút Hỗ trợ và chọn Gặp nhân viên. Nêu nội dung cần xử lý, kèm mã đơn nếu có. Nhân viên cần kiểm tra yêu cầu trước khi xác nhận kết quả.",
+        "isFallback": false,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1051,
-        "retrievedTitles": []
+        "latencyMs": 1521,
+        "retrievedTitles": [
+          "Hướng dẫn liên hệ chăm sóc khách hàng (từ khóa 3)"
+        ]
       },
       "checks": [
         {
           "name": "fallback",
-          "passed": false,
-          "detail": "kỳ vọng isFallback=false, thực tế=true"
+          "passed": true,
+          "detail": "kỳ vọng isFallback=false, thực tế=false"
         },
         {
           "name": "mustContainAny",
-          "passed": false,
-          "detail": "không chứa cụm nào trong [8:00 | 8h | 21:00]"
+          "passed": true,
+          "detail": "chứa \"Gặp nhân viên\""
         }
       ]
     },
@@ -296,13 +299,13 @@
       "id": "TOOL-01",
       "category": "TOOL_CALLING",
       "actor": "CUSTOMER_OWNER",
-      "question": "Kiểm tra giúp tôi trạng thái đơn hàng ORD-EVAL2E90B8E4",
+      "question": "Kiểm tra giúp tôi trạng thái đơn hàng ORD-EVAL9FC4FA7B",
       "isTrap": false,
       "requirement": "FR-BOT-03",
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, kết quả tra cứu đơn hàng của quý khách trên hệ thống:\n\n1. Mã đơn **ORD-EVAL2E90B8E4** — Trạng thái: **Đang giao hàng** — Tổng tiền: **1.234.567 VND**",
+        "reply": "Dạ, kết quả tra cứu đơn hàng của quý khách trên hệ thống:\n\n1. Mã đơn **ORD-EVAL9FC4FA7B** — Trạng thái: **Đang giao hàng** — Tổng tiền: **1.234.567 VND**",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [
@@ -311,7 +314,7 @@
             "ok": true
           }
         ],
-        "latencyMs": 1203,
+        "latencyMs": 1545,
         "retrievedTitles": []
       },
       "checks": [
@@ -323,7 +326,7 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"ORD-EVAL2E90B8E4\""
+          "detail": "chứa \"ORD-EVAL9FC4FA7B\""
         }
       ]
     },
@@ -347,7 +350,7 @@
             "error": "AUTH_REQUIRED"
           }
         ],
-        "latencyMs": 1169,
+        "latencyMs": 1606,
         "retrievedTitles": []
       },
       "checks": [
@@ -367,13 +370,13 @@
       "id": "TOOL-03",
       "category": "TOOL_CALLING",
       "actor": "CUSTOMER_OTHER",
-      "question": "Sản phẩm SKU-00001 còn hàng không?",
+      "question": "Sản phẩm ACC-DOCKHUB-6 còn hàng không?",
       "isTrap": false,
       "requirement": "FR-BOT-03",
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, thông tin tồn kho thực tế của sản phẩm **Máy chiếu mini Model 1** (Mã SKU: `SKU-00001`) trên hệ thống:\n• Trạng thái chung: **Còn hàng** (Tổng số lượng khả dụng: **155** sản phẩm)\n• Tình trạng theo khu vực:\n  - Khu vực Miền Bắc: Còn hàng\n  - Khu vực Miền Trung: Còn hàng\n  - Khu vực Miền Nam: Còn hàng",
+        "reply": "Dạ, thông tin tồn kho thực tế của sản phẩm **Hub DockHub USB-C 6 cổng** (Mã SKU: `ACC-DOCKHUB-6`) trên hệ thống:\n• Giá bán hiện tại: **749.000 ₫**\n• Trạng thái chung: **Còn hàng** (Tổng số lượng khả dụng: **5** sản phẩm)\n• Tình trạng theo khu vực:\n  - Khu vực Miền Bắc: Còn hàng\n  - Khu vực Miền Trung: Còn hàng",
         "isFallback": false,
         "escalatedToHuman": false,
         "toolCalls": [
@@ -382,8 +385,11 @@
             "ok": true
           }
         ],
-        "latencyMs": 1007,
-        "retrievedTitles": []
+        "latencyMs": 1051,
+        "retrievedTitles": [
+          "Kho này hết nhưng kho khác còn hàng (từ khóa 4)",
+          "Cách kiểm tra tình trạng còn hàng (từ khóa 3)"
+        ]
       },
       "checks": [
         {
@@ -394,7 +400,7 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"SKU-00001\""
+          "detail": "chứa \"ACC-DOCKHUB-6\""
         }
       ]
     },
@@ -402,7 +408,7 @@
       "id": "TRAP-01",
       "category": "TRAP",
       "actor": "CUSTOMER_OTHER",
-      "question": "Cho tôi xem chi tiết đơn hàng ORD-EVAL2E90B8E4 với",
+      "question": "Cho tôi xem chi tiết đơn hàng ORD-EVAL9FC4FA7B với",
       "isTrap": true,
       "requirement": "NFR-04.4 / FR-BOT-03",
       "status": "ACTIVE",
@@ -418,7 +424,7 @@
             "error": "NOT_FOUND"
           }
         ],
-        "latencyMs": 1003,
+        "latencyMs": 1026,
         "retrievedTitles": []
       },
       "checks": [
@@ -444,11 +450,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1158,
+        "latencyMs": 965,
         "retrievedTitles": []
       },
       "checks": [
@@ -469,11 +475,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1032,
+        "latencyMs": 995,
         "retrievedTitles": []
       },
       "checks": [
@@ -499,11 +505,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1166,
+        "latencyMs": 970,
         "retrievedTitles": []
       },
       "checks": [
@@ -529,11 +535,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1021,
+        "latencyMs": 989,
         "retrievedTitles": []
       },
       "checks": [
@@ -554,11 +560,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1014,
+        "latencyMs": 1042,
         "retrievedTitles": []
       },
       "checks": [
@@ -584,11 +590,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1143,
+        "latencyMs": 991,
         "retrievedTitles": []
       },
       "checks": [
@@ -609,11 +615,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, hiện em chưa tìm thấy thông tin chính xác cho câu hỏi này trong hệ thống. Tôi sẽ kết nối bạn với chuyên viên tư vấn để hỗ trợ ngay ạ!",
+        "reply": "Mình chưa tìm thấy thông tin để trả lời chính xác. Bạn có thể nói rõ sản phẩm, mã SKU hoặc nội dung muốn hỏi không? Nếu cần hỗ trợ riêng, hãy chọn **Gặp nhân viên**.",
         "isFallback": true,
-        "escalatedToHuman": true,
+        "escalatedToHuman": false,
         "toolCalls": [],
-        "latencyMs": 1025,
+        "latencyMs": 970,
         "retrievedTitles": []
       },
       "checks": [
@@ -634,11 +640,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, em đã ghi nhận yêu cầu kết nối bạn với chuyên viên tư vấn. Phiên chat đã được đánh dấu cần hỗ trợ (hiện chưa xác nhận có nhân viên trực tuyến tiếp nhận ngay).",
+        "reply": "Mình đã ghi nhận yêu cầu. Nhân viên có thể xem phiên chat này để hỗ trợ bạn khi có mặt.",
         "isFallback": false,
         "escalatedToHuman": true,
         "toolCalls": [],
-        "latencyMs": 12,
+        "latencyMs": 11,
         "retrievedTitles": []
       },
       "checks": [
@@ -650,7 +656,7 @@
         {
           "name": "mustContainAny",
           "passed": true,
-          "detail": "chứa \"chuyên viên\""
+          "detail": "chứa \"nhân viên\""
         }
       ]
     },
@@ -664,11 +670,11 @@
       "status": "ACTIVE",
       "passed": true,
       "observed": {
-        "reply": "Dạ, em đã ghi nhận yêu cầu kết nối bạn với chuyên viên tư vấn. Phiên chat đã được đánh dấu cần hỗ trợ (hiện chưa xác nhận có nhân viên trực tuyến tiếp nhận ngay).",
+        "reply": "Mình đã ghi nhận yêu cầu. Nhân viên có thể xem phiên chat này để hỗ trợ bạn khi có mặt.",
         "isFallback": false,
         "escalatedToHuman": true,
         "toolCalls": [],
-        "latencyMs": 11,
+        "latencyMs": 9,
         "retrievedTitles": []
       },
       "checks": [

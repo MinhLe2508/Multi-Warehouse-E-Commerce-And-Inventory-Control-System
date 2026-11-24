@@ -24,7 +24,11 @@ import {
 import { Prisma, UserRole } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthService, type BuyerRole, type CreateStaffInput } from '../auth/auth.service';
+import {
+  AuthService,
+  type BuyerRole,
+  type CreateStaffInput,
+} from '../auth/auth.service';
 import {
   STAFF_DEFAULT_LIMIT,
   STAFF_MAX_LIMIT,
@@ -160,15 +164,21 @@ export class StaffService {
     input: CreateStaffInput,
     actorId: string,
   ): Promise<CreateStaffResult> {
-    const { user, invitationSent } = await this.authService.createStaff(input).catch(async (error: unknown) => {
-      if (error instanceof ConflictException && await this.findCustomerByEmail(input.email)) {
-        throw new ConflictException({
-          code: 'CUSTOMER_EMAIL_EXISTS',
-          message: 'Email này đã thuộc về một khách hàng. Bạn có thể chuyển tài khoản đó thành nhân viên.',
-        });
-      }
-      throw error;
-    });
+    const { user, invitationSent } = await this.authService
+      .createStaff(input)
+      .catch(async (error: unknown) => {
+        if (
+          error instanceof ConflictException &&
+          (await this.findCustomerByEmail(input.email))
+        ) {
+          throw new ConflictException({
+            code: 'CUSTOMER_EMAIL_EXISTS',
+            message:
+              'Email này đã thuộc về một khách hàng. Bạn có thể chuyển tài khoản đó thành nhân viên.',
+          });
+        }
+        throw error;
+      });
     const row = await this.prisma.user.findFirst({
       where: { id: user.id, role: UserRole.WAREHOUSE_STAFF },
       select: STAFF_SELECT,
@@ -206,7 +216,14 @@ export class StaffService {
   findCustomerByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email: email.trim().toLowerCase(), role: UserRole.CUSTOMER },
-      select: { id: true, email: true, fullName: true, username: true, isActive: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        username: true,
+        isActive: true,
+        emailVerifiedAt: true,
+      },
     });
   }
 

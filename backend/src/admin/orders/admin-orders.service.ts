@@ -62,7 +62,12 @@ export class AdminOrdersQueryService {
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.paymentSupport && {
-        payments: { some: { method: 'BANK_TRANSFER', supportRequest: { is: { status: query.paymentSupport } } } },
+        payments: {
+          some: {
+            method: 'BANK_TRANSFER',
+            supportRequest: { is: { status: query.paymentSupport } },
+          },
+        },
       }),
       ...staffOrderWhere(undefined, query.warehouseId),
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
@@ -97,7 +102,9 @@ export class AdminOrdersQueryService {
                   : {}),
               },
       };
-      where.AND = Array.isArray(where.AND) ? [...where.AND, reservationScope] : reservationScope;
+      where.AND = Array.isArray(where.AND)
+        ? [...where.AND, reservationScope]
+        : reservationScope;
     }
 
     const listQuery = {
@@ -281,9 +288,11 @@ export class AdminOrdersQueryService {
     const transitions = (ORDER_STATUS_TRANSITIONS[order.status] ?? []).filter(
       (status) => ADMIN_ALLOWED_TARGETS.has(status),
     );
-    const canFulfill = transitions.length > 0 && await this.prisma.order.count({
-      where: { id, ...staffOrderWhere(staffId) },
-    }) > 0;
+    const canFulfill =
+      transitions.length > 0 &&
+      (await this.prisma.order.count({
+        where: { id, ...staffOrderWhere(staffId) },
+      })) > 0;
     return {
       ...detail,
       nextStatuses: canFulfill ? transitions : [],
@@ -336,78 +345,91 @@ export class AdminOrdersQueryService {
       : this.findOne(updated.id);
   }
 
-  private serializeOrder(order: {
-    id: string;
-    orderCode: string;
-    userId: string;
-    status: OrderStatus;
-    subtotal: Prisma.Decimal;
-    discountTotal: Prisma.Decimal;
-    promotionDiscountTotal?: Prisma.Decimal;
-    promotionCode?: string | null;
-    shippingFee: Prisma.Decimal;
-    grandTotal: Prisma.Decimal;
-    currency: string;
-    shippingRecipient: string;
-    shippingPhone: string;
-    shippingAddress: string;
-    shippingRegion: string | null;
-    shippingWarehouse?: { id: string; code: string; name: string } | null;
-    confirmedAt: Date | null;
-    cancelledAt: Date | null;
-    reservationExpiresAt?: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-    user?: { id: string; username: string; fullName: string; email: string };
-    items: Array<{
+  private serializeOrder(
+    order: {
       id: string;
-      productId: string;
-      warehouseId: string;
-      inventoryId?: bigint;
-      productName: string;
-      sku: string;
-      unitPrice: Prisma.Decimal;
-      discountAmount?: Prisma.Decimal;
-      quantity: number;
-      lineTotal: Prisma.Decimal;
-      product?: { imageUrl: string | null };
-      reservations?: Array<{ status: string }>;
-      warehouse?: { id: string; code: string; name: string };
-    }>;
-    payments: Array<{
-      id: string;
-      method: string;
-      status: string;
-      amount: Prisma.Decimal;
-      transactionRef: string;
-      processedAt: Date | null;
+      orderCode: string;
+      userId: string;
+      status: OrderStatus;
+      subtotal: Prisma.Decimal;
+      discountTotal: Prisma.Decimal;
+      promotionDiscountTotal?: Prisma.Decimal;
+      promotionCode?: string | null;
+      shippingFee: Prisma.Decimal;
+      grandTotal: Prisma.Decimal;
+      currency: string;
+      shippingRecipient: string;
+      shippingPhone: string;
+      shippingAddress: string;
+      shippingRegion: string | null;
+      shippingWarehouse?: { id: string; code: string; name: string } | null;
+      confirmedAt: Date | null;
+      cancelledAt: Date | null;
+      reservationExpiresAt?: Date | null;
       createdAt: Date;
-      currency?: string;
-      failureReason?: string | null;
-      gatewayResponse?: Prisma.JsonValue;
-      supportRequest?: Prisma.PaymentSupportRequestGetPayload<{ select: typeof paymentSupportSelect }> | null;
-    }>;
-    statusHistory: Array<{
-      id: bigint;
-      fromStatus: OrderStatus | null;
-      toStatus: OrderStatus;
-      actorId: string | null;
-      reason: string | null;
-      createdAt: Date;
-      actor?: {
+      updatedAt: Date;
+      user?: { id: string; username: string; fullName: string; email: string };
+      items: Array<{
         id: string;
-        username: string;
-        fullName: string;
-        role: string;
-      } | null;
-    }>;
-  }, staffId?: string) {
-    const supportedPayment = staffId ? undefined : order.payments.find(
-      (payment) => payment.method === 'BANK_TRANSFER' && payment.supportRequest,
-    );
+        productId: string;
+        warehouseId: string;
+        inventoryId?: bigint;
+        productName: string;
+        sku: string;
+        unitPrice: Prisma.Decimal;
+        discountAmount?: Prisma.Decimal;
+        quantity: number;
+        lineTotal: Prisma.Decimal;
+        product?: { imageUrl: string | null };
+        reservations?: Array<{ status: string }>;
+        warehouse?: { id: string; code: string; name: string };
+      }>;
+      payments: Array<{
+        id: string;
+        method: string;
+        status: string;
+        amount: Prisma.Decimal;
+        transactionRef: string;
+        processedAt: Date | null;
+        createdAt: Date;
+        currency?: string;
+        failureReason?: string | null;
+        gatewayResponse?: Prisma.JsonValue;
+        supportRequest?: Prisma.PaymentSupportRequestGetPayload<{
+          select: typeof paymentSupportSelect;
+        }> | null;
+      }>;
+      statusHistory: Array<{
+        id: bigint;
+        fromStatus: OrderStatus | null;
+        toStatus: OrderStatus;
+        actorId: string | null;
+        reason: string | null;
+        createdAt: Date;
+        actor?: {
+          id: string;
+          username: string;
+          fullName: string;
+          role: string;
+        } | null;
+      }>;
+    },
+    staffId?: string,
+  ) {
+    const supportedPayment = staffId
+      ? undefined
+      : order.payments.find(
+          (payment) =>
+            payment.method === 'BANK_TRANSFER' && payment.supportRequest,
+        );
     const recipient = supportedPayment?.gatewayResponse;
-    const accountNumber = recipient && typeof recipient === 'object' && !Array.isArray(recipient) &&
-      typeof recipient.accountNumber === 'string' ? recipient.accountNumber : null;
+    const accountNumber =
+      recipient &&
+      typeof recipient === 'object' &&
+      !Array.isArray(recipient) &&
+      typeof recipient.accountNumber === 'string'
+        ? recipient.accountNumber
+        : null;
     const support = supportedPayment?.supportRequest;
     return {
       id: order.id,
@@ -416,7 +438,8 @@ export class AdminOrdersQueryService {
       status: order.status,
       subtotal: order.subtotal.toFixed(2),
       discountTotal: order.discountTotal.toFixed(2),
-      promotionDiscountTotal: order.promotionDiscountTotal?.toFixed(2) ?? '0.00',
+      promotionDiscountTotal:
+        order.promotionDiscountTotal?.toFixed(2) ?? '0.00',
       promotionCode: order.promotionCode ?? null,
       shippingFee: order.shippingFee.toFixed(2),
       grandTotal: order.grandTotal.toFixed(2),
@@ -433,15 +456,21 @@ export class AdminOrdersQueryService {
       updatedAt: order.updatedAt,
       customer: order.user ?? null,
       ...(!staffId && {
-        paymentSupport: support && supportedPayment ? {
-          ...support,
-          paymentId: supportedPayment.id,
-          amount: supportedPayment.amount.toFixed(2),
-          transactionRef: supportedPayment.transactionRef,
-          accountNumber,
-          canConfirm: support.status === 'OPEN' && supportedPayment.status === 'PENDING' &&
-            order.status === 'PENDING_PAYMENT' && (order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
-        } : null,
+        paymentSupport:
+          support && supportedPayment
+            ? {
+                ...support,
+                paymentId: supportedPayment.id,
+                amount: supportedPayment.amount.toFixed(2),
+                transactionRef: supportedPayment.transactionRef,
+                accountNumber,
+                canConfirm:
+                  support.status === 'OPEN' &&
+                  supportedPayment.status === 'PENDING' &&
+                  order.status === 'PENDING_PAYMENT' &&
+                  (order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
+              }
+            : null,
       }),
       items: order.items.map((item) => ({
         id: item.id,

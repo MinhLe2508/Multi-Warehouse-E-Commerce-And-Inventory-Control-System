@@ -97,11 +97,23 @@ export class AdminOperationsService {
           processedAt: true,
           gatewayResponse: true,
           supportRequest: { select: { status: true } },
-          order: { select: { ...orderIdentity, status: true, reservationExpiresAt: true } },
+          order: {
+            select: {
+              ...orderIdentity,
+              status: true,
+              reservationExpiresAt: true,
+            },
+          },
           bankReceipts: {
             take: 5,
             orderBy: { receivedAt: 'desc' },
-            select: { id: true, bankReference: true, amount: true, receivedAt: true, issue: true },
+            select: {
+              id: true,
+              bankReference: true,
+              amount: true,
+              receivedAt: true,
+              issue: true,
+            },
           },
         },
       }),
@@ -109,17 +121,31 @@ export class AdminOperationsService {
     );
     return {
       ...page,
-      items: page.items.map(({ gatewayResponse, bankReceipts, supportRequest, ...row }) => ({
-        ...row,
-        amount: row.amount.toFixed(2),
-        accountNumber: row.method === 'BANK_TRANSFER' && gatewayResponse &&
-          typeof gatewayResponse === 'object' && !Array.isArray(gatewayResponse) &&
-          typeof gatewayResponse.accountNumber === 'string' ? gatewayResponse.accountNumber : null,
-        bankReceipts: bankReceipts.map((receipt) => ({ ...receipt, amount: receipt.amount.toFixed(0) })),
-        supportStatus: supportRequest?.status ?? null,
-        canReconcile: supportRequest?.status === 'OPEN' && row.method === 'BANK_TRANSFER' && row.status === 'PENDING' &&
-          row.order.status === 'PENDING_PAYMENT' && (row.order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
-      })),
+      items: page.items.map(
+        ({ gatewayResponse, bankReceipts, supportRequest, ...row }) => ({
+          ...row,
+          amount: row.amount.toFixed(2),
+          accountNumber:
+            row.method === 'BANK_TRANSFER' &&
+            gatewayResponse &&
+            typeof gatewayResponse === 'object' &&
+            !Array.isArray(gatewayResponse) &&
+            typeof gatewayResponse.accountNumber === 'string'
+              ? gatewayResponse.accountNumber
+              : null,
+          bankReceipts: bankReceipts.map((receipt) => ({
+            ...receipt,
+            amount: receipt.amount.toFixed(0),
+          })),
+          supportStatus: supportRequest?.status ?? null,
+          canReconcile:
+            supportRequest?.status === 'OPEN' &&
+            row.method === 'BANK_TRANSFER' &&
+            row.status === 'PENDING' &&
+            row.order.status === 'PENDING_PAYMENT' &&
+            (row.order.reservationExpiresAt?.getTime() ?? 0) > Date.now(),
+        }),
+      ),
     };
   }
 

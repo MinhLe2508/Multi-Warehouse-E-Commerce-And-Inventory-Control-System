@@ -129,8 +129,15 @@ describe('ChatbotService', () => {
     async (message) => {
       const session = { id: 'sess-help', sessionToken: 'help', userId: null };
       prisma.chatSession.findUnique.mockResolvedValue(session);
-      const result = await service.processUserMessage({ sessionToken: 'help', message });
-      expect(result).toMatchObject({ isFallback: false, escalatedToHuman: false, generationSource: 'LOCAL' });
+      const result = await service.processUserMessage({
+        sessionToken: 'help',
+        message,
+      });
+      expect(result).toMatchObject({
+        isFallback: false,
+        escalatedToHuman: false,
+        generationSource: 'LOCAL',
+      });
       expect(result.reply.trim().length).toBeGreaterThan(15);
       expect(retrievalService.searchKnowledgeBase).not.toHaveBeenCalled();
     },
@@ -389,7 +396,15 @@ describe('ChatbotService', () => {
 
       toolsService.execute.mockResolvedValueOnce({
         ok: true,
-        data: { orders: [{ orderCode: 'ORD-AAAA1111', statusLabel: 'Đang giao', grandTotal: '350000.00' }] },
+        data: {
+          orders: [
+            {
+              orderCode: 'ORD-AAAA1111',
+              statusLabel: 'Đang giao',
+              grandTotal: '350000.00',
+            },
+          ],
+        },
       });
       const generateContent = jest.fn().mockResolvedValue({
         text: 'Đơn ORD-AAAA1111 có tổng tiền 350.000 VND.',

@@ -340,10 +340,14 @@ describe('ChatbotToolsService', () => {
         },
       ]);
 
-      const res = await service.execute('browseCategory', {
-        maxPrice: 20000000,
-        limit: 5,
-      });
+      const res = await service.execute(
+        'browseCategory',
+        {
+          maxPrice: 20000000,
+          limit: 5,
+        },
+        {},
+      );
 
       expect(res.ok).toBe(true);
       const callArg = prisma.product.findMany.mock.calls[0][0];
@@ -371,11 +375,15 @@ describe('ChatbotToolsService', () => {
         },
       ]);
 
-      const res = await service.execute('browseCategory', {
-        categoryName: 'Âm thanh',
-        minPrice: 500000,
-        maxPrice: 2000000,
-      });
+      const res = await service.execute(
+        'browseCategory',
+        {
+          categoryName: 'Âm thanh',
+          minPrice: 500000,
+          maxPrice: 2000000,
+        },
+        {},
+      );
 
       expect(res.ok).toBe(true);
       const callArg = prisma.product.findMany.mock.calls[0][0];
@@ -410,9 +418,13 @@ describe('ChatbotToolsService', () => {
         },
       ]);
 
-      const res = await service.execute('browseCategory', {
-        warehouse: 'Hồ Chí Minh',
-      });
+      const res = await service.execute(
+        'browseCategory',
+        {
+          warehouse: 'Hồ Chí Minh',
+        },
+        {},
+      );
 
       expect(res.ok).toBe(true);
       const callArg = prisma.product.findMany.mock.calls[0][0];

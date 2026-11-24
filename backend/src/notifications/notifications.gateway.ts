@@ -171,7 +171,11 @@ export class NotificationsGateway
       .then((recipients) => {
         if (recipients.length)
           this.server
-            ?.to(recipients.map(({ userId, user }) => staffSessionRoom(userId, user.sessionVersion)))
+            ?.to(
+              recipients.map(({ userId, user }) =>
+                staffSessionRoom(userId, user.sessionVersion),
+              ),
+            )
             .emit(event, payload);
       })
       .catch(() =>
@@ -236,9 +240,10 @@ export class NotificationsGateway
       await client.leave?.(`role:${prevData.role}`);
     }
 
-    const staffRoom = user.role === UserRole.WAREHOUSE_STAFF
-      ? staffSessionRoom(user.id, user.sessionVersion)
-      : undefined;
+    const staffRoom =
+      user.role === UserRole.WAREHOUSE_STAFF
+        ? staffSessionRoom(user.id, user.sessionVersion)
+        : undefined;
     if (prevData.staffRoom && prevData.staffRoom !== staffRoom) {
       await client.leave?.(prevData.staffRoom);
     }

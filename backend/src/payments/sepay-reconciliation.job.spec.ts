@@ -45,19 +45,27 @@ describe('SePayReconciliationJob', () => {
     const requests: URL[] = [];
     const fetch = jest
       .spyOn(globalThis, 'fetch')
-      .mockImplementation(async (input) => {
-        const url = new URL(String(input));
+      .mockImplementation((input) => {
+        const url = new URL(
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url,
+        );
         requests.push(url);
-        return requests.length === 1
-          ? response(
-              [
-                { ...transaction, account_number: '9999999999' },
-                { ...transaction, amount_out: 79000, transfer_type: 'out' },
-                { ...transaction, transaction_date: '2026-02-30 10:00:00' },
-              ],
-              true,
-            )
-          : response([transaction], false);
+        return Promise.resolve(
+          requests.length === 1
+            ? response(
+                [
+                  { ...transaction, account_number: '9999999999' },
+                  { ...transaction, amount_out: 79000, transfer_type: 'out' },
+                  { ...transaction, transaction_date: '2026-02-30 10:00:00' },
+                ],
+                true,
+              )
+            : response([transaction], false),
+        );
       });
     const record = jest.fn();
     await new SePayReconciliationJob({

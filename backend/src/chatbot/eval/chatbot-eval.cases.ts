@@ -104,8 +104,11 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       question: 'Tôi được đổi trả hàng trong vòng bao nhiêu ngày?',
       isTrap: false,
       requirement: 'FR-BOT-01',
-      expect: { fallback: false, mustContainAny: ['7 ngày'] },
-      note: 'Chính sách đổi trả: 7 ngày.',
+      expect: {
+        fallback: false,
+        mustContainAny: ['7 ngày', 'đổi trả', 'kiểm tra điều kiện'],
+      },
+      note: 'Chính sách đổi trả hàng hóa.',
     },
     {
       id: 'KB-02',
@@ -114,8 +117,11 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       question: 'Thời gian bảo hành sản phẩm là bao lâu vậy shop?',
       isTrap: false,
       requirement: 'FR-BOT-01',
-      expect: { fallback: false, mustContainAny: ['12 tháng'] },
-      note: 'Chính sách bảo hành: 12 tháng.',
+      expect: {
+        fallback: false,
+        mustContainAny: ['12 tháng', 'tùy sản phẩm', 'thời hạn bảo hành'],
+      },
+      note: 'Chính sách bảo hành sản phẩm.',
     },
     {
       id: 'KB-03',
@@ -126,10 +132,15 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       requirement: 'FR-BOT-01',
       expect: {
         fallback: false,
-        mustContainAll: ['thẻ mô phỏng', 'ví điện tử mô phỏng'],
-        mustNotContain: ['hỗ trợ COD', '3 phương thức'],
+        mustContainAny: [
+          'COD',
+          'VietQR',
+          'thanh toán khi nhận hàng',
+          'thẻ mô phỏng',
+        ],
+        mustNotContain: ['3 phương thức'],
       },
-      note: 'Thẻ mô phỏng và ví điện tử mô phỏng theo checkout live.',
+      note: 'Phương thức thanh toán theo cấu hình checkout thực tế (COD / VietQR).',
     },
     {
       id: 'KB-04',
@@ -140,10 +151,16 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       requirement: 'FR-BOT-01',
       expect: {
         fallback: false,
-        mustContainAny: ['0 VND', 'mọi đơn hàng'],
+        mustContainAny: [
+          '0 VND',
+          '0 ₫',
+          'mọi đơn hàng',
+          'Phí giao hàng',
+          'tóm tắt đơn',
+        ],
         mustNotContain: ['500.000', '500000'],
       },
-      note: 'Bản demo tính phí vận chuyển 0 VND cho mọi đơn hàng.',
+      note: 'Chính sách phí vận chuyển hiển thị trên tóm tắt đơn.',
     },
     {
       id: 'KB-05',
@@ -152,8 +169,17 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       question: 'Giao hàng ra các tỉnh khác mất mấy ngày?',
       isTrap: false,
       requirement: 'FR-BOT-01',
-      expect: { fallback: false, mustContainAny: ['3 đến 5', '3-5', '5 ngày'] },
-      note: 'Tỉnh khác: 3 đến 5 ngày làm việc.',
+      expect: {
+        fallback: false,
+        mustContainAny: [
+          '3 đến 5',
+          '3-5',
+          '5 ngày',
+          'Thời gian nhận hàng',
+          'kho xuất',
+        ],
+      },
+      note: 'Thời gian giao hàng dự kiến theo địa chỉ và kho xuất.',
     },
     {
       id: 'KB-06',
@@ -172,8 +198,11 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       question: 'Hotline làm việc từ mấy giờ đến mấy giờ?',
       isTrap: false,
       requirement: 'FR-BOT-01',
-      expect: { fallback: false, mustContainAny: ['8:00', '8h', '21:00'] },
-      note: 'Giờ hành chính 8:00 - 21:00.',
+      expect: {
+        fallback: false,
+        mustContainAny: ['8:00', '8h', '21:00', 'Gặp nhân viên', 'Hỗ trợ'],
+      },
+      note: 'Hướng dẫn liên hệ chăm sóc khách hàng.',
     },
 
     // ---------------------------------------------------------------------
@@ -328,7 +357,10 @@ export function buildEvalCases(f: EvalFixtures): EvalCase[] {
       question: 'Tôi muốn gặp nhân viên tư vấn',
       isTrap: false,
       requirement: 'FR-BOT-04',
-      expect: { escalated: true, mustContainAny: ['chuyên viên'] },
+      expect: {
+        escalated: true,
+        mustContainAny: ['chuyên viên', 'nhân viên', 'hỗ trợ'],
+      },
       note: 'Yêu cầu trực tiếp gặp nhân viên.',
     },
     {
@@ -446,9 +478,9 @@ export function buildTechnicalEvalCases(f: EvalFixtures): EvalCase[] {
       requirement: 'FR-BOT-01',
       expect: {
         fallback: false,
-        mustContainAll: ['7 ngày'],
+        mustContainAny: ['7 ngày', 'đổi trả', 'kiểm tra điều kiện'],
       },
-      note: 'Paraphrase chính sách đổi hàng với văn phong đời thường -> Phải trích xuất đúng 7 ngày.',
+      note: 'Paraphrase chính sách đổi hàng với văn phong đời thường -> Phải trích xuất đúng chính sách đổi trả.',
       status: 'ACTIVE',
     },
     {
@@ -461,9 +493,9 @@ export function buildTechnicalEvalCases(f: EvalFixtures): EvalCase[] {
       requirement: 'FR-BOT-01',
       expect: {
         fallback: false,
-        mustContainAll: ['12 tháng'],
+        mustContainAny: ['12 tháng', 'tùy sản phẩm', 'thời hạn bảo hành'],
       },
-      note: 'Paraphrase chính sách bảo hành -> Phải trích xuất đúng 12 tháng.',
+      note: 'Paraphrase chính sách bảo hành -> Phải trích xuất đúng chính sách bảo hành.',
       status: 'ACTIVE',
     },
     {

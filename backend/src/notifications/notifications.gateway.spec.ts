@@ -4,7 +4,11 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 function build(user: object | null, verify: jest.Mock) {
   const prisma = {
-    user: { findUnique: jest.fn().mockResolvedValue(user && { sessionVersion: 0, ...user }) },
+    user: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue(user && { sessionVersion: 0, ...user }),
+    },
     warehouseStaffAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const gateway = new NotificationsGateway(

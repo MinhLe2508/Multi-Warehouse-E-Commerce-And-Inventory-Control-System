@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { OrderStatus, Prisma } from '@prisma/client';
-import { MONEY_SCALE, PricingService, type PricedLine } from '../pricing/pricing.service';
+import {
+  MONEY_SCALE,
+  PricingService,
+  type PricedLine,
+} from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -72,7 +76,11 @@ const customerOrderInclude = {
       amount: true,
       transactionRef: true,
       processedAt: true,
-      bankReceipts: { where: { issue: { not: null } }, take: 1, select: { id: true } },
+      bankReceipts: {
+        where: { issue: { not: null } },
+        take: 1,
+        select: { id: true },
+      },
       supportRequest: { select: paymentSupportSelect },
     },
   },
@@ -94,13 +102,29 @@ export class OrdersService {
 
   async quote(userId: string, dto: CheckoutQuoteDto) {
     const products = await this.prisma.product.findMany({
-      where: { id: { in: dto.items.map(({ productId }) => productId) }, isActive: true },
-      select: { id: true, basePrice: true, discountPercent: true, categoryId: true },
+      where: {
+        id: { in: dto.items.map(({ productId }) => productId) },
+        isActive: true,
+      },
+      select: {
+        id: true,
+        basePrice: true,
+        discountPercent: true,
+        categoryId: true,
+      },
     });
     const promo = dto.promotionId
-      ? await this.promotions.checkoutScope(this.prisma, userId, dto.promotionId)
+      ? await this.promotions.checkoutScope(
+          this.prisma,
+          userId,
+          dto.promotionId,
+        )
       : null;
-    const price = this.priceBasket(dto, new Map(products.map((product) => [product.id, product])), promo);
+    const price = this.priceBasket(
+      dto,
+      new Map(products.map((product) => [product.id, product])),
+      promo,
+    );
     return {
       subtotal: price.subtotal.toFixed(2),
       discountTotal: price.discountTotal.toFixed(2),
@@ -110,7 +134,8 @@ export class OrdersService {
       lines: dto.items.map(({ productId }, index) => ({
         productId,
         lineTotal: price.lines[index].lineTotal.toFixed(2),
-        promotionDiscountAmount: price.lines[index].promotionDiscountAmount.toFixed(2),
+        promotionDiscountAmount:
+          price.lines[index].promotionDiscountAmount.toFixed(2),
       })),
     };
   }
@@ -120,24 +145,35 @@ export class OrdersService {
     products: Map<string, CheckoutProduct>,
     promo: Awaited<ReturnType<PromotionsService['checkoutScope']>> | null,
   ) {
-    return this.pricing.calculateOrder(dto.items.map(({ productId, quantity }) => {
-      const product = products.get(productId);
-      if (!product) throw new BadRequestException('Sản phẩm không tồn tại hoặc đã ngừng bán.');
-      const applies = promo && (
-        !promo.eligibleCategories || (product.categoryId && promo.eligibleCategories.has(product.categoryId))
-      );
-      return {
-        quantity, unitPrice: product.basePrice, discountPercent: product.discountPercent,
-        promotionPercent: applies ? String(promo.percent) : undefined,
-      };
-    }));
+    return this.pricing.calculateOrder(
+      dto.items.map(({ productId, quantity }) => {
+        const product = products.get(productId);
+        if (!product)
+          throw new BadRequestException(
+            'Sản phẩm không tồn tại hoặc đã ngừng bán.',
+          );
+        const applies =
+          promo &&
+          (!promo.eligibleCategories ||
+            (product.categoryId &&
+              promo.eligibleCategories.has(product.categoryId)));
+        return {
+          quantity,
+          unitPrice: product.basePrice,
+          discountPercent: product.discountPercent,
+          promotionPercent: applies ? String(promo.percent) : undefined,
+        };
+      }),
+    );
   }
 
   async create(userId: string, dto: CreateOrderDto) {
     const cod = dto.paymentMethod === 'COD';
     const transfer = dto.paymentMethod === 'BANK_TRANSFER';
     if (!cod && !transfer && !mockPaymentsEnabled()) {
-      throw new BadRequestException('Chọn một phương thức thanh toán đang hỗ trợ.');
+      throw new BadRequestException(
+        'Chọn một phương thức thanh toán đang hỗ trợ.',
+      );
     }
     const codeToken = dto.checkoutId
       ? createHash('sha256')
@@ -145,10 +181,13 @@ export class OrdersService {
           .digest('hex')
       : randomUUID().replace(/-/g, '');
     const orderCode = `ORD-${codeToken.slice(0, 20).toUpperCase()}`;
-    const stockError = dto.shippingWarehouseId ? {
-      code: 'INSUFFICIENT_WAREHOUSE_STOCK',
-      message: 'Kho đã chọn không đủ hàng. Hãy chọn kho khác hoặc để MultiMart tự chọn kho.',
-    } : 'INSUFFICIENT_STOCK';
+    const stockError = dto.shippingWarehouseId
+      ? {
+          code: 'INSUFFICIENT_WAREHOUSE_STOCK',
+          message:
+            'Kho đã chọn không đủ hàng. Hãy chọn kho khác hoặc để MultiMart tự chọn kho.',
+        }
+      : 'INSUFFICIENT_STOCK';
     const { order, inventoryEvents } = await this.prisma.$transaction(
       async (tx) => {
         if (dto.checkoutId) {
@@ -180,9 +219,11 @@ export class OrdersService {
               previous.shippingPhone !== dto.shippingPhone ||
               previous.shippingAddress !== dto.shippingAddress ||
               previous.shippingRegion !== (dto.shippingRegion ?? null) ||
-              previous.shippingWarehouseId !== (dto.shippingWarehouseId ?? null) ||
+              previous.shippingWarehouseId !==
+                (dto.shippingWarehouseId ?? null) ||
               previous.promotionId !== (dto.promotionId ?? null) ||
-              (dto.expectedTotal !== undefined && !previous.grandTotal.eq(dto.expectedTotal)) ||
+              (dto.expectedTotal !== undefined &&
+                !previous.grandTotal.eq(dto.expectedTotal)) ||
               quantities.size !== dto.items.length ||
               dto.items.some(
                 (item) => quantities.get(item.productId) !== item.quantity,
@@ -193,6 +234,7 @@ export class OrdersService {
               );
             }
             const { payments: _payments, ...replayed } = previous;
+            void _payments;
             return { order: this.serialize(replayed), inventoryEvents: [] };
           }
         }
@@ -200,7 +242,10 @@ export class OrdersService {
           const [warehouse] = await tx.$queryRaw<Array<{ id: string }>>`
             SELECT id FROM warehouses WHERE id = ${dto.shippingWarehouseId}::uuid AND is_active FOR SHARE
           `;
-          if (!warehouse) throw new ConflictException('Kho giao hàng không còn hoạt động. Hãy chọn kho khác.');
+          if (!warehouse)
+            throw new ConflictException(
+              'Kho giao hàng không còn hoạt động. Hãy chọn kho khác.',
+            );
         }
         const productIds = dto.items.map(({ productId }) => productId);
         const snapshot = await tx.$queryRaw<CheckoutSnapshotRow[]>`
@@ -295,11 +340,15 @@ export class OrdersService {
             remaining -= amount;
             if (remaining === 0) break;
           }
-          if (remaining !== 0)
-            throw new ConflictException(stockError);
+          if (remaining !== 0) throw new ConflictException(stockError);
         }
         const promo = dto.promotionId
-          ? await this.promotions.checkoutScope(tx, userId, dto.promotionId, true)
+          ? await this.promotions.checkoutScope(
+              tx,
+              userId,
+              dto.promotionId,
+              true,
+            )
           : null;
         const price = this.priceBasket(dto, byId, promo);
         if (promo && price.promotionDiscountTotal.isZero()) {
@@ -308,17 +357,28 @@ export class OrdersService {
             message: 'Mã này không giảm giá cho các sản phẩm trong đơn.',
           });
         }
-        if (dto.expectedTotal !== undefined && !price.grandTotal.eq(dto.expectedTotal)) {
-          throw new ConflictException({ code: 'CHECKOUT_TOTAL_CHANGED', message: 'Tổng tiền đã thay đổi. Hãy kiểm tra lại trước khi đặt hàng.' });
+        if (
+          dto.expectedTotal !== undefined &&
+          !price.grandTotal.eq(dto.expectedTotal)
+        ) {
+          throw new ConflictException({
+            code: 'CHECKOUT_TOTAL_CHANGED',
+            message:
+              'Tổng tiền đã thay đổi. Hãy kiểm tra lại trước khi đặt hàng.',
+          });
         }
         const free = price.grandTotal.isZero();
         const initialStatus = free || cod ? 'CONFIRMED' : 'PENDING_PAYMENT';
         const recipient = transfer && !free ? getVietQrRecipient() : null;
         if (transfer && !free && !recipient) {
-          throw new ConflictException('Chuyển khoản VietQR đang tạm dừng. Bạn có thể chọn COD.');
+          throw new ConflictException(
+            'Chuyển khoản VietQR đang tạm dừng. Bạn có thể chọn COD.',
+          );
         }
         if (recipient && !price.grandTotal.isInteger()) {
-          throw new BadRequestException('Đơn VietQR cần tổng tiền là số nguyên dương VND. Vui lòng chọn COD.');
+          throw new BadRequestException(
+            'Đơn VietQR cần tổng tiền là số nguyên dương VND. Vui lòng chọn COD.',
+          );
         }
         const order = await tx.order.create({
           data: {
@@ -344,7 +404,12 @@ export class OrdersService {
           inventoryId: bigint;
           quantity: number;
         }> = [];
-        const pricedProducts = new Map(dto.items.map(({ productId }, index) => [productId, price.lines[index]]));
+        const pricedProducts = new Map(
+          dto.items.map(({ productId }, index) => [
+            productId,
+            price.lines[index],
+          ]),
+        );
         const allocatedQuantity = new Map<string, number>();
         for (const line of lines) {
           const p = byId.get(line.productId)!;
@@ -364,7 +429,9 @@ export class OrdersService {
               unitPrice: amount.unitPrice,
               discountAmount,
               quantity: line.quantity,
-              lineTotal: amount.unitPrice.mul(line.quantity).minus(discountAmount),
+              lineTotal: amount.unitPrice
+                .mul(line.quantity)
+                .minus(discountAmount),
             },
           });
           allocations.push({
@@ -381,16 +448,17 @@ export class OrdersService {
         );
         if (free || cod) {
           await this.stockReservation.commitForOrder(tx, order.id, userId);
-          if (!free) await tx.payment.create({
-            data: {
-              orderId: order.id,
-              transactionRef: `COD-${order.id}`,
-              amount: order.grandTotal,
-              currency: order.currency,
-              method: 'COD',
-              status: 'PENDING',
-            },
-          });
+          if (!free)
+            await tx.payment.create({
+              data: {
+                orderId: order.id,
+                transactionRef: `COD-${order.id}`,
+                amount: order.grandTotal,
+                currency: order.currency,
+                method: 'COD',
+                status: 'PENDING',
+              },
+            });
           await tx.order.update({
             where: { id: order.id },
             data: {
@@ -418,7 +486,11 @@ export class OrdersService {
             fromStatus: null,
             toStatus: initialStatus,
             actorId: userId,
-            reason: free ? 'Đơn không cần thanh toán' : cod ? 'Đã nhận đơn COD' : 'Tạo đơn và giữ chỗ tồn kho',
+            reason: free
+              ? 'Đơn không cần thanh toán'
+              : cod
+                ? 'Đã nhận đơn COD'
+                : 'Tạo đơn và giữ chỗ tồn kho',
           },
         });
         await recordCustomerOrderNotice(tx, order, initialStatus);
@@ -446,7 +518,11 @@ export class OrdersService {
 
   private allocationDiscount(line: PricedLine, before: number, after: number) {
     // Chia phần giảm đã tính theo sản phẩm cho các kho, giữ tổng đúng như báo giá.
-    const through = (qty: number) => line.discountAmount.mul(qty).div(line.quantity).toDecimalPlaces(MONEY_SCALE);
+    const through = (qty: number) =>
+      line.discountAmount
+        .mul(qty)
+        .div(line.quantity)
+        .toDecimalPlaces(MONEY_SCALE);
     return through(after).minus(through(before));
   }
 
@@ -636,9 +712,10 @@ export class OrdersService {
 
   private serializeCustomerOrder(order: CustomerOrderRow) {
     const payment = order.payments[0];
-    const createdAt = payment?.method === 'BANK_TRANSFER'
-      ? paymentWindowStartsAt(order)
-      : order.createdAt;
+    const createdAt =
+      payment?.method === 'BANK_TRANSFER'
+        ? paymentWindowStartsAt(order)
+        : order.createdAt;
     return {
       id: order.id,
       orderCode: order.orderCode,
@@ -667,18 +744,21 @@ export class OrdersService {
         discountAmount: item.discountAmount.toFixed(2),
         lineTotal: item.lineTotal.toFixed(2),
       })),
-      payment: payment ? {
-        method: payment.method,
-        status: payment.status,
-        amount: payment.amount.toFixed(2),
-        transactionRef: payment.transactionRef,
-        processedAt: payment.processedAt,
-        reviewRequired: payment.bankReceipts.length > 0,
-        supportAvailableAt: payment.method === 'BANK_TRANSFER' && payment.status === 'PENDING'
-          ? new Date(createdAt.getTime() + PAYMENT_SUPPORT_WAIT_MS)
-          : null,
-        supportRequest: payment.supportRequest,
-      } : null,
+      payment: payment
+        ? {
+            method: payment.method,
+            status: payment.status,
+            amount: payment.amount.toFixed(2),
+            transactionRef: payment.transactionRef,
+            processedAt: payment.processedAt,
+            reviewRequired: payment.bankReceipts.length > 0,
+            supportAvailableAt:
+              payment.method === 'BANK_TRANSFER' && payment.status === 'PENDING'
+                ? new Date(createdAt.getTime() + PAYMENT_SUPPORT_WAIT_MS)
+                : null,
+            supportRequest: payment.supportRequest,
+          }
+        : null,
     };
   }
 }

@@ -17,19 +17,21 @@ export class NotificationsService {
     scope?: string,
   ): Prisma.NotificationWhereInput {
     const personal: Prisma.NotificationWhereInput = {
-      type: { in: ['SYSTEM', 'ORDER_UPDATE'] }, warehouseId: null,
+      type: { in: ['SYSTEM', 'ORDER_UPDATE'] },
+      warehouseId: null,
     };
     if (role === UserRole.CUSTOMER || scope === 'shopping') {
-      return { userId, warehouseId: null, type: { in: ['SYSTEM', 'ORDER_UPDATE', 'PROMOTION'] } };
+      return {
+        userId,
+        warehouseId: null,
+        type: { in: ['SYSTEM', 'ORDER_UPDATE', 'PROMOTION'] },
+      };
     }
     return {
       userId,
       ...(role === UserRole.WAREHOUSE_STAFF
         ? {
-            OR: [
-              personal,
-              { warehouse: staffWarehouseWhere(userId) },
-            ],
+            OR: [personal, { warehouse: staffWarehouseWhere(userId) }],
           }
         : {}),
     };
@@ -93,7 +95,10 @@ export class NotificationsService {
       where: {
         id: notificationId,
         userId,
-        OR: [this.visible(userId, role), this.visible(userId, role, 'shopping')],
+        OR: [
+          this.visible(userId, role),
+          this.visible(userId, role, 'shopping'),
+        ],
       },
       data: { isRead: true, readAt: new Date() },
     });
@@ -112,7 +117,11 @@ export class NotificationsService {
   /**
    * Đếm số thông báo chưa đọc của user.
    */
-  async countUnread(userId: string, role?: UserRole, scope?: string): Promise<number> {
+  async countUnread(
+    userId: string,
+    role?: UserRole,
+    scope?: string,
+  ): Promise<number> {
     return this.prisma.notification.count({
       where: { ...this.visible(userId, role, scope), isRead: false },
     });
