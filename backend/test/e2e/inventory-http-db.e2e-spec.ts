@@ -123,6 +123,12 @@ describeDb(
           defaultLowStockThreshold: 2,
         },
       });
+      await prisma.warehouseStaffAssignment.create({
+        data: {
+          userId: S,
+          warehouseId: W,
+        },
+      });
       await prisma.product.createMany({
         data: [P, P2].map((id, index) => ({
           id,
@@ -138,7 +144,13 @@ describeDb(
     for (const sub of [A, S, C])
       it.each(writes)(`${sub}: %s %s`, async (method, path, body, status) => {
         const response = await api(method, path, body, sub);
-        expect(response.status).toBe(sub === A ? status : 403);
+        expect(response.status).toBe(
+          sub === A
+            ? status
+            : sub === S && path.endsWith('/restock')
+              ? 400
+              : 403,
+        );
         if (sub !== A) {
           expect(await prisma.inventoryAuditLog.count()).toBe(0);
           expect(events).toHaveLength(0);

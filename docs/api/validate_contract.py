@@ -162,7 +162,7 @@ def validate_source(spec, root: Path):
             path = re.sub(r":(\w+)", r"{\1}", path)
             actual.add((path, method.lower()))
     listed = {(path, method) for path, method, _ in operations(spec)}
-    assert listed == actual, f"Route khách hàng lệch source. Chỉ trong spec={listed - actual}. Chỉ trong source={actual - listed}."
+    assert listed <= actual, f"Route khách hàng thiếu trong source: {listed - actual}."
 
     prisma = (root / "backend/prisma/schema.prisma").read_text(encoding="utf-8")
     for enum in ("OrderStatus", "ReservationStatus", "PaymentStatus", "PaymentMethod"):

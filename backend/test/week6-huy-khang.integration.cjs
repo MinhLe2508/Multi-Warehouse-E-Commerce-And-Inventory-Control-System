@@ -20,6 +20,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+process.env.NODE_ENV ??= 'test';
+
 const repoRoot = path.resolve(__dirname, '../..');
 const ddlPath = path.join(repoRoot, 'backend/prisma/ddl.sql');
 const mig1Path = path.join(
@@ -1532,7 +1534,7 @@ test(
               assert.ok(
                 (
                   await pool.query(
-                    'SELECT count(*)::int AS n FROM notifications',
+                    "SELECT count(*)::int AS n FROM notifications WHERE type = 'LOW_STOCK'",
                   )
                 ).rows[0].n > 0,
               );
@@ -1549,8 +1551,11 @@ test(
         assert.equal(await notifier.dispatchOpenAlerts(), 0);
         assert.equal(published.length, 2);
         assert.equal(
-          (await pool.query('SELECT count(*)::int AS n FROM notifications'))
-            .rows[0].n,
+          (
+            await pool.query(
+              "SELECT count(*)::int AS n FROM notifications WHERE type = 'LOW_STOCK'",
+            )
+          ).rows[0].n,
           2,
         );
       },

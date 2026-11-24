@@ -207,6 +207,12 @@ async function prepareE2e({
             select: { id: true, code: true },
           });
         }
+        await tx.warehouseStaffAssignment.createMany({
+          data: Object.values(warehouses).map(({ id: warehouseId }) => ({
+            userId: users.staff.id,
+            warehouseId,
+          })),
+        });
         const product = await tx.product.create({
           data: {
             sku: names.sku,

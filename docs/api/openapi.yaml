@@ -508,6 +508,7 @@ components:
       - MOCK_CARD
       - MOCK_EWALLET
       - COD
+      - BANK_TRANSFER
       description: Đúng enum DB. Đề xuất 0.1 chỉ thực hiện hai phương thức MOCK; yêu cầu COD trả 422 UNSUPPORTED_PAYMENT_METHOD.
     ReservationStatus:
       type: string
