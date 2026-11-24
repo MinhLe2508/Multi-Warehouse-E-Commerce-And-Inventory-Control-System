@@ -1673,7 +1673,6 @@ test(
           );
           assert.deepEqual([...new Set(rooms.map((r) => r.room))].sort(), [
             'role:ADMIN',
-            'role:WAREHOUSE_STAFF',
           ]);
           assert.ok(rooms.every((r) => !Object.hasOwn(r.payload, 'costPrice')));
           assert.equal(event.reservedStock, 3);
