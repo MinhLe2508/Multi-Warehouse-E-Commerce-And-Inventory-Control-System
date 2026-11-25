@@ -64,7 +64,7 @@ export default function OrderPaymentReview({ order, onUpdate }: {
       <Banknote size={18} aria-hidden="true" />
       <h2 className="h6 mb-0">Thanh toán · {PAYMENT_METHOD_LABEL[order.paymentMethod]}</h2>
       <RecordStatus
-        label={paid ? 'Đã thanh toán' : expired ? 'Hết hiệu lực' : PAYMENT_STATUS_LABEL[paymentStatus]}
+        label={paid ? (order.paymentSimulated ? 'Đã thanh toán (giả lập)' : 'Đã thanh toán') : expired ? 'Hết hiệu lực' : PAYMENT_STATUS_LABEL[paymentStatus]}
         tone={paid ? 'good' : expired || paymentStatus === 'FAILED' ? 'bad' : 'warn'}
       />
     </div>
@@ -85,7 +85,7 @@ export default function OrderPaymentReview({ order, onUpdate }: {
       {request.resolutionNote && <p className="mb-1 text-break">{request.resolutionNote}</p>}
       {request.status === 'OPEN' && <>
         <p className="small my-2">{request.canConfirm
-          ? 'Kiểm tra tiền vào trên sao kê Vietcombank trước khi xác nhận.'
+          ? 'Kiểm tra tiền vào trên sao kê của tài khoản nhận trước khi xác nhận.'
           : 'Hạn giữ hàng đã hết hoặc đơn đã đóng. Đối chiếu khoản tiền và phản hồi hướng xử lý cho khách.'}</p>
         {request.canConfirm && <BankReconciliation payment={request} />}
         {error && !closing && <p className="alert alert-danger my-2" role="alert">{error}</p>}

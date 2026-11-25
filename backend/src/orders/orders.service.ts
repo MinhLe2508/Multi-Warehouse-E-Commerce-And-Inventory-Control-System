@@ -20,7 +20,11 @@ import { CustomerOrdersQueryDto } from './dto/customer-orders-query.dto';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 import { mockPaymentsEnabled } from '../payments/payment-mode';
 import { transferCodeForOrder } from '../payments/vietqr';
-import { getVietQrRecipient } from '../payments/vietqr-config';
+import {
+  getPaymentTimeoutMinutes,
+  getVietQrRecipient,
+  wasSePaySimulated,
+} from '../payments/vietqr-config';
 import {
   PAYMENT_SUPPORT_WAIT_MS,
   paymentReservationStart,
@@ -76,6 +80,7 @@ const customerOrderInclude = {
       amount: true,
       transactionRef: true,
       processedAt: true,
+      gatewayResponse: true,
       bankReceipts: {
         where: { issue: { not: null } },
         take: 1,
@@ -445,6 +450,7 @@ export class OrdersService {
           order.id,
           allocations,
           userId,
+          recipient ? getPaymentTimeoutMinutes() : undefined,
         );
         if (free || cod) {
           await this.stockReservation.commitForOrder(tx, order.id, userId);
@@ -751,6 +757,9 @@ export class OrdersService {
             amount: payment.amount.toFixed(2),
             transactionRef: payment.transactionRef,
             processedAt: payment.processedAt,
+            simulated:
+              payment.method === 'BANK_TRANSFER' &&
+              wasSePaySimulated(payment.gatewayResponse),
             reviewRequired: payment.bankReceipts.length > 0,
             supportAvailableAt:
               payment.method === 'BANK_TRANSFER' && payment.status === 'PENDING'

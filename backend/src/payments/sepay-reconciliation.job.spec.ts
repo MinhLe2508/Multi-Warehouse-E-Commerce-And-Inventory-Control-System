@@ -10,9 +10,10 @@ describe('SePayReconciliationJob', () => {
   const transaction = {
     id,
     transfer_type: 'in',
-    bank_brand_name: 'Vietcombank',
+    bank_brand_name: 'MBBank',
     bank_account_id: bankAccountId,
     account_number: accountNumber,
+    va: 'MB001ABC',
     transaction_content: 'MBVCB.01.' + transferCode,
     transaction_date: '2026-11-21 14:41:18',
     amount_in: 79_000,
@@ -33,6 +34,9 @@ describe('SePayReconciliationJob', () => {
       SEPAY_BANK_ACCOUNT_ID: bankAccountId,
       VIETQR_ACCOUNT_NUMBER: accountNumber,
       VIETQR_ACCOUNT_NAME: 'MULTIMART',
+      VIETQR_BANK: 'MB',
+      VIETQR_VIRTUAL_ACCOUNT: 'MB001ABC',
+      VIETQR_MEMO_PREFIX: '',
     };
   });
 
@@ -59,6 +63,7 @@ describe('SePayReconciliationJob', () => {
             ? response(
                 [
                   { ...transaction, account_number: '9999999999' },
+                  { ...transaction, bank_brand_name: 'Vietcombank' },
                   { ...transaction, amount_out: 79000, transfer_type: 'out' },
                   { ...transaction, transaction_date: '2026-02-30 10:00:00' },
                 ],
@@ -88,7 +93,9 @@ describe('SePayReconciliationJob', () => {
       transferCode,
       receivedAt: new Date('2026-11-21T07:41:18Z'),
       amount: 79000,
+      bankBin: '970422',
       accountNumber,
+      virtualAccount: 'MB001ABC',
     });
   });
 

@@ -41,6 +41,7 @@ export type Order = {
   payments: Array<{
     id: string; method: 'COD' | 'BANK_TRANSFER' | 'MOCK_CARD' | 'MOCK_EWALLET';
     status: 'PENDING' | 'SUCCESS' | 'FAILED'; amount: string; transactionRef?: string;
+    simulated?: boolean;
   }>;
   statusHistory: Array<{
     id: string; toStatus: OrderStatus; fromStatus: OrderStatus | null;

@@ -4,14 +4,25 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import QRCode from 'qrcode';
 import { InventoryChangeEmitter } from '../inventory/inventory-change-emitter.service';
 import { recordCustomerOrderNotice } from '../orders/customer-order-notice';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationExpiredException } from '../stock-reservation/stock-reservation.errors';
 import { StockReservationService } from '../stock-reservation/stock-reservation.service';
-import { buildVietQr } from './vietqr';
-import { VIETCOMBANK, type VietQrRecipient } from './vietqr-config';
+import {
+  buildSePayQrUrl,
+  buildVietQrMemo,
+  MAX_VND_TRANSFER,
+  TRANSFER_CODE_PATTERN,
+} from './vietqr';
+import {
+  canSimulateSePay,
+  readVietQrBank,
+  readVietQrRecipient,
+  SEPAY_DEV_CONFIRMATION,
+  SEPAY_DEV_RECEIPT_PREFIX,
+  wasSePaySimulated,
+} from './vietqr-config';
 import type { IncomingTransfer } from './sepay-webhook';
 import {
   PAYMENT_SUPPORT_WAIT_MS,
@@ -19,17 +30,6 @@ import {
   paymentSupportSelect,
   paymentWindowStartsAt,
 } from './payment-support-policy';
-
-function readRecipient(value: Prisma.JsonValue | null): VietQrRecipient | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const { accountNumber, accountName } = value;
-  return typeof accountNumber === 'string' &&
-    /^\d{6,19}$/.test(accountNumber) &&
-    typeof accountName === 'string' &&
-    accountName.length > 0
-    ? { accountNumber, accountName }
-    : null;
-}
 
 type ReceiptIssue =
   | 'AMOUNT_MISMATCH'
@@ -60,23 +60,74 @@ export class BankTransferService {
       },
       select: { transactionRef: true, amount: true, gatewayResponse: true },
     });
-    const recipient = readRecipient(payment?.gatewayResponse ?? null);
-    if (!payment || !recipient)
+    const recipient = readVietQrRecipient(payment?.gatewayResponse);
+    const bank = readVietQrBank(recipient?.bankBin);
+    const amount = payment?.amount.toNumber() ?? 0;
+    if (
+      !payment ||
+      !recipient ||
+      !bank ||
+      !Number.isSafeInteger(amount) ||
+      amount < 1 ||
+      amount > MAX_VND_TRANSFER ||
+      !TRANSFER_CODE_PATTERN.test(payment.transactionRef)
+    ) {
       throw new NotFoundException('Mã QR của đơn không còn hiệu lực.');
+    }
+    const accountNumber = recipient.virtualAccount ?? recipient.accountNumber;
+    const transferMemo = buildVietQrMemo(recipient, payment.transactionRef);
     return {
-      bankName: VIETCOMBANK.bankName,
-      ...recipient,
+      bankName: bank.bankName,
+      accountName: recipient.accountName,
+      accountNumber,
       transferCode: payment.transactionRef,
-      amount: payment.amount.toFixed(0),
-      qrImage: await QRCode.toDataURL(
-        buildVietQr(
-          recipient.accountNumber,
-          payment.amount.toNumber(),
-          payment.transactionRef,
-        ),
-        { width: 320, margin: 4, errorCorrectionLevel: 'M' },
+      transferMemo,
+      amount: String(amount),
+      canSimulate: canSimulateSePay(),
+      qrImage: buildSePayQrUrl(
+        bank.bankBin,
+        accountNumber,
+        amount,
+        transferMemo,
       ),
     };
+  }
+
+  async simulate(userId: string, orderId: string) {
+    if (!canSimulateSePay()) {
+      throw new NotFoundException('Chế độ giả lập SePay chưa bật.');
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: { orderId, method: 'BANK_TRANSFER', order: { userId } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        transactionRef: true,
+        amount: true,
+        gatewayResponse: true,
+      },
+    });
+    const recipient = readVietQrRecipient(payment?.gatewayResponse);
+    if (!payment || !recipient) {
+      throw new NotFoundException('Không tìm thấy đơn VietQR của bạn.');
+    }
+    const result = await this.recordTransfer(
+      {
+        transferCode: payment.transactionRef,
+        amount: payment.amount.toNumber(),
+        receivedAt: new Date(),
+        bankBin: recipient.bankBin,
+        accountNumber: recipient.accountNumber,
+        virtualAccount: recipient.virtualAccount,
+        providerId: SEPAY_DEV_RECEIPT_PREFIX + payment.id,
+        actorId: userId,
+      },
+      { simulated: true },
+    );
+    if (!result.applied && !result.duplicate) {
+      throw new ConflictException('Không thể giả lập thanh toán cho đơn này.');
+    }
+    return { simulated: true };
   }
 
   async requestSupport(
@@ -226,7 +277,7 @@ export class BankTransferService {
           payment.order.currency !== 'VND' ||
           payment.amount.lte(0) ||
           !payment.amount.eq(payment.order.grandTotal) ||
-          !readRecipient(payment.gatewayResponse)
+          !readVietQrRecipient(payment.gatewayResponse)
         ) {
           throw new ConflictException(
             'Thông tin giao dịch VietQR của đơn không khớp.',
@@ -247,7 +298,17 @@ export class BankTransferService {
     return { confirmed: true };
   }
 
-  async record(transfer: IncomingTransfer, expectedPaymentId?: string) {
+  record(transfer: IncomingTransfer, expectedPaymentId?: string) {
+    return this.recordTransfer(transfer, { expectedPaymentId });
+  }
+
+  private async recordTransfer(
+    transfer: IncomingTransfer,
+    {
+      expectedPaymentId,
+      simulated = false,
+    }: { expectedPaymentId?: string; simulated?: boolean },
+  ) {
     const reference = await this.prisma.payment.findFirst({
       where: {
         id: expectedPaymentId,
@@ -283,11 +344,33 @@ export class BankTransferService {
                 'Chỉ xác nhận thủ công khi đơn có yêu cầu đối soát đang mở.',
             });
           }
-          const recipient = readRecipient(payment.gatewayResponse);
+          if (simulated) {
+            if (
+              payment.status === 'SUCCESS' &&
+              wasSePaySimulated(payment.gatewayResponse)
+            ) {
+              return { applied: false, duplicate: true, issue: null };
+            }
+            if (
+              payment.supportRequest?.status === 'OPEN' ||
+              (await tx.bankTransferReceipt.findFirst({
+                where: { paymentId: payment.id, issue: { not: null } },
+                select: { id: true },
+              }))
+            ) {
+              throw new ConflictException(
+                'Đơn có giao dịch đang cần đối soát.',
+              );
+            }
+          }
+          const recipient = readVietQrRecipient(payment.gatewayResponse);
           if (
             !recipient ||
-            (transfer.accountNumber &&
-              transfer.accountNumber !== recipient.accountNumber)
+            (!expectedPaymentId &&
+              (transfer.bankBin !== recipient.bankBin ||
+                transfer.accountNumber !== recipient.accountNumber ||
+                (recipient.virtualAccount !== undefined &&
+                  transfer.virtualAccount !== recipient.virtualAccount)))
           ) {
             if (expectedPaymentId)
               throw new NotFoundException(
@@ -328,7 +411,7 @@ export class BankTransferService {
           ) {
             issue = 'AMOUNT_MISMATCH';
           }
-          if (expectedPaymentId && issue) {
+          if ((expectedPaymentId || simulated) && issue) {
             throw new ConflictException({
               code: issue,
               message:
@@ -340,6 +423,7 @@ export class BankTransferService {
           const saved = await tx.bankTransferReceipt.createMany({
             data: {
               paymentId: payment.id,
+              bankBin: recipient.bankBin,
               accountNumber: recipient.accountNumber,
               bankReference: transfer.bankReference,
               providerId: transfer.providerId,
@@ -350,23 +434,40 @@ export class BankTransferService {
             },
             skipDuplicates: true,
           });
-          if (!saved.count)
+          if (!saved.count) {
+            if (simulated) {
+              throw new ConflictException('Biên nhận DEV TEST đã tồn tại.');
+            }
             return { applied: false, duplicate: true, issue: null };
+          }
 
-          if (transfer.providerId)
+          if (simulated) {
+            await tx.payment.update({
+              where: { id: payment.id },
+              data: {
+                gatewayResponse: {
+                  ...recipient,
+                  confirmationSource: SEPAY_DEV_CONFIRMATION,
+                },
+              },
+            });
+          } else if (transfer.providerId) {
             await tx.payment.update({
               where: { id: payment.id },
               data: { callbackCount: { increment: 1 } },
             });
+          }
           if (issue) return { applied: false, duplicate: false, issue };
           await this.confirmOrder(
             tx,
             payment,
             now,
             transfer.actorId,
-            expectedPaymentId
-              ? 'Admin đã đối chiếu sao kê VietQR theo yêu cầu của khách'
-              : 'Đã xác nhận chuyển khoản VietQR từ giao dịch ngân hàng',
+            simulated
+              ? 'Thanh toán giả lập SePay (DEV TEST)'
+              : expectedPaymentId
+                ? 'Admin đã đối chiếu sao kê VietQR theo yêu cầu của khách'
+                : 'Đã xác nhận chuyển khoản VietQR từ giao dịch ngân hàng',
           );
           return { applied: true, duplicate: false, issue: null };
         },

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .next/
+.next-sepay-test/
 coverage/
 .env
 .env.*

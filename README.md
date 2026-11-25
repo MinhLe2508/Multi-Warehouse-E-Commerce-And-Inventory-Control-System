@@ -88,7 +88,9 @@ npm --prefix frontend install
 npm run dev
 ```
 
-`npm run dev` khởi động backend, kiểm tra các tuyến Admin rồi đưa địa chỉ API của phiên này vào Next.js. Lệnh cũng chạy được từ `frontend/`. Mở URL ở dòng `[Admin] Mở .../login`. Nếu sửa mã backend, khởi động lại phiên dev để biên dịch lại.
+`npm run dev` khởi động backend, kiểm tra các tuyến Admin rồi đưa địa chỉ API của phiên này vào Next.js. Lệnh cũng chạy được từ `frontend/`. Mở URL ở dòng `[MultiMart] Mở .../login`. Nếu sửa mã backend, khởi động lại phiên dev để biên dịch lại.
+
+Để giữ cổng backend cố định khi thử webhook SePay, đặt `MWH_ADMIN_BACKEND_PORT=3001` trong `.env` ở thư mục gốc rồi chạy lại `npm run dev`. Trỏ Quick Tunnel về `http://127.0.0.1:3001`. Nếu biến để trống hoặc bằng `0`, lệnh sẽ tự chọn một cổng trống như mặc định.
 
 Khi cần chạy hai tiến trình riêng để theo dõi thay đổi backend, chạy `npm run start:dev` trong `backend/` và `npm run dev:frontend` trong `frontend/`. Cấu hình `NEXT_PUBLIC_API_URL` của frontend theo địa chỉ backend đang chạy.
 

@@ -41,21 +41,44 @@ Câu gợi ý và các câu thường gặp về đặt hàng, thanh toán, sả
 
 ## Bật chuyển khoản VietQR
 
-Thêm hai dòng sau vào `.env` gốc, điền số tài khoản và tên chủ tài khoản Vietcombank thực tế rồi khởi động lại. Tên có khoảng trắng đặt trong dấu ngoặc kép.
+Đặt ngân hàng, số tài khoản chính và tên chủ tài khoản trong `.env` gốc rồi khởi động lại. Ví dụ bên dưới dùng MB Bank. Dùng mã hoặc BIN trong [danh sách ngân hàng của SePay](https://vietqr.app/banks.json). Nếu để trống mã ngân hàng, ứng dụng dùng Vietcombank theo cấu hình cũ.
 
 ```dotenv
+VIETQR_BANK=MB
 VIETQR_ACCOUNT_NUMBER=
 VIETQR_ACCOUNT_NAME=""
+VIETQR_VIRTUAL_ACCOUNT=
+VIETQR_MEMO_PREFIX=
 ```
 
-Sau khi đặt đơn VietQR, khách sẽ thấy tên ngân hàng, chủ tài khoản, số tài khoản, số tiền chính xác và nội dung chuyển khoản riêng cho đơn. Tổng tiền chuyển khoản là số nguyên dương VND. Chọn COD ở bước đặt hàng nếu giá có phần lẻ.
+Với VA chính thức, điền số VA vào `VIETQR_VIRTUAL_ACCOUNT` và giữ số tài khoản chính ở `VIETQR_ACCOUNT_NUMBER`. Với VA theo nội dung, để trống số VA và đặt `VIETQR_MEMO_PREFIX` theo mã TKP, ví dụ `TKP001`. MultiMart thêm dấu hiệu `SEVQR` cho VietinBank. [Quy tắc nội dung và tài khoản](https://developer.sepay.vn/vi/tien-ich-khac/tao-qr-code).
+
+Checkout lưu ngân hàng và tài khoản theo từng đơn. Trang thanh toán dùng ảnh SePay mẫu compact và hiển thị đủ số tiền, số tài khoản cùng nội dung cần chuyển. Khi đổi tài khoản nhận, tạo đơn mới để thử cấu hình mới. Tổng tiền chuyển khoản là số nguyên dương VND. Chọn COD ở bước đặt hàng nếu giá có phần lẻ.
 
 ### Nhận xác nhận tự động
 
-1. Liên kết số tài khoản nhận tiền của VietQR trên SePay. Với Vietcombank, SePay hỗ trợ nhận giao dịch qua số tài khoản chính khi tài khoản có kết nối SMS báo biến động số dư. Nếu dùng kết nối API chỉ hỗ trợ tài khoản ảo (VA), cấu hình đó cần một luồng QR tương ứng với VA. Kiểm tra giao dịch tiền vào của đúng số tài khoản trong mục **Giao dịch** trên SePay trước khi bật tự động. [Ngân hàng và tuyến nhận tiền được hỗ trợ](https://developer.sepay.vn/vi/sepay-webhooks/tai-khoan-ngan-hang)
-2. Trên máy chủ có HTTPS công khai, tạo webhook **Chỉ tiền vào** cho số tài khoản chính và trỏ URL đến `/payments/sepay/webhook` của NestJS. Chọn HMAC-SHA256 và dùng chung một secret từ 32 ký tự cho SePay và `SEPAY_WEBHOOK_SECRET` trong `.env` gốc. Nếu dùng bộ lọc mã, chọn mẫu nhận mã MultiMart bắt đầu bằng `MM`. [Tích hợp webhook](https://developer.sepay.vn/vi/sepay-webhooks/tich-hop-webhook)
+1. Liên kết tài khoản với SePay theo ngân hàng, loại tài khoản và phương thức kết nối. Kiểm tra loại giao dịch tiền vào được hỗ trợ và tạo VA nếu SePay yêu cầu. [Ngân hàng và tuyến nhận tiền được hỗ trợ](https://developer.sepay.vn/vi/sepay-webhooks/tai-khoan-ngan-hang).
+2. Tạo webhook **Tiền vào** cho tài khoản hoặc VA tương ứng và trỏ URL HTTPS đến `/payments/sepay/webhook` của NestJS. Chọn HMAC-SHA256 với secret giống `SEPAY_WEBHOOK_SECRET` trong `.env` gốc, dài ít nhất 32 ký tự. Khi thử, có thể để trống bộ lọc mã để ứng dụng đọc mã `MM` từ nội dung chuyển. Giữ tài khoản cũ trong webhook nếu còn đơn chờ thanh toán về tài khoản đó. [Tích hợp webhook](https://developer.sepay.vn/vi/sepay-webhooks/tich-hop-webhook).
 3. Để lấy giao dịch định kỳ trên localhost hoặc dự phòng webhook, điền `SEPAY_API_TOKEN` và `SEPAY_BANK_ACCOUNT_ID` trong `.env` gốc. Dùng API Token Production và trường `id` (UUID) của số tài khoản nhận tiền trong danh sách tài khoản SePay. Backend đọc giao dịch của tài khoản đó mỗi phút, trong cửa sổ 30 phút gần nhất. Giữ token và secret trong cấu hình backend. [Tạo API Token](https://developer.sepay.vn/vi/sepay-api/v2/tao-api-token) · [Danh sách tài khoản](https://developer.sepay.vn/vi/sepay-api/v2/tai-khoan-ngan-hang/danh-sach)
 4. Khởi động lại ứng dụng. Khi giao dịch tiền vào khớp tài khoản nhận, nội dung, số tiền và thời hạn giữ hàng, đơn sẽ chuyển sang **Đã thanh toán**. Trang chi tiết kiểm tra lại khoảng 4 giây một lần khi đang mở và sau khi người dùng quay lại từ ứng dụng ngân hàng.
+
+### Nút giả lập SePay trong phiên dev
+
+Đặt các biến sau trong `.env` gốc rồi khởi động lại `npm run dev`.
+
+```dotenv
+SEPAY_PAYMENT_PREFIX=MM
+PAYMENT_TIMEOUT_MINUTES=15
+SEPAY_ALLOW_SIMULATE=1
+SEPAY_STRICT_AUTH=1
+```
+
+- `SEPAY_PAYMENT_PREFIX` định dạng mã chuyển khoản của đơn mới. Dùng 2–5 chữ cái. Mã của đơn cũ vẫn có hiệu lực trong thời hạn giữ hàng.
+- `PAYMENT_TIMEOUT_MINUTES` là thời gian giữ hàng của đơn VietQR mới, từ 1 đến 120 phút, mặc định 15. Hạn của đơn đã tạo được giữ nguyên.
+- `SEPAY_ALLOW_SIMULATE=1` hiện nút **[DEV TEST] Giả lập SePay nhận tiền** dưới QR của đơn đang chờ khi chạy `npm run dev` với PostgreSQL local. Chỉ dùng nút trên đơn thử. Sau khi bấm, MultiMart xác nhận đơn, chốt tồn kho và lưu một biên nhận có nhãn DEV TEST. Trang đơn hiển thị **Đã thanh toán (giả lập)** và ẩn QR.
+- `SEPAY_STRICT_AUTH=1` yêu cầu chữ ký HMAC trên webhook. Giá trị `0` tắt tuyến nhận webhook. DEV TEST dùng cùng quy trình đối soát và xác nhận trong MultiMart, nhưng ghi nguồn là giả lập. Yêu cầu DEV TEST gửi lặp không trừ kho lần hai.
+
+Đặt `SEPAY_ALLOW_SIMULATE=0` rồi chạy lại `npm run dev` để ẩn DEV TEST. Giao diện dùng địa chỉ ở dòng **[MultiMart]** trong log và Quick Tunnel cho thanh toán thật vẫn trỏ vào backend cổng `3001`.
 
 ### Gửi và xử lý yêu cầu đối soát
 

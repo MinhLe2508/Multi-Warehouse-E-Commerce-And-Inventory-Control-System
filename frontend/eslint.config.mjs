@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated cache left by the previous two-port SePay demo.
+    ".next-sepay-test/**",
   ]),
 ]);
 

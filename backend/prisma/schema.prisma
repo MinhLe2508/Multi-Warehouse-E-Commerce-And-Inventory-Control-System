@@ -667,6 +667,7 @@ model PaymentSupportRequest {
 model BankTransferReceipt {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   paymentId     String   @map("payment_id") @db.Uuid
+  bankBin       String   @default("970436") @map("bank_bin") @db.VarChar(6)
   accountNumber String   @map("account_number") @db.VarChar(19)
   bankReference String?  @map("bank_reference") @db.VarChar(100)
   providerId    String?  @unique @map("provider_id") @db.VarChar(48)
@@ -678,7 +679,7 @@ model BankTransferReceipt {
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
-  @@unique([accountNumber, bankReference])
+  @@unique([bankBin, accountNumber, bankReference], map: "bank_transfer_receipts_bank_account_reference_key")
   @@index([paymentId, receivedAt])
   @@map("bank_transfer_receipts")
 }

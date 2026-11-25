@@ -29,6 +29,7 @@ export interface AdminOrder {
   shipping: { recipient: string; phone: string; address: string };
   paymentMethod: 'MOCK_CARD' | 'MOCK_EWALLET' | 'COD' | 'BANK_TRANSFER';
   paymentStatus: 'PENDING' | 'SUCCESS' | 'FAILED' | null;
+  paymentSimulated?: boolean;
   paymentSupport: AdminPaymentSupport | null;
   items: AdminOrderItem[]; history: OrderHistoryItem[];
 }

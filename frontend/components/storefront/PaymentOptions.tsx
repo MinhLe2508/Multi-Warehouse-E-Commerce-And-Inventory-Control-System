@@ -17,7 +17,7 @@ export function PaymentOptions({ method, bankTransfer, disabled, onChange }: {
   const tx = useShopCopy();
   const options = [
     { value: "COD", Icon: Banknote, detail: tx("Trả cho nhân viên giao hàng khi nhận đơn.", "Pay the delivery driver when your order arrives.") },
-    { value: "BANK_TRANSFER", Icon: QrCode, detail: tx("Quét mã theo đơn trong ứng dụng ngân hàng để chuyển đến Vietcombank.", "Scan the order QR in your banking app to pay Vietcombank.") },
+    { value: "BANK_TRANSFER", Icon: QrCode, detail: tx("Quét mã VietQR theo đơn trong ứng dụng ngân hàng.", "Scan the order VietQR in your banking app.") },
   ] as const;
   return <fieldset className="mm-payment-methods" disabled={disabled}>
     <legend className="sr-only">{tx("Chọn phương thức thanh toán", "Choose a payment method")}</legend>

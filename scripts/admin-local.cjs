@@ -2,10 +2,11 @@
 
 const { fork, spawn, spawnSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-const { existsSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const { Agent, get } = require('node:http');
 const { createServer } = require('node:net');
 const { resolve } = require('node:path');
+const { parseEnv } = require('node:util');
 
 const ROOT = resolve(__dirname, '..');
 const BACKEND = resolve(ROOT, 'backend');
@@ -79,7 +80,20 @@ async function checkAdminApi(origin, probeKey) {
   }
 }
 
-function listenForFrontend(port) {
+function readRootEnv() {
+  const envPath = resolve(ROOT, '.env');
+  return existsSync(envPath) ? parseEnv(readFileSync(envPath, 'utf8')) : {};
+}
+
+function configuredBackendPort(fileValue) {
+  const value = (process.env.MWH_ADMIN_BACKEND_PORT ?? fileValue ?? '').trim() || '0';
+  if (!/^\d{1,5}$/.test(value) || Number(value) > 65_535) {
+    throw new Error('MWH_ADMIN_BACKEND_PORT phải là số từ 0 đến 65535 (0 để tự chọn).');
+  }
+  return Number(value);
+}
+
+function listenLocally(port) {
   return new Promise((resolveServer, reject) => {
     const server = createServer((socket) => socket.destroy());
     server.once('error', reject);
@@ -88,12 +102,14 @@ function listenForFrontend(port) {
 }
 
 async function reserveFrontendPort() {
-  try {
-    return await listenForFrontend(3000);
-  } catch (error) {
-    if (error.code !== 'EADDRINUSE' && error.code !== 'EACCES') throw error;
-    return listenForFrontend(0);
+  for (const port of [3000, 3010]) {
+    try {
+      return await listenLocally(port);
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE' && error.code !== 'EACCES') throw error;
+    }
   }
+  return listenLocally(0);
 }
 
 function startNode(args, cwd, env) {
@@ -118,13 +134,14 @@ function trackNode(child) {
   });
 }
 
-function startBackend(webOrigin, probeKey) {
+function startBackend(webOrigin, probeKey, port, nodeEnv) {
   const child = fork('dist/main.js', {
     cwd: BACKEND,
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
     env: {
       ...process.env,
-      PORT: '0',
+      NODE_ENV: nodeEnv,
+      PORT: String(port),
       FRONTEND_ORIGIN: webOrigin,
       MWH_ADMIN_LOCAL: '1',
       MWH_STARTUP_PROBE_KEY: probeKey,
@@ -210,6 +227,9 @@ async function main() {
     );
   }
 
+  const rootEnv = readRootEnv();
+  const backendPort = configuredBackendPort(rootEnv.MWH_ADMIN_BACKEND_PORT);
+  const nodeEnv = process.env.NODE_ENV || rootEnv.NODE_ENV || 'development';
   const nestCli = resolve(BACKEND, 'node_modules/@nestjs/cli/bin/nest.js');
   const nextCli = resolve(FRONTEND, 'node_modules/next/dist/bin/next');
   if (!existsSync(nestCli) || !existsSync(nextCli)) {
@@ -223,7 +243,19 @@ async function main() {
   if (stopping) return;
   if (!build.ok) throw new Error('Build backend lỗi (' + build.reason + ').');
 
-  const reservation = await reserveFrontendPort();
+  // Giữ cổng backend cố định đến khi frontend chọn xong cổng của nó.
+  const backendReservation = backendPort
+    ? await listenLocally(backendPort).catch((error) => {
+        throw new Error(
+          `Không mở được cổng backend ${backendPort} (${error.code ?? error.message}). Kiểm tra tiến trình đang dùng cổng hoặc đổi MWH_ADMIN_BACKEND_PORT.`,
+        );
+      })
+    : null;
+  const reservation = await reserveFrontendPort().finally(async () => {
+    if (backendReservation) {
+      await new Promise((close) => backendReservation.close(close));
+    }
+  });
   const webPort = reservation.address().port;
   const webOrigin = 'http://' + LOCAL_HOST + ':' + webPort;
   let apiOrigin;
@@ -231,22 +263,20 @@ async function main() {
   try {
     if (stopping) return;
     const probeKey = randomUUID();
-    const backend = startBackend(webOrigin, probeKey);
+    const backend = startBackend(webOrigin, probeKey, backendPort, nodeEnv);
     const apiPort = await backend.listening;
     apiOrigin = 'http://' + LOCAL_HOST + ':' + apiPort;
     backendExit = backend.exited.then(({ reason }) => {
       if (!stopping) throw new Error('Backend đã dừng (' + reason + ').');
     });
-    console.log(
-      '[Admin] Backend PID ' + backend.pid + ' đang lắng nghe tại ' + apiOrigin,
-    );
+    console.log('[Admin] Backend PID ' + backend.pid + ' đang lắng nghe tại ' + apiOrigin);
     await Promise.race([checkAdminApi(apiOrigin, probeKey), backendExit]);
   } finally {
     await new Promise((close) => reservation.close(close));
   }
   if (stopping) return;
 
-  console.log('[Admin] Mở ' + webOrigin + '/login sau khi Next.js sẵn sàng.');
+  console.log('[MultiMart] Mở ' + webOrigin + '/login sau khi Next.js sẵn sàng.');
   console.log('[Admin] Backend và frontend dừng cùng nhau khi nhấn Ctrl+C.');
   const frontendExit = startNode(
     [

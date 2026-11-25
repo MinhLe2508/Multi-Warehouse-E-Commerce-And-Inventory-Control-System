@@ -102,6 +102,7 @@ export class StockReservationService {
     orderId: string,
     allocations: ReservationAllocation[],
     actorId: string,
+    ttlMinutes = RESERVATION_TTL_MINUTES,
   ): Promise<ReservedItem[]> {
     this.assertUuid(orderId, 'orderId');
     this.assertUuid(actorId, 'actorId');
@@ -140,7 +141,7 @@ export class StockReservationService {
         inventoryId: allocation.inventoryId,
         orderId,
         quantity: allocation.quantity,
-        ttlMinutes: RESERVATION_TTL_MINUTES,
+        ttlMinutes,
         actorId,
       });
       const row = await this.repository.linkReservation(

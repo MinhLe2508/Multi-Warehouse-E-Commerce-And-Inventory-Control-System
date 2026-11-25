@@ -144,7 +144,7 @@ export function StaffOrderDetail({ id }: { id: string }) {
           {order.payments.length ? <ul className="staff-list">
             {order.payments.map((payment) => <li className="staff-list-row" key={payment.id}>
               <div><strong>{paymentMethods[payment.method]}</strong><small>{payment.transactionRef ?? '—'}</small></div>
-              <div><RecordStatus label={paymentStatus[payment.status]} tone={payment.status === 'SUCCESS' ? 'good' : payment.status === 'FAILED' ? 'bad' : 'neutral'} />
+              <div><RecordStatus label={payment.simulated ? 'Đã thanh toán (giả lập)' : paymentStatus[payment.status]} tone={payment.status === 'SUCCESS' ? 'good' : payment.status === 'FAILED' ? 'bad' : 'neutral'} />
                 <small>{formatVnd(Number(payment.amount))}</small></div>
             </li>)}
           </ul> : <AdminFeedback empty={Number(order.grandTotal) === 0 ? 'Đơn hàng miễn phí.' : 'Chưa có giao dịch thanh toán.'} />}

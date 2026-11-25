@@ -1,50 +1,42 @@
-import { VIETCOMBANK } from './vietqr-config';
+import type { VietQrRecipient } from './vietqr-config';
 
-export const TRANSFER_CODE_PATTERN = /^MM[A-F0-9]{20}$/;
+export const TRANSFER_CODE_PATTERN = /^[A-Z]{2,5}[A-F0-9]{20}$/;
+export const TRANSFER_CODE_IN_MEMO =
+  /(?<![A-Z0-9])[A-Z]{2,5}[A-F0-9]{20}(?![A-Z0-9])/g;
 export const MAX_VND_TRANSFER = 999_999_999_999;
 
 export function transferCodeForOrder(orderCode: string): string {
-  return 'MM' + orderCode.slice(4);
+  const prefix = process.env.SEPAY_PAYMENT_PREFIX?.trim().toUpperCase() ?? '';
+  return (/^[A-Z]{2,5}$/.test(prefix) ? prefix : 'MM') + orderCode.slice(4);
 }
 
-function field(id: string, value: string): string {
-  return id + String(value.length).padStart(2, '0') + value;
-}
-
-// NAPAS QR IBFT to account (QRIBFTTA). The memo maps a transfer to one order.
-export function buildVietQr(
-  accountNumber: string,
-  amount: number,
+export function buildVietQrMemo(
+  recipient: VietQrRecipient,
   code: string,
 ): string {
-  if (
-    !/^\d{6,19}$/.test(accountNumber) ||
-    !Number.isSafeInteger(amount) ||
-    amount < 1 ||
-    amount > MAX_VND_TRANSFER ||
-    !TRANSFER_CODE_PATTERN.test(code)
-  ) {
-    throw new Error('Thông tin VietQR không hợp lệ.');
-  }
-  const account = field('00', VIETCOMBANK.bin) + field('01', accountNumber);
-  const network =
-    field('00', 'A000000727') + field('01', account) + field('02', 'QRIBFTTA');
-  const data =
-    field('00', '01') +
-    field('01', '12') +
-    field('38', network) +
-    field('53', '704') +
-    field('54', String(amount)) +
-    field('58', 'VN') +
-    field('62', field('08', code)) +
-    '6304';
+  return [
+    // VietinBank requires this marker for notifying individual/merchant accounts.
+    recipient.bankBin === '970415' ? 'SEVQR' : null,
+    recipient.memoPrefix,
+    code,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
 
-  let crc = 0xffff;
-  for (const character of data) {
-    crc ^= character.charCodeAt(0) << 8;
-    for (let bit = 0; bit < 8; bit++) {
-      crc = ((crc << 1) ^ (crc & 0x8000 ? 0x1021 : 0)) & 0xffff;
-    }
-  }
-  return data + crc.toString(16).toUpperCase().padStart(4, '0');
+export function buildSePayQrUrl(
+  bankBin: string,
+  recipientNumber: string,
+  amount: number,
+  transferMemo: string,
+): string {
+  const url = new URL('https://vietqr.app/img');
+  url.search = new URLSearchParams({
+    acc: recipientNumber,
+    bank: bankBin,
+    amount: String(amount),
+    des: transferMemo,
+    template: 'compact',
+  }).toString();
+  return url.href;
 }

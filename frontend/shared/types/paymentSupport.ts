@@ -10,6 +10,8 @@ export type AdminPaymentSupport = PaymentSupportRequest & {
   paymentId: string;
   amount: string;
   transactionRef: string;
+  transferMemo?: string;
   accountNumber: string | null;
+  bankName: string | null;
   canConfirm: boolean;
 };

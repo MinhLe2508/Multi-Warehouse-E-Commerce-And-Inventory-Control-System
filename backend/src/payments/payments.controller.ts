@@ -4,6 +4,7 @@ import {
   Get,
   Headers,
   HttpCode,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -53,6 +54,31 @@ export class PaymentsController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ) {
     return this.bankTransfer.instructions(user.userId, orderId);
+  }
+
+  @Post('bank-transfer/:orderId/simulate')
+  @UseGuards(JwtAuthGuard, PasswordChangedGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER, UserRole.WAREHOUSE_STAFF)
+  @HttpCode(200)
+  simulateSePay(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() request: Request,
+  ) {
+    if (
+      !process.env.FRONTEND_ORIGIN ||
+      request.headers.origin !== process.env.FRONTEND_ORIGIN ||
+      request.headers.host !== `127.0.0.1:${request.socket.localPort}` ||
+      request.socket.remoteAddress !== '127.0.0.1' ||
+      ['forwarded', 'x-forwarded-for', 'cf-connecting-ip', 'cf-ray'].some(
+        (header) => request.headers[header] !== undefined,
+      )
+    ) {
+      throw new NotFoundException(
+        'Chế độ giả lập SePay chỉ dùng trên localhost.',
+      );
+    }
+    return this.bankTransfer.simulate(user.userId, orderId);
   }
 
   @Post('bank-transfer/:orderId/support')

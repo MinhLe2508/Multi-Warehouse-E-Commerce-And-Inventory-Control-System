@@ -8,6 +8,10 @@ import { ChatRole, Prisma, UserRole } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  SEPAY_DEV_RECEIPT_PREFIX,
+  wasSePaySimulated,
+} from '../../payments/vietqr-config';
+import {
   AdminPageQuery,
   ChatListQuery,
   CustomerListQuery,
@@ -110,6 +114,7 @@ export class AdminOperationsService {
             select: {
               id: true,
               bankReference: true,
+              providerId: true,
               amount: true,
               receivedAt: true,
               issue: true,
@@ -124,6 +129,9 @@ export class AdminOperationsService {
       items: page.items.map(
         ({ gatewayResponse, bankReceipts, supportRequest, ...row }) => ({
           ...row,
+          simulated:
+            row.method === 'BANK_TRANSFER' &&
+            wasSePaySimulated(gatewayResponse),
           amount: row.amount.toFixed(2),
           accountNumber:
             row.method === 'BANK_TRANSFER' &&
@@ -133,8 +141,10 @@ export class AdminOperationsService {
             typeof gatewayResponse.accountNumber === 'string'
               ? gatewayResponse.accountNumber
               : null,
-          bankReceipts: bankReceipts.map((receipt) => ({
+          bankReceipts: bankReceipts.map(({ providerId, ...receipt }) => ({
             ...receipt,
+            simulated:
+              providerId?.startsWith(SEPAY_DEV_RECEIPT_PREFIX) ?? false,
             amount: receipt.amount.toFixed(0),
           })),
           supportStatus: supportRequest?.status ?? null,

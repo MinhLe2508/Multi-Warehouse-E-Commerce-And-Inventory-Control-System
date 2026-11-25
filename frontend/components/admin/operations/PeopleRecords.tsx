@@ -57,6 +57,7 @@ type CustomerOrderDetail = CustomerOrder & {
     id: string;
     method: keyof typeof PAYMENT_METHOD_LABEL;
     status: keyof typeof PAYMENT_STATUS_LABEL;
+    simulated?: boolean;
     amount: string;
     transactionRef: string;
   }>;
@@ -107,7 +108,7 @@ function OrderBreakdown({ orderId, customerId }: { orderId: string; customerId: 
                 <li key={payment.id}>
                   <div>{PAYMENT_METHOD_LABEL[payment.method]} · {formatVnd(Number(payment.amount))}</div>
                   <div className="admin-record-meta mb-1">{payment.transactionRef}</div>
-                  <RecordStatus label={PAYMENT_STATUS_LABEL[payment.status]} tone={payment.status === 'SUCCESS' ? 'good' : payment.status === 'FAILED' ? 'bad' : 'warn'} />
+                  <RecordStatus label={payment.simulated ? 'Đã thanh toán (giả lập)' : PAYMENT_STATUS_LABEL[payment.status]} tone={payment.status === 'SUCCESS' ? 'good' : payment.status === 'FAILED' ? 'bad' : 'warn'} />
                 </li>
               ))}
             </ul>

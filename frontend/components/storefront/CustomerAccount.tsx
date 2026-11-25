@@ -73,7 +73,7 @@ function OrderList() {
         {order.items.length > 3 && <p className="mm-muted">+ {order.items.length - 3} {tx("dòng sản phẩm", "more items")}</p>}
         <div className="mm-order-card-foot">
           <span>{order.payment ? <><PaymentName method={order.payment.method} /> · {order.payment.status === "SUCCESS"
-            ? tx("Đã thanh toán", "Paid") : order.payment.status === "FAILED"
+            ? (order.payment.simulated ? tx("Đã thanh toán (giả lập)", "Paid (simulated)") : tx("Đã thanh toán", "Paid")) : order.payment.status === "FAILED"
               ? tx("Đã từ chối", "Declined") : tx("Chờ thu tiền", "Awaiting collection")}</> : tx("Tổng đơn hàng", "Order total")}
             <strong className="mm-money">{formatVND(order.grandTotal)}</strong></span>
           <Link className="mm-button" href={"/orders/" + order.id}>{tx("Xem chi tiết", "View details")}</Link>

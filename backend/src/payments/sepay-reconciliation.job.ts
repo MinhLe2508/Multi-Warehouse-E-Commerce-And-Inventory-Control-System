@@ -3,13 +3,17 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { BankTransferService } from './bank-transfer.service';
 import {
   type IncomingTransfer,
-  isVietcombank,
   parseBankDateTime,
   readBankReference,
   readTransferCode,
 } from './sepay-webhook';
 import { MAX_VND_TRANSFER } from './vietqr';
-import { getVietQrRecipient } from './vietqr-config';
+import {
+  getVietQrRecipient,
+  readSePayVirtualAccount,
+  readVietQrBank,
+  type VietQrRecipient,
+} from './vietqr-config';
 
 const TRANSACTIONS_URL = 'https://userapi.sepay.vn/v2/transactions';
 const LOOKBACK_MS = 30 * 60_000;
@@ -19,17 +23,18 @@ const UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 function readTransaction(
   value: unknown,
   bankAccountId: string,
-  accountNumber: string,
+  recipient: VietQrRecipient,
 ): IncomingTransfer | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
   const transferCode = readTransferCode(row.transaction_content, row.code);
   const receivedAt = parseBankDateTime(row.transaction_date);
   const amount = row.amount_in;
+  const bank = readVietQrBank(row.bank_brand_name);
   if (
     row.bank_account_id !== bankAccountId ||
-    row.account_number !== accountNumber ||
-    !isVietcombank(row.bank_brand_name) ||
+    row.account_number !== recipient.accountNumber ||
+    bank?.bankBin !== recipient.bankBin ||
     row.transfer_type !== 'in' ||
     row.amount_out !== 0 ||
     typeof row.id !== 'string' ||
@@ -46,7 +51,9 @@ function readTransaction(
   return {
     providerId: 'sepay-v2:' + row.id.toLowerCase(),
     bankReference: readBankReference(row.reference_number),
-    accountNumber,
+    bankBin: bank.bankBin,
+    accountNumber: recipient.accountNumber,
+    virtualAccount: readSePayVirtualAccount(row.va),
     amount,
     receivedAt,
     transferCode,
@@ -117,11 +124,7 @@ export class SePayReconciliationJob {
           return;
         }
         for (const row of result.data) {
-          const transfer = readTransaction(
-            row,
-            bankAccountId,
-            recipient.accountNumber,
-          );
+          const transfer = readTransaction(row, bankAccountId, recipient);
           if (!transfer) continue;
           try {
             await this.bankTransfer.record(transfer);

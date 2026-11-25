@@ -1,7 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import { MAX_VND_TRANSFER } from './vietqr';
-import { getSePaySecret, VIETCOMBANK } from './vietqr-config';
+import { MAX_VND_TRANSFER, TRANSFER_CODE_IN_MEMO } from './vietqr';
+import {
+  getSePaySecret,
+  readSePayAccountNumber,
+  readSePayVirtualAccount,
+  readVietQrBank,
+} from './vietqr-config';
 
 export interface IncomingTransfer {
   transferCode: string;
@@ -9,24 +14,17 @@ export interface IncomingTransfer {
   receivedAt: Date;
   bankReference?: string;
   providerId?: string;
+  bankBin?: string;
   accountNumber?: string;
+  virtualAccount?: string;
   actorId?: string;
-}
-
-export function isVietcombank(value: unknown): boolean {
-  return (
-    typeof value === 'string' &&
-    ['VIETCOMBANK', 'VCB', VIETCOMBANK.bin].includes(value.trim().toUpperCase())
-  );
 }
 
 export function readTransferCode(...values: unknown[]): string | null {
   const codes = new Set(
     values.flatMap((value) =>
       typeof value === 'string'
-        ? (value
-            .toUpperCase()
-            .match(/(?<![A-Z0-9])MM[A-F0-9]{20}(?![A-Z0-9])/g) ?? [])
+        ? (value.toUpperCase().match(TRANSFER_CODE_IN_MEMO) ?? [])
         : [],
     ),
   );
@@ -97,21 +95,23 @@ export function readSePayTransfer(payload: unknown): IncomingTransfer | null {
     content,
     code,
     description,
-    accountNumber,
+    accountNumber: rawAccountNumber,
+    subAccount,
     referenceCode,
     transactionDate,
     transferAmount,
   } = payload as Record<string, unknown>;
-  if (transferType !== 'in' || !isVietcombank(gateway)) return null;
+  const bank = readVietQrBank(gateway);
+  if (transferType !== 'in' || !bank) return null;
   const transferCode = readTransferCode(content, code, description);
   if (!transferCode) return null;
   const receivedAt = parseBankDateTime(transactionDate);
+  const accountNumber = readSePayAccountNumber(rawAccountNumber);
   if (
     typeof id !== 'number' ||
     !Number.isSafeInteger(id) ||
     id <= 0 ||
-    typeof accountNumber !== 'string' ||
-    !/^\d{6,19}$/.test(accountNumber) ||
+    !accountNumber ||
     typeof transferAmount !== 'number' ||
     !Number.isSafeInteger(transferAmount) ||
     transferAmount < 1 ||
@@ -124,7 +124,9 @@ export function readSePayTransfer(payload: unknown): IncomingTransfer | null {
   return {
     transferCode,
     providerId: String(id),
+    bankBin: bank.bankBin,
     accountNumber,
+    virtualAccount: readSePayVirtualAccount(subAccount),
     receivedAt,
     amount: transferAmount,
     bankReference: readBankReference(referenceCode),

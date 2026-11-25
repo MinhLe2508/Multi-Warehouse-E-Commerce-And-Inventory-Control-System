@@ -17,6 +17,12 @@ import {
 } from '../../orders/orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { paymentSupportSelect } from '../../payments/payment-support-policy';
+import { buildVietQrMemo } from '../../payments/vietqr';
+import {
+  readVietQrBank,
+  readVietQrRecipient,
+  wasSePaySimulated,
+} from '../../payments/vietqr-config';
 import type { QueryAdminOrdersDto } from './dto/query-admin-orders.dto';
 import type { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
 
@@ -145,6 +151,7 @@ export class AdminOrdersQueryService {
             transactionRef: true,
             processedAt: true,
             createdAt: true,
+            gatewayResponse: true,
             ...(!staffId && {
               supportRequest: { select: paymentSupportSelect },
             }),
@@ -245,8 +252,8 @@ export class AdminOrdersQueryService {
             failureReason: true,
             processedAt: true,
             createdAt: true,
+            gatewayResponse: true,
             ...(!staffId && {
-              gatewayResponse: true,
               supportRequest: { select: paymentSupportSelect },
             }),
           },
@@ -422,14 +429,7 @@ export class AdminOrdersQueryService {
           (payment) =>
             payment.method === 'BANK_TRANSFER' && payment.supportRequest,
         );
-    const recipient = supportedPayment?.gatewayResponse;
-    const accountNumber =
-      recipient &&
-      typeof recipient === 'object' &&
-      !Array.isArray(recipient) &&
-      typeof recipient.accountNumber === 'string'
-        ? recipient.accountNumber
-        : null;
+    const recipient = readVietQrRecipient(supportedPayment?.gatewayResponse);
     const support = supportedPayment?.supportRequest;
     return {
       id: order.id,
@@ -463,7 +463,12 @@ export class AdminOrdersQueryService {
                 paymentId: supportedPayment.id,
                 amount: supportedPayment.amount.toFixed(2),
                 transactionRef: supportedPayment.transactionRef,
-                accountNumber,
+                transferMemo: recipient
+                  ? buildVietQrMemo(recipient, supportedPayment.transactionRef)
+                  : supportedPayment.transactionRef,
+                accountNumber:
+                  recipient?.virtualAccount ?? recipient?.accountNumber ?? null,
+                bankName: readVietQrBank(recipient?.bankBin)?.bankName ?? null,
                 canConfirm:
                   support.status === 'OPEN' &&
                   supportedPayment.status === 'PENDING' &&
@@ -495,6 +500,8 @@ export class AdminOrdersQueryService {
         id: p.id,
         method: p.method,
         status: p.status,
+        simulated:
+          p.method === 'BANK_TRANSFER' && wasSePaySimulated(p.gatewayResponse),
         amount: p.amount.toFixed(2),
         transactionRef: p.transactionRef,
         processedAt: p.processedAt,

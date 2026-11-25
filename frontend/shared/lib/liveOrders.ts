@@ -4,7 +4,7 @@ import type { PaymentSupportRequest } from "@/shared/types/paymentSupport";
 export type CheckoutMethod = "COD" | "BANK_TRANSFER";
 export type OrderPaymentMethod = CheckoutMethod | "MOCK_CARD" | "MOCK_EWALLET";
 export type VietQrInstructions = {
-  bankName: string; accountName: string; accountNumber: string; amount: string; transferCode: string; qrImage: string;
+  bankName: string; accountName: string; accountNumber: string; amount: string; transferCode: string; transferMemo?: string; canSimulate: boolean; qrImage: string;
 };
 export type OrderState = "PENDING_PAYMENT" | "CONFIRMED" | "SHIPPING" | "DELIVERED" | "CANCELLED";
 export type Line = { productId: string; quantity: number };
@@ -31,7 +31,7 @@ export interface CustomerOrder {
   cancelledReason: string | null;
   items: OrderLine[];
   payment: { method: OrderPaymentMethod; status: "PENDING" | "SUCCESS" | "FAILED"; amount: string;
-    transactionRef: string; processedAt: string | null; reviewRequired: boolean;
+    transactionRef: string; processedAt: string | null; reviewRequired: boolean; simulated: boolean;
     supportAvailableAt: string | null; supportRequest: PaymentSupportRequest | null } | null;
 }
 export interface Receipt extends CustomerOrder {

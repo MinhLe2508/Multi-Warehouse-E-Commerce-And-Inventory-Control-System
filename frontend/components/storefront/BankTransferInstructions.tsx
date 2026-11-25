@@ -1,14 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { Check, Copy, QrCode } from "lucide-react";
+import { Check, Copy, FlaskConical, QrCode } from "lucide-react";
 import { useState } from "react";
 import { useShopResource } from "@/hooks/useShopResource";
 import type { VietQrInstructions } from "@/shared/lib/liveOrders";
 import { formatVND } from "@/shared/lib/utils";
 import { ShopError, ShopLoading, useShopCopy } from "./ShopUi";
 
-export default function BankTransferInstructions({ orderId, identity }: { orderId: string; identity?: string }) {
+export default function BankTransferInstructions({ orderId, identity, busy, onSimulate }: {
+  orderId: string; identity?: string; busy: boolean; onSimulate: () => void;
+}) {
   const tx = useShopCopy();
   const qr = useShopResource<VietQrInstructions>("/payments/bank-transfer/" + encodeURIComponent(orderId), { identity });
   const [copied, setCopied] = useState("");
@@ -27,7 +29,8 @@ export default function BankTransferInstructions({ orderId, identity }: { orderI
 
   if (qr.loading) return <ShopLoading />;
   if (!qr.data) return <ShopError message={tx("Chưa tải được mã VietQR.", "Could not load your VietQR code.")} retry={qr.refresh} />;
-  const { bankName, accountName, accountNumber, amount, transferCode, qrImage } = qr.data;
+  const { bankName, accountName, accountNumber, amount, transferCode, transferMemo, qrImage, canSimulate } = qr.data;
+  const memo = transferMemo ?? transferCode;
 
   function copyButton(value: string, label: string) {
     const done = copied === value;
@@ -48,7 +51,7 @@ export default function BankTransferInstructions({ orderId, identity }: { orderI
         <div><dt>{tx("Số tiền cần chuyển", "Amount to transfer")}</dt>
           <dd className="mm-vietqr-amount">{formatVND(amount)}{copyButton(amount, tx("Sao chép số tiền", "Copy amount"))}</dd></div>
         <div><dt>{tx("Nội dung chuyển khoản", "Transfer memo")}</dt>
-          <dd className="mm-vietqr-memo">{transferCode}{copyButton(transferCode, tx("Sao chép nội dung", "Copy transfer memo"))}</dd></div>
+          <dd className="mm-vietqr-memo">{memo}{copyButton(memo, tx("Sao chép nội dung", "Copy transfer memo"))}</dd></div>
       </dl>
       {copied && <span role="status" className="mm-vietqr-copy-note">{tx("Đã sao chép.", "Copied.")}</span>}
       {copyError && <span role="status" className="mm-vietqr-copy-note">{tx("Hãy chọn và sao chép thông tin cần dùng.", "Select the text to copy it manually.")}</span>}
@@ -58,6 +61,15 @@ export default function BankTransferInstructions({ orderId, identity }: { orderI
       <figcaption>{tx("Quét bằng ứng dụng ngân hàng", "Scan in your banking app")}</figcaption>
     </figure>
     <p>{tx("Giữ đúng số tiền và nội dung khi chuyển. Trang này tự cập nhật khi hệ thống xác nhận đã nhận tiền.",
-      "Keep the exact amount and memo. This page updates when your transfer is verified.")}</p>
+        "Keep the exact amount and memo. This page updates when your transfer is verified.")}</p>
+    {canSimulate && <div className="mm-vietqr-test-option">
+      <button type="button" className="mm-button mm-vietqr-simulate" disabled={busy} onClick={onSimulate}>
+        <FlaskConical size={16} aria-hidden="true" />
+        {busy
+          ? tx("Đang chạy thử…", "Running simulation…")
+          : tx("[DEV TEST] Giả lập SePay nhận tiền", "[DEV TEST] Simulate a SePay transfer")}
+      </button>
+      <small>{tx("Dành cho đơn thử. Nút này hoàn tất thanh toán dưới dạng giả lập.", "For test orders. This completes the payment as a simulation.")}</small>
+    </div>}
   </div>;
 }

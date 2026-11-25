@@ -50,6 +50,8 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
   const isCod = defaultMethod === "COD";
   const codUnpaid = isCod && order?.payment?.status === "PENDING";
   const paid = order?.payment?.status === "SUCCESS";
+  const simulated = paid && order?.payment?.simulated;
+  const paidLabel = simulated ? tx("Đã thanh toán (giả lập)", "Paid (simulated)") : tx("Đã thanh toán", "Paid");
   const isTransfer = defaultMethod === "BANK_TRANSFER";
   const free = !order?.payment && order?.grandTotal === "0.00" && !pending;
   const needsReview = isTransfer && !paid && order?.payment?.reviewRequired;
@@ -114,7 +116,7 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
   const title = expired ? tx("Đơn đã hết thời gian giữ hàng", "Your hold has expired")
     : order.status === "CANCELLED" ? tx("Đơn hàng đã hủy", "Order cancelled")
       : codUnpaid ? tx("Đã ghi nhận đơn COD", "COD order placed")
-        : paid ? (isCod ? tx("Đã giao hàng và thu tiền", "Delivered and paid") : tx("Đã thanh toán", "Payment received"))
+        : paid ? (isCod ? tx("Đã giao hàng và thu tiền", "Delivered and paid") : paidLabel)
           : free ? tx("Đơn hàng miễn phí đã được ghi nhận", "Free order placed")
           : pending ? (reviewing ? tx("Đang đối soát thanh toán", "Payment under review") : tx("Đơn hàng đang chờ thanh toán", "Order awaiting payment"))
             : tx("Đơn hàng đã được ghi nhận", "Order received");
@@ -135,11 +137,15 @@ function ReceiptView({ id, fromCheckout }: { id: string; fromCheckout: boolean }
           {free && <p className="mm-feedback success">{tx("Đơn này không cần thanh toán.", "This order requires no payment.")}</p>}
           {isCod && <p className="mm-receipt-payment"><PaymentName method="COD" />
             {codUnpaid && <strong>{tx("Cần trả khi nhận hàng", "Due on delivery")} · {formatVND(order.grandTotal)}</strong>}</p>}
-          {paid && <p className="mm-feedback success" role="status">{tx("Đã thanh toán", "Paid")} · {formatVND(order.grandTotal)}</p>}
+          {paid && <p className="mm-feedback success" role="status">{paidLabel} · {formatVND(order.grandTotal)}</p>}
           {paid && order.payment && <div className="mm-payment-ref"><PaymentName method={order.payment.method} /><small>{tx("Mã giao dịch", "Reference")} {order.payment.transactionRef}</small></div>}
           {pending && !expired && left !== null && <p className="mm-payment-hold"><Clock3 size={17} aria-hidden="true" />
             {tx("Giữ hàng còn", "Stock held for")} <strong>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</strong></p>}
-          {pending && !expired && !finishing && isTransfer && !needsReview && !reviewing && <BankTransferInstructions orderId={id} identity={identity} />}
+          {pending && !expired && !finishing && isTransfer && !needsReview && !reviewing &&
+            <BankTransferInstructions orderId={id} identity={identity} busy={busy}
+              onSimulate={() => void perform(() => authenticatedRequest(
+                  "/payments/bank-transfer/" + encodeURIComponent(id) + "/simulate", {},
+              ))} />}
           {needsReview && !reviewing && <p className="mm-feedback warning" role="status">
             {tx("Hệ thống đã ghi nhận khoản tiền cần kiểm tra thêm. Hãy giữ lại biên lai giao dịch.",
               "A received transfer needs review. Please keep your bank receipt.")}</p>}

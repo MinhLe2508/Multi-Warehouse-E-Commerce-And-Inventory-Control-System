@@ -39,7 +39,8 @@ type PaymentRecord = {
   currency: string;
   order: OrderIdentity & { status: string };
   supportStatus: 'OPEN' | 'CONFIRMED' | 'CLOSED' | null;
-  bankReceipts: { id: string; bankReference: string | null; amount: string; receivedAt: string; issue: string | null }[];
+  simulated?: boolean;
+  bankReceipts: { id: string; bankReference: string | null; amount: string; receivedAt: string; issue: string | null; simulated?: boolean }[];
   method: keyof typeof PAYMENT_METHODS;
   status: keyof typeof PAYMENT_STATES;
   failureReason: string | null;
@@ -126,7 +127,7 @@ export function PaymentsView() {
           render: (row) => (
             <>
               <RecordStatus
-                label={row.method === 'BANK_TRANSFER' && row.status === 'PENDING' && row.order.status === 'CANCELLED'
+                label={row.simulated && row.status === 'SUCCESS' ? 'Đã thanh toán (giả lập)' : row.method === 'BANK_TRANSFER' && row.status === 'PENDING' && row.order.status === 'CANCELLED'
                   ? 'Hết hiệu lực' : PAYMENT_STATES[row.status]}
                 tone={
                   row.status === 'SUCCESS'
@@ -154,7 +155,7 @@ export function PaymentsView() {
               <summary>Khoản tiền đã ghi nhận</summary>
               <ul className="mb-1 ps-3">
                 {row.bankReceipts.map((item) => <li key={item.id}>
-                  {formatVnd(Number(item.amount))} · {item.issue ? TRANSFER_ISSUE[item.issue] ?? 'Cần kiểm tra' : 'Khớp đơn'}<br />
+                  {formatVnd(Number(item.amount))} · {item.simulated ? 'Giả lập' : item.issue ? TRANSFER_ISSUE[item.issue] ?? 'Cần kiểm tra' : 'Khớp đơn'}<br />
                   {item.bankReference && <>{item.bankReference} · </>}{localDateTime(item.receivedAt)}
                 </li>)}
               </ul>

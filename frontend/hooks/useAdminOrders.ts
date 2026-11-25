@@ -39,6 +39,7 @@ export interface ApiAdminOrder {
   payments: Array<{
     method: AdminOrder['paymentMethod'];
     status: NonNullable<AdminOrder['paymentStatus']>;
+    simulated?: boolean;
   }>;
   paymentSupport?: AdminPaymentSupport | null;
   statusHistory: Array<{
@@ -109,6 +110,7 @@ export function mapApiOrder(raw: ApiAdminOrder): AdminOrder {
       address: raw.shippingAddress,
     },
     paymentMethod: raw.payments[0]?.method ?? 'MOCK_CARD',
+    paymentSimulated: raw.payments[0]?.simulated ?? false,
     paymentStatus: raw.payments[0]?.status ?? null,
     paymentSupport: raw.paymentSupport ?? null,
     items,

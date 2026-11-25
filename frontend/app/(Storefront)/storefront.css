@@ -427,6 +427,10 @@ textarea.mm-input { resize: vertical; }
 .mm-vietqr figcaption, .mm-vietqr > p { margin: 0; color: #475569; font-size: .8rem; line-height: 1.55; }
 .mm-vietqr figcaption { text-align: center; }
 .mm-vietqr > p { grid-column: 1 / -1; padding-top: 11px; border-top: 1px solid #dbeafe; }
+.mm-vietqr .mm-vietqr-simulate { justify-content: center; background: #fbbf24; border-color: #f59e0b; color: #29200d; }
+.mm-vietqr .mm-vietqr-simulate:hover:not(:disabled) { background: #f59e0b; }
+.mm-vietqr-test-option { grid-column: 1 / -1; display: grid; gap: 6px; }
+.mm-vietqr-test-option small { color: #475569; }
 @media (max-width: 580px) {
   .mm-vietqr { grid-template-columns: minmax(0, 1fr); }
 }
