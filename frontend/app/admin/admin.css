@@ -587,14 +587,18 @@
 
 
 /* ==========================================================================
-   OFFCANVAS ORDER DETAIL & BACKDROP Z-INDEX (T4)
-   Phủ cả sidebar (1020) và header (1010), trên mobile chiếm 100% chiều ngang
+   OFFCANVAS SIDEBAR & ORDER DETAIL Z-INDEX (T4)
+   Phủ cả sidebar (1020) và header (1010), luôn cao hơn .offcanvas-backdrop (1050)
    ========================================================================== */
+
+.offcanvas.admin-offcanvas-sidebar {
+  z-index: 1065 !important;
+}
 
 .offcanvas.order-detail-offcanvas {
   width: 480px;
   max-width: 100vw;
-  z-index: 1060 !important;
+  z-index: 1065 !important;
 }
 
 @media (max-width: 576px) {

@@ -311,7 +311,7 @@ export function Sidebar({
         placement="start"
         container={adminPortalContainer}
         className="admin-offcanvas-sidebar d-lg-none"
-        style={{ width: 'min(280px, 84vw)', borderRight: '1px solid #ede9fe' }}
+        style={{ width: 'min(280px, 84vw)', borderRight: '1px solid #ede9fe', zIndex: 1065 }}
       >
         <Offcanvas.Header closeButton className="p-3 border-bottom" style={{ borderColor: '#ede9fe' }}>
           <div className="d-flex align-items-center gap-2">
