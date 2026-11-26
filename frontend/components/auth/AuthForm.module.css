@@ -199,6 +199,13 @@
   .wordmark { font-size: 1.24rem; }
   .wordmark span { width: 2.3rem; height: 2.3rem; border-radius: .68rem; }
 }
+@media (max-width: 440px) {
+  .page { padding: .75rem; }
+  .panel { padding: 1.25rem 1.1rem; }
+  .heading { margin: 1.1rem 0 1.1rem; }
+  .panel .heading h1 { font-size: 1.55rem; }
+  .nav { flex-direction: column; align-items: flex-start; gap: .5rem; }
+}
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
   .field input { transition: none; }

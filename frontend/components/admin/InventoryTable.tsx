@@ -49,7 +49,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
         <table className={`w-full text-left border-collapse ${isSingleWarehouse ? 'min-w-[700px]' : 'min-w-[1000px]'}`}>
           <thead>
             <tr className="bg-slate-50/90 text-slate-600 text-xs font-bold uppercase tracking-wider border-b border-slate-200">
-              <th className="py-3.5 px-4 sticky left-0 bg-slate-50/95 backdrop-blur z-20 min-w-[240px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+              <th className="py-3.5 px-3 sm:px-4 sticky left-0 bg-slate-50/95 backdrop-blur z-20 min-w-[175px] sm:min-w-[240px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                 Sản phẩm & SKU
               </th>
               <th className="py-3.5 px-3 min-w-[110px]">Danh mục</th>
@@ -102,16 +102,16 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                 return (
                   <tr key={item.id} className={`transition-colors ${rowHighlight}`}>
                     {/* Cột 1: Tên & SKU (Sticky bên trái) */}
-                    <td className="py-3.5 px-4 sticky left-0 bg-white/95 backdrop-blur z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <td className="py-3.5 px-3 sm:px-4 sticky left-0 bg-white/95 backdrop-blur z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       <div className="font-bold text-slate-900 line-clamp-1" title={item.name}>
                         {item.name}
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
                         <code className="text-[11px] font-mono text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/60">
                           {item.sku}
                         </code>
                         <span className="text-[10px] text-slate-400">
-                          Ngưỡng chuẩn: {item.effectiveThreshold}
+                          Ngưỡng: {item.effectiveThreshold}
                         </span>
                       </div>
                     </td>
@@ -224,23 +224,23 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
       </div>
 
       {/* Pagination Footer */}
-      <div className="px-5 py-4 bg-slate-50/70 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
-        <div className="flex items-center gap-3">
+      <div className="px-3 sm:px-5 py-3.5 sm:py-4 bg-slate-50/70 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 text-xs text-slate-600">
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 sm:gap-3 text-center sm:text-left">
           <span>
-            Hiển thị <strong>{startItem}</strong> - <strong>{endItem}</strong> trong tổng số{' '}
-            <strong>{totalFilteredCount}</strong> sản phẩm
+            Hiển thị <strong>{startItem}</strong> - <strong>{endItem}</strong> /{' '}
+            <strong>{totalFilteredCount}</strong> SP
           </span>
 
-          <div className="flex items-center gap-1.5 pl-3 border-l border-slate-300">
-            <span>Hiển thị</span>
+          <div className="flex items-center gap-1.5 sm:pl-3 sm:border-l border-slate-300">
+            <span>Mỗi trang</span>
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium text-slate-700"
             >
-              <option value={10}>10 SP/trang</option>
-              <option value={20}>20 SP/trang</option>
-              <option value={50}>50 SP/trang</option>
+              <option value={10}>10 SP</option>
+              <option value={20}>20 SP</option>
+              <option value={50}>50 SP</option>
             </select>
           </div>
         </div>

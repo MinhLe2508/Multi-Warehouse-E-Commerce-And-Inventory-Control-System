@@ -66,11 +66,11 @@ export default function ChatWidget() {
   function close() { setOpen(false); launcher.current?.focus(); }
 
   return (
-    <aside className="fixed bottom-5 right-4 z-50 sm:right-6" aria-label="Hỗ trợ mua sắm">
+    <aside className="fixed bottom-3 right-3 z-50 sm:bottom-5 sm:right-6" aria-label="Hỗ trợ mua sắm">
       {open && (
         <section key={identity} id="storefront-chat" role="dialog" aria-modal="false" aria-labelledby="chat-title"
           onKeyDown={event => { if (event.key === "Escape") close(); }}
-          className="mb-3 flex h-[min(36rem,calc(100dvh-7rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-2xl">
+          className="mb-3 flex h-[min(36rem,calc(100dvh-6rem))] w-[min(24rem,calc(100vw-1.5rem))] sm:h-[min(36rem,calc(100dvh-7rem))] sm:w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-2xl">
           <header className="flex items-center gap-3 bg-brand-700 p-4 text-white">
             <MessageCircle size={24} aria-hidden="true" />
             <div className="flex-1"><h2 id="chat-title" className="font-semibold">Trợ lý MultiMart</h2><p className="text-xs text-brand-100">Hỗ trợ sản phẩm, thanh toán và đơn hàng</p></div>

@@ -171,9 +171,17 @@
   .staff-portal, .staff-collapsed { grid-template-columns: minmax(0, 1fr); }
   .staff-desktop-menu { display: none; }
   .staff-mobile-menu { display: inline-grid; }
-  .staff-sidebar { position: fixed; inset: 0 auto 0 0; width: min(258px, 87vw); transform: translateX(-101%); visibility: hidden; }
+  .staff-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(268px, 85vw);
+    transform: translateX(-101%);
+    visibility: hidden;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.22);
+    transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.24s;
+  }
   .staff-mobile-open .staff-sidebar { transform: translateX(0); visibility: visible; }
-  .staff-mobile-open .staff-scrim { display: block; position: fixed; inset: 0; z-index: 1020; background: #14213a66; border: 0; }
+  .staff-mobile-open .staff-scrim { display: block; position: fixed; inset: 0; z-index: 1020; background: #14213a66; backdrop-filter: blur(2px); border: 0; }
   .staff-close-menu { display: inline-grid; position: absolute; right: 10px; top: 18px; }
   .staff-collapsed .staff-brand strong, .staff-collapsed .staff-nav-group p,
   .staff-collapsed .staff-nav-group a span, .staff-collapsed .staff-signout span { display: initial; }
@@ -185,9 +193,22 @@
   .staff-account-name { display: none; }
   .staff-grid-two { grid-template-columns: minmax(0, 1fr); }
   .staff-stats { gap: 8px; }
-  .staff-stat-card { padding: 10px; }
-  .staff-field { flex-basis: 125px; }
-  .staff-panel.padded { padding: 13px; }
+  .staff-stat-card { padding: 12px; }
+  .staff-field { flex: 1 1 100%; }
+  .staff-filters > .staff-actions { width: 100%; }
+  .staff-filters > .staff-actions > .staff-button { flex: 1; }
+  .staff-panel.padded { padding: 14px; }
+  .staff-table th, .staff-table td { padding: 9px 10px; }
+}
+@media (max-width: 480px) {
+  .staff-stats { grid-template-columns: minmax(0, 1fr); }
+  .staff-details { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .staff-details dd { margin-bottom: 6px; }
+  .staff-page-title .staff-actions { width: 100%; }
+  .staff-page-title .staff-actions > * { flex: 1 1 auto; }
+  .staff-list-row > .staff-button,
+  .staff-list-row > .staff-actions { width: 100%; }
+  .staff-list-row > .staff-actions > * { flex: 1 1 auto; }
 }
 
 .staff-portal .badge-status, .staff-dialog .badge-status {

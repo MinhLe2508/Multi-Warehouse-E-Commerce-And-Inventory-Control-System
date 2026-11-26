@@ -127,9 +127,9 @@ const StockAdjustDialogContent: React.FC<{
         }
       }}
     >
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg max-h-[90vh] my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg max-h-[92dvh] my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Header - ghim cố định ở đỉnh */}
-        <div className="shrink-0 px-6 py-4 bg-gradient-to-r from-purple-700 via-indigo-600 to-purple-800 text-white flex items-center justify-between">
+        <div className="shrink-0 px-4 sm:px-6 py-3.5 sm:py-4 bg-gradient-to-r from-purple-700 via-indigo-600 to-purple-800 text-white flex items-center justify-between">
           <div className="min-w-0 pr-3">
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-white/20 shrink-0">
@@ -139,7 +139,7 @@ const StockAdjustDialogContent: React.FC<{
                 {detail.warehouseName}
               </span>
             </div>
-            <h3 className="text-base font-bold mt-1 text-white truncate max-w-sm">
+            <h3 className="text-sm sm:text-base font-bold mt-1 text-white truncate max-w-sm">
               {product.name}
             </h3>
             <p className="text-xs text-purple-200">Mã SKU: {product.sku}</p>
@@ -164,14 +164,14 @@ const StockAdjustDialogContent: React.FC<{
               setMode('ADJUST');
               setErrorMessage(null);
             }}
-            className={`flex-1 py-3 px-4 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition-colors ${
+            className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors ${
               mode === 'ADJUST'
                 ? 'border-purple-600 text-purple-700 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Sliders size={15} />
-            <span>Điều chỉnh kiểm kê (PUT)</span>
+            <Sliders size={15} className="shrink-0" />
+            <span>Điều chỉnh kiểm kê</span>
           </button>
 
           <button
@@ -180,21 +180,21 @@ const StockAdjustDialogContent: React.FC<{
               setMode('RESTOCK');
               setErrorMessage(null);
             }}
-            className={`flex-1 py-3 px-4 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition-colors ${
+            className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors ${
               mode === 'RESTOCK'
                 ? 'border-purple-600 text-purple-700 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <PackagePlus size={15} />
-            <span>Nhập thêm hàng (POST)</span>
+            <PackagePlus size={15} className="shrink-0" />
+            <span>Nhập thêm hàng</span>
           </button>
         </div>
 
         {/* Content & Form với body có thể cuộn độc lập và footer ghim đáy */}
         <form onSubmit={handleFormSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Scrollable Form Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
             {/* Trạng thái hiện tại */}
             <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200/80 text-center">
               <div>
@@ -389,19 +389,19 @@ const StockAdjustDialogContent: React.FC<{
           </div>
 
           {/* Footer nút hành động - luôn ghim cố định ở đáy, không bao giờ trôi mất */}
-          <div className="shrink-0 px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+          <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 sm:gap-3">
             <button
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-5 py-2.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition cursor-pointer"
+              className="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition cursor-pointer"
             >
-              Hủy bỏ (Esc)
+              Hủy bỏ
             </button>
             <button
               type="submit"
               disabled={submitting || isInvalidStock || isInvalidRestock || isInvalidNote || !hasChanged}
-              className={`inline-flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 sm:px-5 py-2.5 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer ${
                 submitting || isInvalidStock || isInvalidRestock || isInvalidNote || !hasChanged
                   ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
                   : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-200 hover:shadow-lg'

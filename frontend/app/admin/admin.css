@@ -3,7 +3,8 @@
    Theme: Gradient Tím - Trắng Cao Cấp (Purple - Violet - White Luxury Theme)
    ========================================================================== */
 
-.admin-root {
+.admin-root,
+.admin-offcanvas-sidebar {
   --bs-primary: #7c3aed;
   --bs-primary-rgb: 124, 58, 237;
   --bs-primary-hover: #6d28d9;
@@ -23,7 +24,9 @@
   --admin-shadow-md: 0 6px 18px -4px rgba(124, 58, 237, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
   --admin-shadow-hover: 0 14px 28px -4px rgba(124, 58, 237, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
   --admin-shadow-header: 0 4px 20px -2px rgba(124, 58, 237, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+}
 
+.admin-root {
   min-height: 100vh;
   background: linear-gradient(180deg, #faf5ff 0%, #f8f7fc 100%);
   color: var(--bs-body-color);
@@ -62,7 +65,8 @@
   box-shadow: 2px 0 16px rgba(124, 58, 237, 0.025);
 }
 
-.admin-root .admin-sidebar-scroll {
+.admin-root .admin-sidebar-scroll,
+.admin-offcanvas-sidebar .admin-sidebar-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
@@ -71,27 +75,32 @@
 
 /* Thanh cuộn mảnh tím nhạt (Slim glass purple scrollbar) */
 .admin-root .admin-sidebar-scroll::-webkit-scrollbar,
+.admin-offcanvas-sidebar .admin-sidebar-scroll::-webkit-scrollbar,
 .admin-root *::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 .admin-root .admin-sidebar-scroll::-webkit-scrollbar-track,
+.admin-offcanvas-sidebar .admin-sidebar-scroll::-webkit-scrollbar-track,
 .admin-root *::-webkit-scrollbar-track {
   background: transparent;
 }
 .admin-root .admin-sidebar-scroll::-webkit-scrollbar-thumb,
+.admin-offcanvas-sidebar .admin-sidebar-scroll::-webkit-scrollbar-thumb,
 .admin-root *::-webkit-scrollbar-thumb {
   background: #ddd6fe;
   border-radius: 999px;
   transition: background-color 0.2s ease;
 }
 .admin-root .admin-sidebar-scroll::-webkit-scrollbar-thumb:hover,
+.admin-offcanvas-sidebar .admin-sidebar-scroll::-webkit-scrollbar-thumb:hover,
 .admin-root *::-webkit-scrollbar-thumb:hover {
   background: #c4b5fd;
 }
 
 /* Sidebar Footer */
-.admin-root .admin-sidebar-footer {
+.admin-root .admin-sidebar-footer,
+.admin-offcanvas-sidebar .admin-sidebar-footer {
   flex-shrink: 0;
   padding: 0.875rem 1rem;
   background: #ffffff;
@@ -148,9 +157,10 @@
 
 /* ==========================================================================
    SIDEBAR NAVIGATION — CÁC MỤC CHÍNH CÓ ICON & GRADIENT HOVER
+   (Áp dụng cho cả Desktop .admin-root và Mobile Portal .admin-offcanvas-sidebar)
    ========================================================================== */
 
-.admin-root .admin-nav-item-btn {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn {
   position: relative;
   display: flex;
   align-items: center;
@@ -160,7 +170,7 @@
   margin-bottom: 0.2rem;
   border-radius: 8px;
   color: #374151;
-  text-decoration: none;
+  text-decoration: none !important;
   font-size: 0.875rem;
   font-weight: 500;
   min-height: 40px;
@@ -172,7 +182,7 @@
 }
 
 /* Thanh nhấn trái màu tím trượt vào khi hover hoặc active */
-.admin-root .admin-nav-item-btn::before {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn::before {
   content: '';
   position: absolute;
   left: 0;
@@ -186,36 +196,36 @@
 }
 
 /* Icon chính màu tím */
-.admin-root .admin-nav-icon {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-right: 0.65rem;
+  margin-right: 0.35rem;
   color: #8b5cf6;
   transition: transform 0.2s var(--admin-ease), color 0.2s var(--admin-ease);
   flex-shrink: 0;
 }
 
 /* Hover Menu Item */
-.admin-root .admin-nav-item-btn:hover {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn:hover {
   background-color: var(--bs-primary-ultra-light);
   color: var(--bs-primary);
   transform: translateX(3px);
   border-color: rgba(124, 58, 237, 0.12);
 }
 
-.admin-root .admin-nav-item-btn:hover .admin-nav-icon {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn:hover .admin-nav-icon {
   color: var(--bs-primary);
   transform: scale(1.12);
 }
 
-.admin-root .admin-nav-item-btn:hover::before {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn:hover::before {
   transform: translateY(-50%) scaleY(1);
 }
 
 /* Active Menu Item (Gradient Tím Trắng) */
-.admin-root .admin-nav-item-btn.active,
-.admin-root .admin-nav-item-btn[aria-current="page"] {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn.active,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn[aria-current="page"] {
   background: var(--admin-gradient-card-active);
   color: var(--bs-primary);
   font-weight: 600;
@@ -223,19 +233,19 @@
   border-color: rgba(124, 58, 237, 0.2);
 }
 
-.admin-root .admin-nav-item-btn.active .admin-nav-icon,
-.admin-root .admin-nav-item-btn[aria-current="page"] .admin-nav-icon {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn.active .admin-nav-icon,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn[aria-current="page"] .admin-nav-icon {
   color: var(--bs-primary);
   transform: scale(1.08);
 }
 
-.admin-root .admin-nav-item-btn.active::before,
-.admin-root .admin-nav-item-btn[aria-current="page"]::before {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn.active::before,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-item-btn[aria-current="page"]::before {
   transform: translateY(-50%) scaleY(1);
 }
 
 /* Mũi tên tam giác nhóm ▶ */
-.admin-root .admin-nav-chevron {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -244,18 +254,18 @@
   transition: transform 0.22s var(--admin-ease), color 0.2s ease;
 }
 
-.admin-root .admin-nav-chevron.open {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-chevron.open {
   transform: rotate(90deg);
   color: var(--bs-primary);
 }
 
 /* Đảm bảo trạng thái đóng của Accordion Bootstrap luôn ẩn tuyệt đối */
-.admin-root .collapse:not(.show) {
+:is(.admin-root, .admin-offcanvas-sidebar) .collapse:not(.show) {
   display: none !important;
 }
 
 /* Menu con (Sub-menu) — Dạng danh sách khối, thụt lề sạch sẽ có viền dọc phân cấp */
-.admin-root .admin-nav-sub-menu {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-sub-menu {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -264,8 +274,8 @@
   border-left: 2px solid #ede9fe;
 }
 
-.admin-root .admin-nav-sub-item,
-.admin-root .admin-subnav-link {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-sub-item,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-subnav-link {
   display: flex !important;
   align-items: center;
   justify-content: space-between;
@@ -282,8 +292,8 @@
   border: 1px solid transparent;
 }
 
-.admin-root .admin-nav-sub-item:hover,
-.admin-root .admin-subnav-link:hover {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-sub-item:hover,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-subnav-link:hover {
   background-color: var(--bs-primary-ultra-light);
   color: var(--bs-primary) !important;
   text-decoration: none !important;
@@ -291,10 +301,10 @@
 }
 
 /* Trạng thái Active đồng bộ, nhẹ nhàng, không bị đóng khung hộp thô */
-.admin-root .admin-nav-sub-item.active,
-.admin-root .admin-subnav-link.active,
-.admin-root .admin-nav-sub-item[aria-current="page"],
-.admin-root .admin-subnav-link[aria-current="page"] {
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-sub-item.active,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-subnav-link.active,
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-nav-sub-item[aria-current="page"],
+:is(.admin-root, .admin-offcanvas-sidebar) .admin-subnav-link[aria-current="page"] {
   background-color: var(--bs-primary-ultra-light);
   color: var(--bs-primary) !important;
   font-weight: 600;
@@ -943,16 +953,72 @@
 }
 
 @media (max-width: 767px) {
+  .admin-workspace-heading {
+    align-items: flex-start;
+  }
+
+  .admin-workspace-heading > div:last-child {
+    width: 100%;
+  }
+
   .admin-workspace-filters {
     gap: .7rem;
     padding: .8rem;
   }
 
+  .admin-workspace-filters label,
   .admin-workspace-filters .admin-workspace-search {
-    flex-basis: 100%;
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .admin-workspace-filters > div:last-child {
+    width: 100%;
+  }
+
+  .admin-workspace-filters > div:last-child .admin-workspace-button {
+    flex: 1;
+  }
+
+  .admin-workspace-table :is(td, th) {
+    padding: .65rem .7rem;
+  }
+
+  .admin-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem 1rem;
+    width: 100%;
+  }
+
+  .admin-summary-strip dd {
+    font-size: 1.18rem;
+  }
+
+  .admin-knowledge-overview > button,
+  .admin-knowledge-overview > .admin-workspace-button {
+    width: 100%;
   }
 
   .admin-report-panels {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-summary-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-workspace-pager {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .admin-root .admin-scroll-top-btn {
+    bottom: 1rem;
+    right: 1rem;
+    width: 40px;
+    height: 40px;
   }
 }

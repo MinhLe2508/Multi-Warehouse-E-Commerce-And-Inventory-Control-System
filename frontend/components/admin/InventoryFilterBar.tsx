@@ -60,7 +60,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span className="text-xs px-3 py-1.5 rounded-full font-medium bg-purple-50 text-purple-700 border border-purple-200">
             Hiển thị <strong>{totalFilteredCount}</strong> / {totalProductsCount} sản phẩm
           </span>

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Collapse, Offcanvas } from 'react-bootstrap';
 import {
   LayoutDashboard,
+  ShoppingBag,
   Warehouse,
   Tag,
   Sparkles,
@@ -37,7 +38,7 @@ function getNavGroupIcon(groupId: string) {
       return <LayoutDashboard size={18} className="admin-nav-icon" />;
     case 'business':
     case 'staff-orders':
-      return null; // Xóa icon của đơn hàng theo yêu cầu
+      return <ShoppingBag size={18} className="admin-nav-icon" />;
     case 'inventory':
     case 'staff-inventory':
     case 'staff-inventory-view':
@@ -64,9 +65,11 @@ function getNavGroupIcon(groupId: string) {
 export function SidebarContent({
   variant = 'admin',
   onNavigate,
+  showBrandHeader = true,
 }: {
   variant?: 'admin' | 'staff';
   onNavigate?: () => void;
+  showBrandHeader?: boolean;
 }) {
   const pathname = usePathname();
   const { user, logout } = useCurrentAdminUser();
@@ -191,34 +194,36 @@ export function SidebarContent({
 
   return (
     <div className="d-flex flex-column h-100 bg-white">
-      {/* Brand Header — Gradient Tím Trắng */}
-      <div className="p-3 pb-2 d-flex align-items-center gap-2">
-        <div
-          className="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold shadow-sm"
-          style={{
-            width: '34px',
-            height: '34px',
-            background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
-            fontSize: '0.95rem',
-            boxShadow: '0 4px 10px rgba(124, 58, 237, 0.3)',
-          }}
-        >
-          {isStaffVariant ? 'S' : 'M'}
-        </div>
-        <div>
-          <h2
-            className="h5 fw-bold mb-0"
+      {/* Brand Header — Gradient Tím Trắng (Chỉ hiện trên Desktop, Mobile đã có trên Offcanvas.Header) */}
+      {showBrandHeader && (
+        <div className="p-3 pb-2 d-flex align-items-center gap-2">
+          <div
+            className="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold shadow-sm"
             style={{
-              background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.02em',
+              width: '34px',
+              height: '34px',
+              background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+              fontSize: '0.95rem',
+              boxShadow: '0 4px 10px rgba(124, 58, 237, 0.3)',
             }}
           >
-            {isStaffVariant ? 'MWH Staff' : 'MWH Admin'}
-          </h2>
+            {isStaffVariant ? 'S' : 'M'}
+          </div>
+          <div>
+            <h2
+              className="h5 fw-bold mb-0"
+              style={{
+                background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {isStaffVariant ? 'MWH Staff' : 'MWH Admin'}
+            </h2>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Danh sách Menu cuộn riêng */}
       <nav aria-label="Điều hướng" className="admin-sidebar-scroll flex-grow-1">
@@ -282,11 +287,15 @@ export function SidebarContent({
   );
 }
 
+const adminPortalContainer = () =>
+  document.querySelector<HTMLElement>('.admin-root') ?? document.body;
+
 export function Sidebar({
   variant = 'admin',
   showMobile = false,
   onHideMobile,
 }: SidebarProps) {
+  const isStaffVariant = variant === 'staff';
   return (
     <>
       <aside
@@ -300,19 +309,39 @@ export function Sidebar({
         show={showMobile}
         onHide={onHideMobile}
         placement="start"
+        container={adminPortalContainer}
         className="admin-offcanvas-sidebar d-lg-none"
-        style={{ width: '254px' }}
+        style={{ width: 'min(280px, 84vw)', borderRight: '1px solid #ede9fe' }}
       >
-        <Offcanvas.Header closeButton className="p-3 border-bottom">
-          <Offcanvas.Title
-            className="fs-6 fw-bold"
-            style={{ color: '#7c3aed' }}
-          >
-            {variant === 'staff' ? 'MWH Staff' : 'MWH Admin'}
-          </Offcanvas.Title>
+        <Offcanvas.Header closeButton className="p-3 border-bottom" style={{ borderColor: '#ede9fe' }}>
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold shadow-sm"
+              style={{
+                width: '32px',
+                height: '32px',
+                background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+                fontSize: '0.9rem',
+                boxShadow: '0 4px 10px rgba(124, 58, 237, 0.25)',
+              }}
+            >
+              {isStaffVariant ? 'S' : 'M'}
+            </div>
+            <Offcanvas.Title
+              className="fs-6 fw-bold mb-0"
+              style={{
+                background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {isStaffVariant ? 'MWH Staff' : 'MWH Admin'}
+            </Offcanvas.Title>
+          </div>
         </Offcanvas.Header>
-        <Offcanvas.Body className="p-0">
-          <SidebarContent variant={variant} onNavigate={onHideMobile} />
+        <Offcanvas.Body className="p-0 d-flex flex-column">
+          <SidebarContent variant={variant} onNavigate={onHideMobile} showBrandHeader={false} />
         </Offcanvas.Body>
       </Offcanvas>
     </>

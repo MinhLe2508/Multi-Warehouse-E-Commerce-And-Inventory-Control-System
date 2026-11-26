@@ -128,11 +128,11 @@ export function Header({
           : 'd-flex align-items-center justify-content-between h-100 w-100'}
         >
           {/* Cụm trái: Nút hamburger (mobile) & Tiêu đề trang */}
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center gap-2 min-w-0 flex-grow-1 me-2">
             <button
               type="button"
-              className="btn btn-outline-secondary d-lg-none d-flex align-items-center justify-content-center p-0"
-              style={{ width: '36px', height: '36px', borderRadius: '6px' }}
+              className="btn btn-outline-secondary d-lg-none d-flex align-items-center justify-content-center p-0 flex-shrink-0"
+              style={{ width: '36px', height: '36px', borderRadius: '8px', borderColor: '#e5e7eb' }}
               onClick={onToggleMobileSidebar}
               aria-label="Mở menu điều hướng"
             >
@@ -143,13 +143,13 @@ export function Header({
               </svg>
             </button>
 
-            <span className="fw-semibold text-dark fs-6" style={{ letterSpacing: '-0.01em' }}>
+            <span className="fw-semibold text-dark fs-6 text-truncate" style={{ letterSpacing: '-0.01em' }}>
               {isStaff ? getPageTitle() : adminTitle}
             </span>
 
             {/* Dropdown chọn kho đang xem */}
             {!isStaff && showWarehouseSelector && (
-              <div className="d-none d-md-flex align-items-center gap-2 ms-3">
+              <div className="d-flex align-items-center gap-2 ms-auto ms-md-3 flex-shrink-0" style={{ maxWidth: '48vw' }}>
                 {warehouseSelector}
               </div>
             )}

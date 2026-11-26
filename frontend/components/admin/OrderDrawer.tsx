@@ -14,6 +14,9 @@ interface Props {
   onAdvance: (id: string) => void;
 }
 
+const adminPortalContainer = () =>
+  document.querySelector<HTMLElement>('.admin-root') ?? document.body;
+
 export function OrderDrawer({ order, updating, onClose, onAdvance }: Props) {
   if (!order) return null;
   const next = NEXT_STATUS[order.status];
@@ -24,6 +27,7 @@ export function OrderDrawer({ order, updating, onClose, onAdvance }: Props) {
       show={!!order}
       onHide={onClose}
       placement="end"
+      container={adminPortalContainer}
       backdrop={true}
       enforceFocus={true}
       restoreFocus={true}

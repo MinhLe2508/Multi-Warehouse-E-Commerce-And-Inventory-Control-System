@@ -82,13 +82,13 @@ export function DashboardView() {
           Dashboard
         </h1>
 
-        <div className="d-flex flex-wrap align-items-center gap-2">
+        <div className="d-flex flex-wrap align-items-center gap-2 w-100 w-sm-auto">
           <select
             value={warehouseId}
             onChange={(e) => setWarehouseId(e.target.value)}
             aria-label="Lọc theo kho"
-            className="form-select form-select-sm"
-            style={{ width: '180px', borderColor: '#ede9fe', borderRadius: '8px' }}
+            className="form-select form-select-sm flex-grow-1 flex-sm-grow-0"
+            style={{ width: '180px', minWidth: '140px', borderColor: '#ede9fe', borderRadius: '8px' }}
           >
             <option value="ALL">Toàn bộ kho</option>
             {warehouses.map((w) => (
@@ -105,16 +105,16 @@ export function DashboardView() {
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
                 aria-label="Từ ngày"
-                className="form-control form-control-sm"
-                style={{ width: '145px', borderColor: '#ede9fe', borderRadius: '8px' }}
+                className="form-control form-control-sm flex-grow-1 flex-sm-grow-0"
+                style={{ width: '145px', minWidth: '130px', borderColor: '#ede9fe', borderRadius: '8px' }}
               />
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
                 aria-label="Đến ngày"
-                className="form-control form-control-sm"
-                style={{ width: '145px', borderColor: '#ede9fe', borderRadius: '8px' }}
+                className="form-control form-control-sm flex-grow-1 flex-sm-grow-0"
+                style={{ width: '145px', minWidth: '130px', borderColor: '#ede9fe', borderRadius: '8px' }}
               />
             </>
           )}
@@ -123,7 +123,7 @@ export function DashboardView() {
             type="button"
             onClick={refreshDashboard}
             disabled={loading}
-            className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+            className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center gap-1"
             style={{ borderRadius: '8px' }}
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
