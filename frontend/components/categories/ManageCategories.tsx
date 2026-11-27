@@ -367,7 +367,7 @@ export default function ManageCategories() {
 
       {/* Form Card Thêm/Sửa Danh mục (Không có ô mô tả - theo mục 0 & T9) */}
       {editingCategory && (
-        <div className="card shadow-sm border-0 mb-4" style={{ borderRadius: '12px', border: '1px solid #ede9fe' }}>
+        <div className="card shadow-sm border-0 mb-4" style={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <div className="card-header bg-light py-3 border-bottom d-flex align-items-center justify-content-between">
             <h5 className="card-title h6 fw-bold mb-0 text-dark">
               {editingCategory.mode === 'create'
@@ -492,9 +492,9 @@ export default function ManageCategories() {
           Chưa có danh mục nào. Hãy bấm &quot;Thêm danh mục gốc&quot;.
         </div>
       ) : (
-        <div className="table-responsive bg-white rounded-3 border shadow-sm" style={{ borderColor: '#ede9fe' }}>
+        <div className="table-responsive bg-white rounded-3 border shadow-sm" style={{ borderColor: '#e2e8f0' }}>
           <table className="table table-hover mb-0 text-sm">
-            <thead style={{ backgroundColor: '#faf5ff' }}>
+            <thead style={{ backgroundColor: '#f8fafc' }}>
               <tr className="text-secondary small fw-semibold">
                 <th className="px-3 py-2.5">Tên danh mục (Cây phân cấp)</th>
                 <th className="px-3 py-2.5 text-center">Số sản phẩm</th>

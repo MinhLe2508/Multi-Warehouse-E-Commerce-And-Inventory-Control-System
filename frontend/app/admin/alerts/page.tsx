@@ -83,7 +83,7 @@ export default function AdminAlertsPage() {
           style={{
             maxWidth: '180px',
             minHeight: '40px',
-            borderColor: '#ede9fe',
+            borderColor: '#e2e8f0',
             borderRadius: '8px',
             fontSize: '0.875rem',
             backgroundColor: '#ffffff',
@@ -100,9 +100,9 @@ export default function AdminAlertsPage() {
           role="status"
           className="p-3 mb-3 rounded-3 small fw-medium d-flex align-items-center gap-2"
           style={{
-            backgroundColor: '#f5f3ff',
-            color: '#6d28d9',
-            border: '1px solid #ede9fe',
+            backgroundColor: '#eff6ff',
+            color: '#1e40af',
+            border: '1px solid #bfdbfe',
           }}
         >
           <CheckCircle2 size={16} />
@@ -129,7 +129,7 @@ export default function AdminAlertsPage() {
       ) : alerts.length === 0 ? (
         <div
           className="p-5 text-center small text-secondary rounded-3 border"
-          style={{ borderColor: '#ede9fe', backgroundColor: '#ffffff' }}
+          style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}
         >
           Không có cảnh báo đang mở khớp bộ lọc.
         </div>
@@ -142,7 +142,7 @@ export default function AdminAlertsPage() {
                 key={a.id}
                 className="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3.5 bg-white border rounded-3 shadow-sm"
                 style={{
-                  borderColor: '#ede9fe',
+                  borderColor: '#e2e8f0',
                   transition: 'all 0.2s ease',
                 }}
               >

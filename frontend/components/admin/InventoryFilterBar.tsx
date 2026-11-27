@@ -47,7 +47,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 mb-6 transition-all">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-semibold">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-800 flex items-center justify-center font-semibold">
             <Filter className="w-5 h-5" />
           </div>
           <div>
@@ -61,7 +61,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <span className="text-xs px-3 py-1.5 rounded-full font-medium bg-purple-50 text-purple-700 border border-purple-200">
+          <span className="text-xs px-3 py-1.5 rounded-full font-medium bg-blue-50 text-blue-800 border border-blue-200">
             Hiển thị <strong>{totalFilteredCount}</strong> / {totalProductsCount} sản phẩm
           </span>
 
@@ -92,7 +92,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Gõ mã SKU hoặc tên SP..."
-              className="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800 placeholder-slate-400"
+              className="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 focus:bg-white transition-all text-slate-800 placeholder-slate-400"
             />
             {search && (
               <button
@@ -116,7 +116,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
             id="inventory-category"
             value={category}
             onChange={(e) => onCategoryChange(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"
+            className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 focus:bg-white transition-all text-slate-800"
           >
             {categories.map((cat) => (
               <option key={cat} value={cat === 'Tất cả danh mục' ? 'ALL' : cat}>
@@ -135,7 +135,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
               id="inventory-warehouse"
               value={warehouseId}
               onChange={(e) => onWarehouseChange(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"
+              className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 focus:bg-white transition-all text-slate-800"
             >
               <option value="ALL">Toàn bộ kho (Toàn quốc)</option>
               {warehouses.map((wh) => (
@@ -156,7 +156,7 @@ export const InventoryFilterBar: React.FC<InventoryFilterBarProps> = ({
             id="inventory-status"
             value={status}
             onChange={(e) => onStatusChange(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all text-slate-800"
+            className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 focus:bg-white transition-all text-slate-800"
           >
             <option value="ALL">Tất cả trạng thái</option>
             <option value="IN_STOCK">Đủ hàng (An toàn)</option>

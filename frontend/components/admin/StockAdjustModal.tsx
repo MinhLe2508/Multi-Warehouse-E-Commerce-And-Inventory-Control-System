@@ -129,20 +129,20 @@ const StockAdjustDialogContent: React.FC<{
     >
       <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg max-h-[92dvh] my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Header - ghim cố định ở đỉnh */}
-        <div className="shrink-0 px-4 sm:px-6 py-3.5 sm:py-4 bg-gradient-to-r from-purple-700 via-indigo-600 to-purple-800 text-white flex items-center justify-between">
+        <div className="shrink-0 px-4 sm:px-6 py-3.5 sm:py-4 bg-gradient-to-r from-blue-800 via-indigo-700 to-blue-900 text-white flex items-center justify-between">
           <div className="min-w-0 pr-3">
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-white/20 shrink-0">
                 Kho: {detail.warehouseCode}
               </span>
-              <span className="text-xs text-purple-200 truncate">
+              <span className="text-xs text-blue-200 truncate">
                 {detail.warehouseName}
               </span>
             </div>
             <h3 className="text-sm sm:text-base font-bold mt-1 text-white truncate max-w-sm">
               {product.name}
             </h3>
-            <p className="text-xs text-purple-200">Mã SKU: {product.sku}</p>
+            <p className="text-xs text-blue-200">Mã SKU: {product.sku}</p>
           </div>
           <button
             type="button"
@@ -166,7 +166,7 @@ const StockAdjustDialogContent: React.FC<{
             }}
             className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors ${
               mode === 'ADJUST'
-                ? 'border-purple-600 text-purple-700 bg-white'
+                ? 'border-blue-700 text-blue-800 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -182,7 +182,7 @@ const StockAdjustDialogContent: React.FC<{
             }}
             className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors ${
               mode === 'RESTOCK'
-                ? 'border-purple-600 text-purple-700 bg-white'
+                ? 'border-blue-700 text-blue-800 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -206,8 +206,8 @@ const StockAdjustDialogContent: React.FC<{
                 <p className="text-base font-bold text-amber-600">{detail.reservedStock}</p>
               </div>
               <div>
-                <p className="text-xs text-purple-600 font-medium">Khả dụng</p>
-                <p className="text-base font-bold text-purple-700">{detail.availableStock}</p>
+                <p className="text-xs text-blue-700 font-medium">Khả dụng</p>
+                <p className="text-base font-bold text-blue-800">{detail.availableStock}</p>
               </div>
             </div>
 
@@ -223,8 +223,8 @@ const StockAdjustDialogContent: React.FC<{
                 </div>
               </div>
             ) : (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-purple-50/80 border border-purple-200 text-xs text-purple-800">
-                <PackagePlus className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-900">
+                <PackagePlus className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-semibold">Nhập hàng cộng dồn (RESTOCK):</p>
                   <p>
@@ -246,7 +246,7 @@ const StockAdjustDialogContent: React.FC<{
                     min={detail.reservedStock}
                     value={newStock}
                     onChange={(e) => setNewStock(parseInt(e.target.value) || 0)}
-                    className="w-full px-4 py-2.5 text-base font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
+                    className="w-full px-4 py-2.5 text-base font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 text-slate-800"
                     required
                   />
                   <div className="flex gap-1.5 shrink-0">
@@ -279,7 +279,7 @@ const StockAdjustDialogContent: React.FC<{
                     onChange={(e) =>
                       setThreshold(e.target.value === '' ? '' : parseInt(e.target.value) || 0)
                     }
-                    className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
+                    className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 text-slate-800"
                     placeholder="Mặc định kho"
                   />
                 </div>
@@ -296,7 +296,7 @@ const StockAdjustDialogContent: React.FC<{
                     min="1"
                     value={restockQty}
                     onChange={(e) => setRestockQty(parseInt(e.target.value) || 0)}
-                    className="w-full px-4 py-2.5 text-base font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
+                    className="w-full px-4 py-2.5 text-base font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 text-slate-800"
                     required
                   />
                   <div className="flex gap-1.5 shrink-0">
@@ -320,13 +320,13 @@ const StockAdjustDialogContent: React.FC<{
             )}
 
             {/* Preview Tồn kho & Khả dụng trước -> sau */}
-            <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 text-xs text-slate-700 space-y-1">
+            <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-slate-700 space-y-1">
               <div className="flex items-center justify-between">
                 <span>Tồn vật lý:</span>
                 <span className="font-bold flex items-center gap-1">
                   <span>{detail.stock}</span>
                   <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-purple-700 font-extrabold">{previewStock}</span>
+                  <span className="text-blue-800 font-extrabold">{previewStock}</span>
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -371,7 +371,7 @@ const StockAdjustDialogContent: React.FC<{
                     ? 'VD: Kiểm kê kho cuối tháng phát hiện lệch 5 cái...'
                     : 'VD: Nhập hàng theo phiếu nhập kho NK-2026-03...'
                 }
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800 placeholder-slate-400 resize-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-700 text-slate-800 placeholder-slate-400 resize-none"
                 required
               />
             </div>
@@ -404,7 +404,7 @@ const StockAdjustDialogContent: React.FC<{
               className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 sm:px-5 py-2.5 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer ${
                 submitting || isInvalidStock || isInvalidRestock || isInvalidNote || !hasChanged
                   ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
-                  : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-200 hover:shadow-lg'
+                  : 'bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white shadow-blue-200 hover:shadow-lg'
               }`}
             >
               {submitting ? (

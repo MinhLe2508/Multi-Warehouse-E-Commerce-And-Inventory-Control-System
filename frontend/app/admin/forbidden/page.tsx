@@ -14,7 +14,7 @@ export default function ForbiddenPage() {
     <div className="container py-5 d-flex justify-content-center align-items-center" style={{ minHeight: '60vh' }}>
       <div
         className="card text-center p-4 p-md-5 border-0 shadow-sm"
-        style={{ maxWidth: '420px', width: '100%', borderRadius: '16px', border: '1px solid #ede9fe' }}
+        style={{ maxWidth: '420px', width: '100%', borderRadius: '16px', border: '1px solid #e2e8f0' }}
       >
         <div className="d-inline-flex align-items-center justify-content-center mx-auto mb-3 text-danger">
           <ShieldAlert size={56} />

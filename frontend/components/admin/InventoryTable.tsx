@@ -54,7 +54,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               </th>
               <th className="py-3.5 px-3 min-w-[110px]">Danh mục</th>
               {!isSingleWarehouse && (
-                <th className="py-3.5 px-3 min-w-[160px] bg-purple-50/60 text-purple-900 border-x border-purple-100/80 text-center">
+                <th className="py-3.5 px-3 min-w-[160px] bg-blue-50/60 text-blue-900 border-x border-blue-100/80 text-center">
                   Tổng toàn quốc
                 </th>
               )}
@@ -107,7 +107,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                         {item.name}
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
-                        <code className="text-[11px] font-mono text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/60">
+                        <code className="text-[11px] font-mono text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60">
                           {item.sku}
                         </code>
                         <span className="text-[10px] text-slate-400">
@@ -175,7 +175,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                             <div className="flex justify-end mb-1">
                               <button
                                 onClick={() => onOpenAdjust(item, whDetail)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-white hover:bg-purple-50 text-purple-700 border border-purple-200/90 shadow-2xs transition-all hover:scale-105"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-white hover:bg-blue-50 text-blue-800 border border-blue-200/90 shadow-2xs transition-all hover:scale-105"
                                 title={`Điều chỉnh tồn kho tại ${wh.name}`}
                               >
                                 <Edit3 className="w-3 h-3" />
@@ -236,7 +236,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium text-slate-700"
+              className="px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-700 font-medium text-slate-700"
             >
               <option value={10}>10 SP</option>
               <option value={20}>20 SP</option>

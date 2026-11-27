@@ -120,7 +120,7 @@ export function Header({
         className={`admin-header ${hasScrolled ? 'has-shadow' : ''} px-3 px-md-4`}
         style={{
           height: staffScopedHeader ? 'auto' : '56px',
-          borderBottom: '1px solid #ede9fe',
+          borderBottom: '1px solid #e2e8f0',
         }}
       >
         <div className={staffScopedHeader

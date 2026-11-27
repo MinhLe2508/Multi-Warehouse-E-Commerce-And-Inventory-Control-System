@@ -194,7 +194,7 @@ export function SidebarContent({
 
   return (
     <div className="d-flex flex-column h-100 bg-white">
-      {/* Brand Header — Gradient Tím Trắng (Chỉ hiện trên Desktop, Mobile đã có trên Offcanvas.Header) */}
+      {/* Brand Header — Gradient Navy/Indigo (Chỉ hiện trên Desktop, Mobile đã có trên Offcanvas.Header) */}
       {showBrandHeader && (
         <div className="p-3 pb-2 d-flex align-items-center gap-2">
           <div
@@ -202,9 +202,9 @@ export function SidebarContent({
             style={{
               width: '34px',
               height: '34px',
-              background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+              background: 'linear-gradient(135deg, #1e40af 0%, #3730a3 100%)',
               fontSize: '0.95rem',
-              boxShadow: '0 4px 10px rgba(124, 58, 237, 0.3)',
+              boxShadow: '0 4px 10px rgba(30, 64, 175, 0.28)',
             }}
           >
             {isStaffVariant ? 'S' : 'M'}
@@ -213,7 +213,7 @@ export function SidebarContent({
             <h2
               className="h5 fw-bold mb-0"
               style={{
-                background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+                background: 'linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 letterSpacing: '-0.02em',
@@ -233,7 +233,7 @@ export function SidebarContent({
       {/* Khối tài khoản & Nút đăng xuất ở góc dưới bên trái */}
       <div
         className="admin-sidebar-footer p-3 border-top d-flex align-items-center justify-content-between mt-auto"
-        style={{ borderColor: '#ede9fe' }}
+        style={{ borderColor: '#e2e8f0' }}
       >
         <div className="d-flex align-items-center gap-2 min-w-0">
           <div
@@ -241,9 +241,9 @@ export function SidebarContent({
             style={{
               width: '36px',
               height: '36px',
-              background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+              background: 'linear-gradient(135deg, #1e40af 0%, #3730a3 100%)',
               fontSize: '0.85rem',
-              boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)',
+              boxShadow: '0 2px 8px rgba(30, 64, 175, 0.22)',
             }}
           >
             {displayAvatarText}
@@ -311,18 +311,18 @@ export function Sidebar({
         placement="start"
         container={adminPortalContainer}
         className="admin-offcanvas-sidebar d-lg-none"
-        style={{ width: 'min(280px, 84vw)', borderRight: '1px solid #ede9fe', zIndex: 1065 }}
+        style={{ width: 'min(280px, 84vw)', borderRight: '1px solid #e2e8f0', zIndex: 1065 }}
       >
-        <Offcanvas.Header closeButton className="p-3 border-bottom" style={{ borderColor: '#ede9fe' }}>
+        <Offcanvas.Header closeButton className="p-3 border-bottom" style={{ borderColor: '#e2e8f0' }}>
           <div className="d-flex align-items-center gap-2">
             <div
               className="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold shadow-sm"
               style={{
                 width: '32px',
                 height: '32px',
-                background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+                background: 'linear-gradient(135deg, #1e40af 0%, #3730a3 100%)',
                 fontSize: '0.9rem',
-                boxShadow: '0 4px 10px rgba(124, 58, 237, 0.25)',
+                boxShadow: '0 4px 10px rgba(30, 64, 175, 0.24)',
               }}
             >
               {isStaffVariant ? 'S' : 'M'}
@@ -330,7 +330,7 @@ export function Sidebar({
             <Offcanvas.Title
               className="fs-6 fw-bold mb-0"
               style={{
-                background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+                background: 'linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 letterSpacing: '-0.02em',

@@ -27,7 +27,7 @@ export function RestockDialog({ alert, onClose, onSubmit }: Props) {
         aria-modal="true"
         aria-labelledby="restock-title"
         className="w-100 bg-white p-4 rounded-3 shadow-lg"
-        style={{ maxWidth: '420px', border: '1px solid #ede9fe' }}
+        style={{ maxWidth: '420px', border: '1px solid #e2e8f0' }}
       >
         <h2 id="restock-title" className="h5 fw-bold mb-1 text-dark">
           Tạo yêu cầu nhập kho
@@ -47,7 +47,7 @@ export function RestockDialog({ alert, onClose, onSubmit }: Props) {
             style={{
               minHeight: '42px',
               borderRadius: '8px',
-              borderColor: '#ede9fe',
+              borderColor: '#cfd8e7',
             }}
           />
         </label>

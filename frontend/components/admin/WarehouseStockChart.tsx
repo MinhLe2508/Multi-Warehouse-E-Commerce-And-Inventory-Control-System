@@ -102,7 +102,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-medium">Sản phẩm</span>
-            <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg">
+            <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
               <Package className="w-4 h-4" />
             </div>
           </div>
@@ -186,7 +186,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
         >
           <div className="mb-3">
             <h2 className="admin-panel-heading d-flex align-items-center gap-2">
-              <TrendingUp size={16} className="text-purple-600" aria-hidden="true" />
+              <TrendingUp size={16} className="text-blue-700" aria-hidden="true" />
               Phân bổ tồn kho theo kho
             </h2>
           </div>
@@ -216,13 +216,13 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
                     <Bar
                       dataKey="Khả dụng"
-                      fill="#7c3aed"
+                      fill="#1e40af"
                       radius={[6, 6, 0, 0]}
                       maxBarSize={48}
                     />
                     <Bar
                       dataKey="Giữ chỗ"
-                      fill="#0284c7"
+                      fill="#38bdf8"
                       radius={[6, 6, 0, 0]}
                       maxBarSize={48}
                     />
@@ -241,7 +241,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
             <h2 className="admin-panel-heading d-flex align-items-center gap-2 mb-3">
-              <WarehouseIcon size={16} className="text-purple-600" aria-hidden="true" />
+              <WarehouseIcon size={16} className="text-blue-700" aria-hidden="true" />
               Mức sử dụng kho
             </h2>
             <div className="space-y-3.5">
@@ -252,7 +252,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs font-bold text-slate-800 mb-1">
                     <span>{wh.warehouseCode}</span>
-                    <span className="text-purple-700">
+                    <span className="text-blue-800">
                       {wh.capacityRate === null
                         ? 'Không giới hạn'
                         : `${wh.capacityRate.toLocaleString('vi-VN')}%`}
@@ -269,7 +269,7 @@ export const WarehouseStockChart: React.FC<WarehouseStockChartProps> = ({
                             ? 'bg-rose-500'
                             : wh.capacityRate >= 85
                             ? 'bg-amber-500'
-                            : 'bg-purple-600'
+                            : 'bg-blue-700'
                         }`}
                         style={{ width: `${Math.min(100, wh.capacityRate)}%` }}
                       />

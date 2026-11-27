@@ -88,7 +88,7 @@ export function DashboardView() {
             onChange={(e) => setWarehouseId(e.target.value)}
             aria-label="Lọc theo kho"
             className="form-select form-select-sm flex-grow-1 flex-sm-grow-0"
-            style={{ width: '180px', minWidth: '140px', borderColor: '#ede9fe', borderRadius: '8px' }}
+            style={{ width: '180px', minWidth: '140px', borderColor: '#e2e8f0', borderRadius: '8px' }}
           >
             <option value="ALL">Toàn bộ kho</option>
             {warehouses.map((w) => (
@@ -106,7 +106,7 @@ export function DashboardView() {
                 onChange={(e) => setFromDate(e.target.value)}
                 aria-label="Từ ngày"
                 className="form-control form-control-sm flex-grow-1 flex-sm-grow-0"
-                style={{ width: '145px', minWidth: '130px', borderColor: '#ede9fe', borderRadius: '8px' }}
+                style={{ width: '145px', minWidth: '130px', borderColor: '#e2e8f0', borderRadius: '8px' }}
               />
               <input
                 type="date"
@@ -114,7 +114,7 @@ export function DashboardView() {
                 onChange={(e) => setToDate(e.target.value)}
                 aria-label="Đến ngày"
                 className="form-control form-control-sm flex-grow-1 flex-sm-grow-0"
-                style={{ width: '145px', minWidth: '130px', borderColor: '#ede9fe', borderRadius: '8px' }}
+                style={{ width: '145px', minWidth: '130px', borderColor: '#e2e8f0', borderRadius: '8px' }}
               />
             </>
           )}
@@ -162,9 +162,9 @@ export function DashboardView() {
                       <div
                         className="kpi-icon-badge"
                         style={{
-                          backgroundColor: '#f5f3ff',
-                          color: '#7c3aed',
-                          border: '1px solid #ede9fe',
+                          backgroundColor: '#eff6ff',
+                          color: '#1e40af',
+                          border: '1px solid #dbeafe',
                         }}
                       >
                         <DollarSign size={18} />
@@ -183,9 +183,9 @@ export function DashboardView() {
                       <div
                         className="kpi-icon-badge"
                         style={{
-                          backgroundColor: '#ede9fe',
-                          color: '#6d28d9',
-                          border: '1px solid #ddd6fe',
+                          backgroundColor: '#eef2ff',
+                          color: '#3730a3',
+                          border: '1px solid #e0e7ff',
                         }}
                       >
                         <Package size={18} />
@@ -202,9 +202,9 @@ export function DashboardView() {
                       <div
                         className="kpi-icon-badge"
                         style={{
-                          backgroundColor: '#fae8ff',
-                          color: '#a855f7',
-                          border: '1px solid #f5d0fe',
+                          backgroundColor: '#e0f2fe',
+                          color: '#0369a1',
+                          border: '1px solid #bae6fd',
                         }}
                       >
                         <TrendingUp size={18} />
@@ -288,9 +288,9 @@ export function DashboardView() {
                   <span
                     className="badge rounded-pill small"
                     style={{
-                      backgroundColor: '#f5f3ff',
-                      color: '#7c3aed',
-                      border: '1px solid #ede9fe',
+                      backgroundColor: '#eff6ff',
+                      color: '#1e40af',
+                      border: '1px solid #dbeafe',
                     }}
                   >
                     VND
@@ -315,12 +315,12 @@ export function DashboardView() {
                           labelFormatter={(lbl) => `Ngày ${String(lbl)}`}
                           contentStyle={{
                             borderRadius: '8px',
-                            border: '1px solid #ede9fe',
+                            border: '1px solid #e2e8f0',
                             fontSize: '0.825rem',
-                            boxShadow: '0 4px 16px rgba(124, 58, 237, 0.1)',
+                            boxShadow: '0 4px 16px rgba(30, 64, 175, 0.1)',
                           }}
                         />
-                        <Bar dataKey="revenue" fill="#7c3aed" radius={[5, 5, 0, 0]} />
+                        <Bar dataKey="revenue" fill="#1e40af" radius={[5, 5, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -332,12 +332,12 @@ export function DashboardView() {
           {/* Hàng 4: Hộp "Việc cần chú ý" */}
           <RevealWrapper className="mb-2">
             <div className="fw-bold mb-2 small text-dark d-flex align-items-center gap-1.5">
-              <Info size={15} style={{ color: '#7c3aed' }} />
+              <Info size={15} style={{ color: '#1e40af' }} />
               <span>Việc cần chú ý</span>
             </div>
             <div
               className="admin-attention-card p-3 bg-white border rounded-3 small text-secondary"
-              style={{ borderColor: '#ede9fe', lineHeight: '1.5' }}
+              style={{ borderColor: '#e2e8f0', lineHeight: '1.5' }}
             >
               {lowStockCount} mặt hàng đang hết hoặc dưới ngưỡng an toàn
               {isAdmin ? ` · ${expiredReservations} lượt giữ chỗ hết hạn trong kỳ` : ''}
